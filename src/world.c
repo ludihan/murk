@@ -109,13 +109,42 @@ static void build_hub(Level *L, int seed) {
         add_portal(L, pp, d[i].to, d[i].needs, d[i].c, d[i].lbl);
     }
 
-    // furniture: a bed that nobody wants, a desk with a TV that never turns off
-    add_box(L, (Vector3){ -5.8f, 0.35f, -5.2f }, (Vector3){ 1.0f, 0.35f, 1.9f }, TEX_WOOD, (Color){ 150, 120, 100, 255 }, 1.0f, 0);
-    add_box(L, (Vector3){ -5.8f, 0.78f, -5.0f }, (Vector3){ 0.92f, 0.1f, 1.7f }, TEX_TILE, (Color){ 150, 130, 120, 255 }, 1.0f, 0);
-    add_box(L, (Vector3){ -5.8f, 0.95f, -6.6f }, (Vector3){ 0.6f, 0.12f, 0.3f }, TEX_CONCRETE, (Color){ 200, 190, 170, 255 }, 1.0f, F_NOCOLLIDE);
-    add_box(L, (Vector3){ 5.6f, 0.45f, 5.6f }, (Vector3){ 1.2f, 0.45f, 0.6f }, TEX_WOOD, (Color){ 140, 110, 90, 255 }, 1.0f, 0);
-    add_box(L, (Vector3){ 5.6f, 1.2f, 5.6f }, (Vector3){ 0.5f, 0.35f, 0.4f }, TEX_CONCRETE, (Color){ 50, 50, 46, 255 }, 1.0f, F_NOCOLLIDE);
-    add_box(L, (Vector3){ 5.6f, 1.2f, 5.2f }, (Vector3){ 0.4f, 0.27f, 0.02f }, TEX_STATIC, (Color){ 150, 170, 160, 255 }, 1.0f, F_NOCOLLIDE);
+    // the room is never quite arranged the way you left it
+    SetRandomSeed(seed * 31 + 5);
+    static const float CX[4] = { -5.8f, 5.8f, -5.8f, 5.8f }, CZ[4] = { -5.4f, -5.4f, 5.4f, 5.4f };
+    int bc = GetRandomValue(0, 3), dc = (bc + 1 + GetRandomValue(0, 2)) % 4;
+    {   // a bed that nobody wants
+        float bx = CX[bc], bz = CZ[bc], sg = bz < 0 ? 1.0f : -1.0f;
+        add_box(L, (Vector3){ bx, 0.35f, bz }, (Vector3){ 1.0f, 0.35f, 1.9f }, TEX_WOOD, (Color){ 150, 120, 100, 255 }, 1.0f, 0);
+        add_box(L, (Vector3){ bx, 0.78f, bz + 0.2f * sg }, (Vector3){ 0.92f, 0.1f, 1.7f }, TEX_TILE, (Color){ 150, 130, 120, 255 }, 1.0f, 0);
+        add_box(L, (Vector3){ bx, 0.95f, bz - 1.4f * sg }, (Vector3){ 0.6f, 0.12f, 0.3f }, TEX_CONCRETE, (Color){ 200, 190, 170, 255 }, 1.0f, F_NOCOLLIDE);
+    }
+    {   // a desk with a TV that never turns off, screen turned toward the middle of the room
+        float dx = CX[dc], dz = CZ[dc], sg = dz < 0 ? 1.0f : -1.0f;
+        add_box(L, (Vector3){ dx, 0.45f, dz }, (Vector3){ 1.2f, 0.45f, 0.6f }, TEX_WOOD, (Color){ 140, 110, 90, 255 }, 1.0f, 0);
+        add_box(L, (Vector3){ dx, 1.2f, dz }, (Vector3){ 0.5f, 0.35f, 0.4f }, TEX_CONCRETE, (Color){ 50, 50, 46, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ dx, 1.2f, dz + 0.41f * sg }, (Vector3){ 0.4f, 0.27f, 0.02f }, TEX_STATIC, (Color){ 150, 170, 160, 255 }, 1.0f, F_NOCOLLIDE);
+    }
+    // pillars, a half wall: different cover every time
+    int npil = GetRandomValue(0, 3);
+    for (int i = 0; i < npil; i++) {
+        float px = frand(-5.5f, 5.5f), pz = frand(-5.5f, 5.5f);
+        if ((fabsf(px) < 2.2f && fabsf(pz) > 3.0f) || (fabsf(pz) < 2.2f && fabsf(px) > 3.0f)) continue;  // keep door approaches clear
+        if (fabsf(px) < 1.5f && fabsf(pz - 2.0f) < 1.5f) continue;                                          // and the spawn
+        if (fabsf(px - CX[bc]) < 2.4f && fabsf(pz - CZ[bc]) < 2.8f) continue;
+        if (fabsf(px - CX[dc]) < 2.4f && fabsf(pz - CZ[dc]) < 2.0f) continue;
+        add_box(L, (Vector3){ px, H / 2, pz }, (Vector3){ 0.32f, H / 2, 0.32f }, TEX_CONCRETE, (Color){ 130, 128, 118, 255 }, 1.5f, 0);
+    }
+    if (GetRandomValue(0, 1)) {
+        float sx = GetRandomValue(0, 1) ? 3.8f : -3.8f, sz = GetRandomValue(0, 1) ? 3.4f : -3.4f;
+        add_box(L, (Vector3){ sx, 0.55f, sz }, (Vector3){ 1.6f, 0.55f, 0.12f }, TEX_TILE, (Color){ 150, 150, 130, 255 }, 1.0f, 0);
+    }
+    if (seed == 1) {   // somebody is standing in the corner, facing the wall. next time you wake up they're gone.
+        float fx = CX[(bc + 2) % 4] * 1.17f, fz = CZ[(bc + 2) % 4] * 1.4f;
+        fx = fx > 0 ? S - 0.5f : -S + 0.5f; fz = fz > 0 ? S - 0.5f : -S + 0.5f;
+        add_box(L, (Vector3){ fx, 0.9f, fz }, (Vector3){ 0.2f, 0.9f, 0.14f }, TEX_CONCRETE, (Color){ 20, 18, 18, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ fx, 1.95f, fz }, (Vector3){ 0.14f, 0.18f, 0.14f }, TEX_CONCRETE, (Color){ 26, 22, 22, 255 }, 1.0f, F_NOCOLLIDE);
+    }
     // hanging bulb
     add_box(L, (Vector3){ 0, 3.7f, 0 }, (Vector3){ 0.01f, 0.5f, 0.01f }, TEX_CONCRETE, (Color){ 20, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
     add_box(L, (Vector3){ 0, 3.15f, 0 }, (Vector3){ 0.1f, 0.14f, 0.1f }, TEX_CONCRETE, (Color){ 255, 220, 140, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
