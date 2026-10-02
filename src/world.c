@@ -179,8 +179,10 @@ static void build_hub(Level *L, int seed) {
 }
 
 // ---------------------------------------------------------------- SHAFT: the climb
+static float g_W = 6.0f;   // half width of the shaft; differs every dream
+
 static Vector3 wall_pt(int w, float s, float y, float inset) {
-    const float W = 6.0f;
+    const float W = g_W;
     switch (((w % 4) + 4) % 4) {
     case 0:  return (Vector3){ -W + s, y, -W + inset };
     case 1:  return (Vector3){ W - inset, y, -W + s };
@@ -195,59 +197,85 @@ static void wall_box(Level *L, int w, float s0, float s1, float y0, float y1, fl
     add_box(L, c, h, tex, tint, 2.0f, flags);
 }
 
-#define SHAFT_LEVELS 11
-static void build_shaft(Level *L) {
+static void build_shaft(Level *L, int seed) {
     L->name = "THE SHAFT";
-    L->fog = (Color){ 26, 14, 8, 255 };
-    L->fogDensity = 0.035f;
+    SetRandomSeed(seed * 2654435 + 11);
+    // each descent is a different shaft: width, mood, number and spacing of levels
+    static const Color FOG[3] = { { 26, 14, 8, 255 }, { 8, 18, 18, 255 }, { 22, 10, 22, 255 } };
+    static const Color WALL[3] = { { 120, 112, 100, 255 }, { 90, 120, 118, 255 }, { 130, 100, 122, 255 } };
+    int mood = GetRandomValue(0, 2);
+    L->fog = FOG[mood];
+    L->fogDensity = frand(0.028f, 0.045f);
     L->light = 0.95f;
     L->killY = -60;
     L->sludge = true;
     L->sludgeY = -3;
-    L->sludgeSpeed = 0.35f;
-    const float W = 6.0f, STEP = 4.5f, TOP = STEP * SHAFT_LEVELS + 60;
+    L->sludgeSpeed = frand(0.30f, 0.42f);
+    const float W = g_W = frand(5.0f, 7.2f);
+    const int LEVELS = GetRandomValue(9, 13);
+    float yk[24];
+    yk[0] = 0;
+    for (int k = 1; k <= LEVELS; k++) yk[k] = yk[k - 1] + frand(3.9f, 5.1f);
+    const float TOP = yk[LEVELS] + 70;
+    const float sMid = W + 0.5f, sEnd = 2 * W;
+
     // floor + four tall walls (smooth slimy concrete: you can't grip these)
     add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ W + 1, 0.5f, W + 1 }, TEX_TILE, (Color){ 150, 150, 130, 255 }, 2.0f, 0);
-    Color wc = (Color){ 120, 112, 100, 255 };
-    add_box(L, (Vector3){ 0, TOP / 2 - 10, -W - 0.5f }, (Vector3){ W + 1, TOP / 2 + 10, 0.5f }, TEX_CONCRETE, wc, 2.0f, 0);
-    add_box(L, (Vector3){ 0, TOP / 2 - 10, W + 0.5f }, (Vector3){ W + 1, TOP / 2 + 10, 0.5f }, TEX_CONCRETE, wc, 2.0f, 0);
-    add_box(L, (Vector3){ -W - 0.5f, TOP / 2 - 10, 0 }, (Vector3){ 0.5f, TOP / 2 + 10, W + 1 }, TEX_CONCRETE, wc, 2.0f, 0);
-    add_box(L, (Vector3){ W + 0.5f, TOP / 2 - 10, 0 }, (Vector3){ 0.5f, TOP / 2 + 10, W + 1 }, TEX_CONCRETE, wc, 2.0f, 0);
-    // below the floor is a pit the sludge fills
+    Color wc = WALL[mood];
+    TexId wt = (mood == 2) ? TEX_FLESH : TEX_CONCRETE;
+    add_box(L, (Vector3){ 0, TOP / 2 - 10, -W - 0.5f }, (Vector3){ W + 1, TOP / 2 + 10, 0.5f }, wt, wc, 2.0f, 0);
+    add_box(L, (Vector3){ 0, TOP / 2 - 10, W + 0.5f }, (Vector3){ W + 1, TOP / 2 + 10, 0.5f }, wt, wc, 2.0f, 0);
+    add_box(L, (Vector3){ -W - 0.5f, TOP / 2 - 10, 0 }, (Vector3){ 0.5f, TOP / 2 + 10, W + 1 }, wt, wc, 2.0f, 0);
+    add_box(L, (Vector3){ W + 0.5f, TOP / 2 - 10, 0 }, (Vector3){ 0.5f, TOP / 2 + 10, W + 1 }, wt, wc, 2.0f, 0);
     add_box(L, (Vector3){ 0, TOP + 0.5f, 0 }, (Vector3){ W + 1, 0.5f, W + 1 }, TEX_CONCRETE, (Color){ 60, 60, 60, 255 }, 3.0f, 0);
 
-    Color rust = (Color){ 235, 205, 180, 255 };
-    for (int k = 1; k <= SHAFT_LEVELS; k++) {
-        float yk = STEP * k, yp = STEP * (k - 1);
-        int w = k % 4;
-        // shelf on the right half of wall w
-        wall_box(L, w, 6.5f, 12.0f, yk - 0.4f, yk, 2.6f, TEX_CONCRETE, (Color){ 150, 140, 120, 255 }, 0);
-        wall_box(L, w, 6.5f, 12.0f, yk - 0.4f, yk + 0.02f, 0.2f, TEX_RUST, (Color){ 110, 100, 90, 255 }, F_NOCOLLIDE);
-        // grip strip on the left of wall w, up from the previous shelf
-        float y0 = yp + 0.6f, y1 = yk + 3.0f;
-        if (k % 2 == 0) {
-            // a slick band in the middle: lunge across it
-            float m = (y0 + y1) / 2;
-            { static const int ax[4] = { 2, 0, 2, 0 }, dr[4] = { 1, -1, -1, 1 };
-              Vector3 wp = wall_pt(w, 3.25f, m, 0.0f);
-              add_decal(L, "LET GO", wp, ax[w], dr[w], 0.22f, BLOOD); }
-            wall_box(L, w, 0.0f, 6.5f, y0, m - 0.7f, 0.25f, TEX_RUST, rust, F_GRIP);
-            wall_box(L, w, 0.0f, 6.5f, m + 0.7f, y1, 0.25f, TEX_RUST, rust, F_GRIP);
-        } else {
-            wall_box(L, w, 0.0f, 6.5f, y0, y1, 0.25f, TEX_RUST, rust, F_GRIP);
+    // pipes running up the walls, so the shaft isn't four flat planes
+    for (int w = 0; w < 4; w++) {
+        int n = GetRandomValue(1, 3);
+        for (int i = 0; i < n; i++) {
+            float s = frand(0.6f, 2 * W - 0.6f), r = frand(0.1f, 0.22f);
+            Vector3 c = wall_pt(w, s, TOP / 2 - 5, r);
+            add_box(L, c, (Vector3){ r, TOP / 2, r }, TEX_RUST, (Color){ 120, 110, 100, 255 }, 1.0f, F_NOCOLLIDE);
         }
     }
-    float top = STEP * SHAFT_LEVELS;
+
+    Color rust = (Color){ 235, 205, 180, 255 };
+    for (int k = 1; k <= LEVELS; k++) {
+        float yp = yk[k - 1], y = yk[k];
+        int w = k % 4;
+        float depth = frand(2.2f, 3.2f);
+        // shelf on the right half of wall w
+        wall_box(L, w, sMid, sEnd, y - 0.4f, y, depth, TEX_CONCRETE, (Color){ 150, 140, 120, 255 }, 0);
+        wall_box(L, w, sMid, sEnd, y - 0.4f, y + 0.02f, 0.2f, TEX_RUST, (Color){ 110, 100, 90, 255 }, F_NOCOLLIDE);
+        // a work lamp on some of them
+        if (GetRandomValue(0, 2) == 0)
+            wall_box(L, w, sMid + 0.6f, sMid + 1.0f, y + 1.8f, y + 2.1f, 0.3f, TEX_CONCRETE, (Color){ 255, 170, 70, 255 }, F_EMIT | F_NOCOLLIDE);
+        // grip strip on the left of wall w, up from the previous shelf, with 0-2 slick bands you have to lunge across
+        float y0 = yp + 0.6f, y1 = y + 3.0f;
+        int bands = (k >= 2) ? GetRandomValue(0, 2) : 0;
+        float cur = y0, span = y1 - y0;
+        for (int b = 0; b < bands; b++) {
+            float c = y0 + span * (0.25f + 0.5f * (b + frand(0.2f, 0.8f)) / bands), hb = frand(0.55f, 0.78f);
+            if (c - hb < cur + 1.0f) continue;
+            wall_box(L, w, 0.0f, sMid, cur, c - hb, 0.25f, TEX_RUST, rust, F_GRIP);
+            static const int ax[4] = { 2, 0, 2, 0 }, dr[4] = { 1, -1, -1, 1 };
+            if (b == 0) add_decal(L, "LET GO", wall_pt(w, sMid / 2, c, 0.0f), ax[w], dr[w], 0.22f, BLOOD);
+            cur = c + hb;
+        }
+        wall_box(L, w, 0.0f, sMid, cur, y1, 0.25f, TEX_RUST, rust, F_GRIP);
+    }
+    float top = yk[LEVELS], STEP = 4.5f;
     // the very top: a landing with the effect on a plinth
-    int w = (SHAFT_LEVELS + 1) % 4;
-    wall_box(L, w, 0.0f, 12.0f, top + STEP - 0.4f, top + STEP, 4.0f, TEX_FLESH, (Color){ 190, 160, 160, 255 }, 0);
-    Vector3 pp = wall_pt(w, 6.0f, top + STEP + 0.5f, 1.8f);
+    int w = (LEVELS + 1) % 4;
+    wall_box(L, w, 0.0f, sEnd, top + STEP - 0.4f, top + STEP, 4.0f, TEX_FLESH, (Color){ 190, 160, 160, 255 }, 0);
+    Vector3 pp = wall_pt(w, W, top + STEP + 0.5f, 1.8f);
     Pickup pk = { pp, FX_GLOVES, false };
     Pickups_push(&L->pickups, pk);
-    // the shelf the top strip lands on needs a strip to the landing too
-    wall_box(L, w, 0.0f, 6.5f, top + 0.6f, top + STEP + 3.0f, 0.25f, TEX_RUST, rust, F_GRIP);
+    wall_box(L, w, 0.0f, sMid, top + 0.6f, top + STEP + 3.0f, 0.25f, TEX_RUST, rust, F_GRIP);
+    add_decal(L, "IT IS ABOVE YOU", wall_pt((w + 1) % 4, W, top + STEP + 2.5f, 0.0f), (((w + 1) % 4) % 2 == 0) ? 2 : 0,
+              ((w + 1) % 4) == 0 ? 1 : ((w + 1) % 4) == 1 ? -1 : ((w + 1) % 4) == 2 ? -1 : 1, 0.3f, BLOOD);
     // spawn facing the first grip strip (wall 1, +X)
-    L->spawn = (Vector3){ 4.0f, 0.05f, -3.0f };
+    L->spawn = (Vector3){ W - 2.0f, 0.05f, -W / 2 };
     L->spawnYaw = 90;
 }
 
@@ -445,7 +473,7 @@ void level_build(Level *L, WorldId id, int seed) {
     L->phys = b3CreateWorld(&wd);
     switch (id) {
     case W_HUB:    build_hub(L, seed); break;
-    case W_SHAFT:  build_shaft(L); break;
+    case W_SHAFT:  build_shaft(L, seed); break;
     case W_DRAINS: build_drains(L, seed); break;
     case W_VOID:   build_void(L, seed); break;
     default:       build_end(L); break;
