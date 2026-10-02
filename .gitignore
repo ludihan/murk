@@ -1,0 +1,7 @@
+build/
+*.png
+subprojects/packagecache/
+subprojects/raylib/
+subprojects/box3d/
+subprojects/STC-*/
+subprojects/wrapdb.json
