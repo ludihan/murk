@@ -5,3 +5,4 @@ subprojects/raylib/
 subprojects/box3d/
 subprojects/STC-*/
 subprojects/wrapdb.json
+subprojects/.wraplock
