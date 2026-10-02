@@ -16,10 +16,8 @@ pipeline {
     stages {
         stage('Deploy') {
             steps {
-                sh 'docker network inspect murk-web >/dev/null 2>&1 || docker network create murk-web'
-                // -p murk keeps the compose project (and its caddy_data volume with the HTTPS cert) stable;
-                // --wait fails the build if the new container doesn't become healthy
-                sh 'docker compose -p murk up -d --build --wait'
+                // Caddy keeps serving while the new build is swapped in underneath it (see deploy.sh)
+                sh './deploy.sh'
             }
         }
     }

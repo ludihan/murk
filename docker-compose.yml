@@ -1,6 +1,8 @@
 services:
-  murk:
-    build: .
+  caddy:
+    build:
+      context: .
+      target: caddy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:2019/config/"]   # Caddy's admin API
@@ -15,10 +17,21 @@ services:
       - "443:443"
       - "443:443/udp"
     volumes:
+      - site:/srv:ro            # the game, published by the "site" service
       - caddy_data:/data        # keeps the HTTPS certificate across rebuilds
       - caddy_config:/config
 
+  # One-shot: builds the game and swaps it into the site volume (run by deploy.sh, not started by `up`)
+  site:
+    build:
+      context: .
+      target: site
+    profiles: [deploy]
+    volumes:
+      - site:/site
+
 volumes:
+  site:
   caddy_data:
   caddy_config:
 

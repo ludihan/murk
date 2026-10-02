@@ -37,15 +37,19 @@ In the browser the game asks for a name once and keeps your launches and wake-up
 
 Point an `A` record for `murk` at the VPS (the apex domain can stay wherever it is), open ports 80 and 443, then:
 
-    docker compose up -d --build
+    ./deploy.sh
+
+(If the older single-container version is running, run `docker compose -p murk down` once first: it frees ports 80/443
+and keeps the HTTPS certificate volume. That one switch-over is the only downtime.)
 
 Caddy inside the container serves the game and fetches the HTTPS certificate for `murk.ludihan.xyz` by itself
 (browsers need HTTPS for mouse capture and audio). To use another name, edit `web/Caddyfile`.
-Update later with `git pull && docker compose up -d --build`.
+Update later with `git pull && ./deploy.sh`. Deploys have no downtime: Caddy keeps running and only the static files
+are swapped (atomically, via a symlink); the last three releases stay in the `site` volume for rollback.
 
 ## Continuous deploy (Jenkins)
 
-The `Jenkinsfile` rebuilds and restarts the site (`docker compose -p murk up -d --build --wait`) on every push to `main`.
+The `Jenkinsfile` rebuilds the site and swaps it in with no downtime (`./deploy.sh`) on every push to `main`.
 Jenkins runs on the same server and uses the host's Docker through the mounted socket (no SSH, no keys). GitHub's
 push webhook reaches it through the site's own Caddy (`https://murk.ludihan.xyz/github-webhook/`); the Jenkins UI is
 never exposed publicly.
@@ -60,7 +64,7 @@ never exposed publicly.
 
 3. **Start the site** (first deploy by hand; Jenkins takes over afterwards):
 
-       docker compose -p murk up -d --build
+       ./deploy.sh
 
 4. **Start Jenkins:**
 

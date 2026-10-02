@@ -6,7 +6,7 @@ murk.ludihan.xyz {
 	}
 
 	handle {
-		root * /srv
+		root * /srv/current
 		encode gzip
 		file_server
 		header Cache-Control "no-cache"

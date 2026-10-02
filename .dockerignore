@@ -13,3 +13,4 @@ Jenkinsfile
 README.md
 docker-compose.yml
 Dockerfile
+deploy.sh

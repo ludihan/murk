@@ -12,8 +12,15 @@ COPY . .
 ENV EMSDK=/emsdk
 RUN sh web/build.sh
 
-# Stage 2: serve the three static files (index.html, murk.js, murk.wasm) with Caddy, which also handles HTTPS
-FROM caddy:2-alpine
+# Stage 2 (target "site"): one-shot publisher that copies the three static files (index.html, murk.js, murk.wasm)
+# into the shared site volume as a new release, without touching the running web server
+FROM debian:stable-slim AS site
+COPY --from=build /src/dist/ /dist/
+COPY web/publish.sh /usr/local/bin/publish
+ENTRYPOINT ["publish"]
+
+# Stage 3 (target "caddy", the default): the long-running web server, which also handles HTTPS.
+# It doesn't depend on the build stage, so rebuilding the game never recreates it.
+FROM caddy:2-alpine AS caddy
 COPY web/Caddyfile /etc/caddy/Caddyfile
-COPY --from=build /src/dist/ /srv/
 EXPOSE 80 443
