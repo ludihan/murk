@@ -1,0 +1,50 @@
+#pragma once
+#include <raylib.h>
+#include <raymath.h>
+#include <box3d/box3d.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+// ---- shared types -------------------------------------------------------
+
+typedef enum {
+    TEX_CONCRETE, TEX_RUST, TEX_TILE, TEX_FLESH, TEX_SLUDGE, TEX_WOOD, TEX_STATIC, TEX_COUNT
+} TexId;
+
+enum { F_GRIP = 1, F_EMIT = 2, F_NOCOLLIDE = 4, F_DECAL = 8 };
+
+typedef struct Box {
+    Vector3 c, h;       // center, half extents
+    TexId tex;
+    Color tint;
+    float scale;        // meters per texture tile
+    uint8_t flags;
+} Box;
+
+typedef enum { FX_LAMP, FX_GLOVES, FX_BOOTS, FX_COUNT } EffectId;
+
+typedef struct Pickup  { Vector3 pos; EffectId fx; bool taken; } Pickup;
+typedef enum { W_HUB, W_SHAFT, W_DRAINS, W_VOID, W_END, W_COUNT } WorldId;
+typedef struct Portal  { Vector3 pos; float radius; WorldId to; int needs; Color col; const char *label; } Portal;
+typedef struct Watcher { Vector3 pos; float phase; bool seen; } Watcher;
+typedef struct Mote    { Vector3 pos, vel; float life; } Mote;
+typedef struct Prop    { b3BodyId body; Vector3 h; TexId tex; Color tint; } Prop;
+
+#define i_type Boxes,    Box
+#include <stc/vec.h>
+#define i_type Pickups,  Pickup
+#include <stc/vec.h>
+#define i_type Portals,  Portal
+#include <stc/vec.h>
+#define i_type Watchers, Watcher
+#include <stc/vec.h>
+#define i_type Motes,    Mote
+#include <stc/vec.h>
+#define i_type Props,    Prop
+#include <stc/vec.h>
+
+#define RT_W 480
+#define RT_H 270
+
+static inline b3Vec3 b3v(Vector3 v) { return (b3Vec3){ v.x, v.y, v.z }; }
+static inline Vector3 rv(b3Vec3 v)  { return (Vector3){ v.x, v.y, v.z }; }
