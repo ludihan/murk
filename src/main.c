@@ -7,6 +7,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/html5.h>
+// browsers have no save file or $USER: use localStorage and ask once
+EM_JS(int, web_load_int, (const char *key), {
+    var v = localStorage.getItem(UTF8ToString(key));
+    return v ? parseInt(v, 10) : 0;
+});
+EM_JS(void, web_save_int, (const char *key, int v), { localStorage.setItem(UTF8ToString(key), String(v)); });
+EM_JS(void, web_get_name, (char *out, int cap), {
+    var n = localStorage.getItem("murk.name");
+    if (!n) { n = window.prompt("before you go in: what is your name?", "") || "YOU"; localStorage.setItem("murk.name", n); }
+    stringToUTF8(n.trim().toUpperCase().slice(0, 24) || "YOU", out, cap);
+});
+#endif
 
 typedef enum { S_TITLE, S_PLAY, S_ENDING } State;
 
@@ -38,15 +53,23 @@ static const char *FX_DESC[FX_COUNT] = {
 
 // the game keeps a tiny file about you
 static void save_memory(void) {
+#ifdef __EMSCRIPTEN__
+    web_save_int("murk.launches", g_launches); web_save_int("murk.wakes", g_wakes);
+#else
     FILE *f = fopen("murk.sav", "w");
     if (f) { fprintf(f, "%d %d\n", g_launches, g_wakes); fclose(f); }
+#endif
 }
 static void load_memory(void) {
+#ifdef __EMSCRIPTEN__
+    g_launches = web_load_int("murk.launches"); g_wakes = web_load_int("murk.wakes");
+#else
     FILE *f = fopen("murk.sav", "r");
     if (f) { if (fscanf(f, "%d %d", &g_launches, &g_wakes) != 2) g_launches = g_wakes = 0; fclose(f); }
-    g_launches++;
     const char *u = getenv("USER");
     if (u && *u) { snprintf(g_user, sizeof g_user, "%s", u); for (char *c = g_user; *c; c++) if (*c >= 'a' && *c <= 'z') *c -= 32; }
+#endif
+    g_launches++;
     save_memory();
 }
 
@@ -367,37 +390,19 @@ static void bot_input(Input *in, const Player *p, const Level *l, float t) {
 }
 
 // ---------------------------------------------------------------- main
-int main(void) {
-    SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE);
-    InitWindow(1280, 720, "MURK");
-    SetWindowMinSize(480, 270);
-    SetExitKey(KEY_ESCAPE);
-    SetTargetFPS(144);
-    load_memory();
-    gfx_init();
-    audio_init();
+static int shotWorld = -1, shotFrames, shotFrame;
+static char shotPath[256] = "";
+static bool quit;
+static double prevT, acc, clockT;
 
-    // dev hook: MURK_SHOT="world,x,y,z,yaw,pitch,fx,frames,path" renders a frame and exits
-    int shotWorld = -1, shotFrames = 0; char shotPath[256] = "";
-    float sx = 0, sy = 0, sz = 0, syaw = 0, spit = 0; int sfxmask = 0;
-    const char *env = getenv("MURK_SHOT");
-    if (env && sscanf(env, "%d,%f,%f,%f,%f,%f,%d,%d,%255s", &shotWorld, &sx, &sy, &sz, &syaw, &spit, &sfxmask, &shotFrames, shotPath) == 9) {
-        new_game();
-        P.fx = sfxmask;
-        load_world((WorldId)shotWorld, false);
-        P.pos = (Vector3){ sx, sy, sz }; P.yaw = syaw; P.pitch = spit;
-        if (sfxmask & 1) lampOn = 1;
-        EnableCursor();
-    } else shotWorld = -1;
-
-    bot = getenv("MURK_BOT");
-    double prev = GetTime(), acc = 0, clock = 0;
-    int frame = 0;
-    while (!WindowShouldClose()) {
+static void frame(void) {
+    double prev = prevT;
+    double clock = clockT;
         double now = GetTime();
         float frameDt = (float)fminf(0.1f, now - prev);
-        prev = now;
+        prevT = now;
         clock += frameDt;
+        clockT = clock;
         float time = (float)clock;
         bool frozen = false;
         if (state == S_PLAY && freezeT > 0) {
@@ -408,7 +413,7 @@ int main(void) {
         if (titleT > 0) { titleT -= frameDt; if (titleT <= 0) SetWindowTitle("MURK"); }
 
         if (state == S_TITLE) {
-            if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) new_game();
+            if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) new_game();
         } else if (state == S_PLAY) {
             const float DT = 1.0f / 120.0f;
             if (!tr.on || tr.t > 0.6f) {
@@ -417,6 +422,9 @@ int main(void) {
                 if (P.pitch > 88) P.pitch = 88;
                 if (P.pitch < -88) P.pitch = -88;
             }
+#ifdef __EMSCRIPTEN__
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) DisableCursor();   // browsers drop pointer lock on Esc; click to take it back
+#endif
             if (pullT > 0) {   // something takes the camera for a moment
                 pullT -= frameDt;
                 float diff = fmodf(pullYaw - P.yaw + 540.0f, 360.0f) - 180.0f;
@@ -531,7 +539,7 @@ int main(void) {
             int j = (int)(sinf(time * 40) * 1.2f * (sinf(time * 0.7f) > 0.95f));
             text_c("M U R K", 80 + j, 40, (Color){ 190, 180, 150, 255 });
             text_c("a descent into other people's dreams", 128, 10, (Color){ 120, 110, 95, 255 });
-            if ((int)(time * 1.5f) % 2) text_c("press ENTER", 190, 10, (Color){ 170, 160, 140, 255 });
+            if ((int)(time * 1.5f) % 2) text_c("press ENTER or click", 190, 10, (Color){ 170, 160, 140, 255 });
             char memo[96] = "";
             if (g_launches >= 6) snprintf(memo, sizeof memo, "it kept your place, %s.", g_user);
             else if (g_launches >= 2) snprintf(memo, sizeof memo, "you came back, %s.", g_user);
@@ -560,8 +568,45 @@ int main(void) {
         EndTextureMode();
         gfx_present(time, state == S_PLAY ? madness : 0.0f, fade, flash, glitch);
 
-        if (shotWorld >= 0 && ++frame >= shotFrames) { TakeScreenshot(shotPath); break; }
-    }
+        if (shotWorld >= 0 && ++shotFrame >= shotFrames) { TakeScreenshot(shotPath); quit = true; }
+}
+
+int main(void) {
+    SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE);
+    InitWindow(1280, 720, "MURK");
+    SetWindowMinSize(480, 270);
+#ifdef __EMSCRIPTEN__
+    SetExitKey(KEY_NULL);
+#else
+    SetExitKey(KEY_ESCAPE);
+    SetTargetFPS(144);
+#endif
+    load_memory();
+#ifdef __EMSCRIPTEN__
+    web_get_name(g_user, sizeof g_user);
+#endif
+    gfx_init();
+    audio_init();
+
+    // dev hook: MURK_SHOT="world,x,y,z,yaw,pitch,fx,frames,path" renders a frame and exits
+    float sx = 0, sy = 0, sz = 0, syaw = 0, spit = 0; int sfxmask = 0;
+    const char *env = getenv("MURK_SHOT");
+    if (env && sscanf(env, "%d,%f,%f,%f,%f,%f,%d,%d,%255s", &shotWorld, &sx, &sy, &sz, &syaw, &spit, &sfxmask, &shotFrames, shotPath) == 9) {
+        new_game();
+        P.fx = sfxmask;
+        load_world((WorldId)shotWorld, false);
+        P.pos = (Vector3){ sx, sy, sz }; P.yaw = syaw; P.pitch = spit;
+        if (sfxmask & 1) lampOn = 1;
+        EnableCursor();
+    } else shotWorld = -1;
+
+    bot = getenv("MURK_BOT");
+    prevT = GetTime();
+#ifdef __EMSCRIPTEN__
+    emscripten_set_main_loop(frame, 0, 1);
+#else
+    while (!WindowShouldClose() && !quit) frame();
+#endif
     if (levelLoaded) level_free(&L);
     audio_shutdown();
     gfx_shutdown();

@@ -127,15 +127,21 @@ static Texture2D make_tex(TexId id) {
 }
 
 // ---------------------------------------------------------------- shaders
+#ifdef __EMSCRIPTEN__
+#define GLSL_HEAD "#version 300 es\nprecision highp float;\n"
+#else
+#define GLSL_HEAD "#version 330\n"
+#endif
+
 static const char *OBJ_VS =
-"#version 330\n"
+GLSL_HEAD
 "in vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;\n"
 "uniform mat4 mvp; out vec2 fragTexCoord; out vec4 fragColor;\n"
 "void main(){ fragTexCoord=vertexTexCoord; fragColor=vertexColor;\n"
 "  gl_Position=mvp*vec4(vertexPosition,1.0); }\n";
 
 static const char *OBJ_FS =
-"#version 330\n"
+GLSL_HEAD
 "in vec2 fragTexCoord; in vec4 fragColor; out vec4 finalColor;\n"
 "uniform sampler2D texture0; uniform vec4 colDiffuse;\n"
 "uniform vec3 fogColor; uniform float fogDensity; uniform float flicker; uniform float emit;\n"
@@ -149,7 +155,7 @@ static const char *OBJ_FS =
 "  finalColor = vec4(col, 1.0); }\n";
 
 static const char *POST_FS =
-"#version 330\n"
+GLSL_HEAD
 "in vec2 fragTexCoord; out vec4 finalColor;\n"
 "uniform sampler2D texture0;\n"
 "uniform float time; uniform float madness; uniform float fade; uniform float flash; uniform float glitch; uniform vec2 res;\n"
