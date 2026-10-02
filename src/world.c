@@ -7,6 +7,9 @@
 #include <stc/vec.h>
 
 
+int g_launches, g_wakes;
+char g_user[64] = "YOU";
+
 // ---------------------------------------------------------------- helpers
 static void add_box(Level *L, Vector3 c, Vector3 h, TexId tex, Color tint, float scale, int flags) {
     Box b = { c, h, tex, tint, scale, (uint8_t)flags };

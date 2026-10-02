@@ -34,6 +34,20 @@ static const char *FX_DESC[FX_COUNT] = {
     "you can jump once more in the air.",
 };
 
+// the game keeps a tiny file about you
+static void save_memory(void) {
+    FILE *f = fopen("murk.sav", "w");
+    if (f) { fprintf(f, "%d %d\n", g_launches, g_wakes); fclose(f); }
+}
+static void load_memory(void) {
+    FILE *f = fopen("murk.sav", "r");
+    if (f) { if (fscanf(f, "%d %d", &g_launches, &g_wakes) != 2) g_launches = g_wakes = 0; fclose(f); }
+    g_launches++;
+    const char *u = getenv("USER");
+    if (u && *u) { snprintf(g_user, sizeof g_user, "%s", u); for (char *c = g_user; *c; c++) if (*c >= 'a' && *c <= 'z') *c -= 32; }
+    save_memory();
+}
+
 static void say(const char *s, float secs) { snprintf(msg, sizeof msg, "%s", s); msgT = secs; }
 
 static void load_world(WorldId id, bool wake) {
@@ -59,7 +73,7 @@ static void go(WorldId to, bool wake) {
     if (tr.on) return;
     tr.on = true; tr.t = 0; tr.to = to; tr.wake = wake; tr.loaded = false;
     audio_play(wake ? SFX_WAKE : SFX_DOOR);
-    if (wake) flash = 1;
+    if (wake) { flash = 1; g_wakes++; save_memory(); }
 }
 
 static void new_game(void) {
@@ -325,6 +339,7 @@ int main(void) {
     SetWindowMinSize(480, 270);
     SetExitKey(KEY_ESCAPE);
     SetTargetFPS(144);
+    load_memory();
     gfx_init();
     audio_init();
 
@@ -470,6 +485,10 @@ int main(void) {
             text_c("M U R K", 80 + j, 40, (Color){ 190, 180, 150, 255 });
             text_c("a descent into other people's dreams", 128, 10, (Color){ 120, 110, 95, 255 });
             if ((int)(time * 1.5f) % 2) text_c("press ENTER", 190, 10, (Color){ 170, 160, 140, 255 });
+            char memo[96] = "";
+            if (g_launches >= 6) snprintf(memo, sizeof memo, "it kept your place, %s.", g_user);
+            else if (g_launches >= 2) snprintf(memo, sizeof memo, "you came back, %s.", g_user);
+            if (memo[0]) text_c(memo, 156, 10, (Color){ 130, 40, 34, (unsigned char)(150 + 60 * sinf(time * 2.0f)) });
             text_c("WASD · SHIFT · SPACE · hold LMB to grip · F lamp · R wake up", RT_H - 18, 10, (Color){ 90, 85, 75, 255 });
         } else {
             Vector3 eye = player_eye(&P), fwd = player_forward(&P);
