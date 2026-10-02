@@ -37,19 +37,19 @@ In the browser the game asks for a name once and keeps your launches and wake-up
 
 Point an `A` record for `murk` at the VPS (the apex domain can stay wherever it is), open ports 80 and 443, then:
 
-    ./deploy.sh
+    docker compose up -d --build
 
-(If the older single-container version is running, run `docker compose -p murk down` once first: it frees ports 80/443
+(If the older single-container version is running, run `docker compose down` in its checkout once first: it frees ports 80/443
 and keeps the HTTPS certificate volume. That one switch-over is the only downtime.)
 
 Caddy inside the container serves the game and fetches the HTTPS certificate for `murk.ludihan.xyz` by itself
 (browsers need HTTPS for mouse capture and audio). To use another name, edit `web/Caddyfile`.
-Update later with `git pull && ./deploy.sh`. Deploys have no downtime: Caddy keeps running and only the static files
+Update later with `git pull && docker compose up -d --build`. Deploys have no downtime: Caddy keeps running and only the static files
 are swapped (atomically, via a symlink); the last three releases stay in the `site` volume for rollback.
 
 ## Continuous deploy (Jenkins)
 
-The `Jenkinsfile` rebuilds the site and swaps it in with no downtime (`./deploy.sh`) on every push to `main`.
+The `Jenkinsfile` rebuilds the site and swaps it in with no downtime (`docker compose up -d --build`) on every push to `main`.
 Jenkins runs on the same server and uses the host's Docker through the mounted socket (no SSH, no keys). GitHub's
 push webhook reaches it through the site's own Caddy (`https://murk.ludihan.xyz/github-webhook/`); the Jenkins UI is
 never exposed publicly.
@@ -57,14 +57,13 @@ never exposed publicly.
 ### Step by step
 
 1. **DNS and firewall.** `A` record for `murk.ludihan.xyz` -> the VPS; ports 80 and 443 open. Docker and the compose plugin installed.
-2. **Get the code and a shared network** (on the VPS):
+2. **Get the code** (on the VPS):
 
        git clone https://github.com/ludihan/murk.git && cd murk
-       docker network create murk-web
 
 3. **Start the site** (first deploy by hand; Jenkins takes over afterwards):
 
-       ./deploy.sh
+       docker compose up -d --build
 
 4. **Start Jenkins:**
 

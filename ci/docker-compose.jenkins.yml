@@ -18,4 +18,4 @@ volumes:
 networks:
   web:
     name: murk-web
-    external: true              # created once: docker network create murk-web
+    external: true              # created by the site stack (docker-compose.yml): deploy that first

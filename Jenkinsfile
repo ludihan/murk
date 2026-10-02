@@ -16,8 +16,8 @@ pipeline {
     stages {
         stage('Deploy') {
             steps {
-                // Caddy keeps serving while the new build is swapped in underneath it (see deploy.sh)
-                sh './deploy.sh'
+                // Caddy keeps serving while the new build is swapped in underneath it (see docker-compose.yml)
+                sh 'docker compose up -d --build'
             }
         }
     }

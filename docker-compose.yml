@@ -1,3 +1,5 @@
+name: murk
+
 services:
   caddy:
     build:
@@ -21,12 +23,13 @@ services:
       - caddy_data:/data        # keeps the HTTPS certificate across rebuilds
       - caddy_config:/config
 
-  # One-shot: builds the game and swaps it into the site volume (run by deploy.sh, not started by `up`)
+  # One-shot: builds the game and swaps it into the site volume. It runs to completion on every `up` that rebuilt it,
+  # while caddy (no depends_on, so it is never recreated for it) keeps serving the previous release.
   site:
     build:
       context: .
       target: site
-    profiles: [deploy]
+    restart: "no"
     volumes:
       - site:/site
 
@@ -37,5 +40,4 @@ volumes:
 
 networks:
   web:
-    name: murk-web
-    external: true              # created once: docker network create murk-web
+    name: murk-web              # fixed name so the Jenkins stack can join it
