@@ -17,6 +17,8 @@ static bool levelLoaded;
 static int dreams;
 static float madness, tension, flash, lampOn, nameT, stepDist, endT;
 static float blackout, nextBlackout = 25, glitch;
+static float freezeT, nextFreeze = 70, pullT, pullYaw, phantomT = 15, stepGap, titleT;
+static int phantomLeft;
 
 // eyes that hang in the fog at the edge of sight and are gone when you face them
 typedef struct { Vector3 pos; float life, seenT; bool on; } Lurker;
@@ -48,6 +50,15 @@ static void load_memory(void) {
     save_memory();
 }
 
+static void haunt_title(void) {
+    static const char *T[] = { "MURK - don't turn around", "MURK - it can see your desktop", "MURK - it's in the room", "MURK - wake up", "MURK - not responding" };
+    char b[128];
+    if (GetRandomValue(0, 4) == 0) snprintf(b, sizeof b, "MURK - %s", g_user);
+    else snprintf(b, sizeof b, "%s", T[GetRandomValue(0, 4)]);
+    SetWindowTitle(b);
+    titleT = 3.0f;
+}
+
 static void say(const char *s, float secs) { snprintf(msg, sizeof msg, "%s", s); msgT = secs; }
 
 static void load_world(WorldId id, bool wake) {
@@ -60,7 +71,7 @@ static void load_world(WorldId id, bool wake) {
         P.yaw = 250;
     }
     nameT = 3.5f;
-    blackout = 0; nextBlackout = 14 + GetRandomValue(0, 12);
+    blackout = 0; nextBlackout = 14 + GetRandomValue(0, 12); pullT = 0; phantomLeft = 0;
     memset(lurk, 0, sizeof lurk); lurkTimer = 6 + GetRandomValue(0, 6);
     lampOn = (P.fx & (1u << FX_LAMP)) ? lampOn : 0;
     if (id == W_HUB && !wake && dreams <= 1) say("WASD walk · SHIFT run · SPACE jump · hold LMB at rusty walls to grip · R wake up", 12);
@@ -98,6 +109,24 @@ static void hub_reposition(Watcher *w) {
 
 static void scare_update(float dt) {
     Vector3 eye = player_eye(&P), fwd = player_forward(&P);
+    // ---- the game hitches: everything stops and the sound drops out, then it all lurches back
+    if (dreams >= 2 && !tr.on) {
+        nextFreeze -= dt;
+        if (nextFreeze <= 0) { freezeT = frand_(0.5f, 1.1f); nextFreeze = frand_(50, 110); haunt_title(); }
+    }
+    // ---- phantom footsteps and knocks while you stand still in a haunted place
+    if (dreams >= 2 && L.id != W_END && P.speedMeter < 0.5f && !tr.on) {
+        phantomT -= dt;
+        if (phantomT <= 0) {
+            phantomT = frand_(9, 22);
+            if (GetRandomValue(0, 2) == 0) audio_play_ex(SFX_KNOCK, 0.35f, frand_(0.6f, 0.9f));
+            else { phantomLeft = GetRandomValue(3, 6); stepGap = 0; }
+        }
+    }
+    if (phantomLeft > 0) {
+        stepGap -= dt;
+        if (stepGap <= 0) { audio_play_ex(SFX_STEP, 0.3f, 0.6f); stepGap = 0.5f; phantomLeft--; }
+    }
     // ---- blackouts: the lights just stop. in the drains, things keep walking.
     bool haunted = (L.id == W_DRAINS) || (L.id == W_HUB && L.watchers.size > 0);
     if (blackout > 0) {
@@ -109,7 +138,11 @@ static void scare_update(float dt) {
                 float len = Vector3Length(d);
                 if (len > 2.6f) { float nl = fmaxf(2.4f, len * 0.55f); w->pos = (Vector3){ P.pos.x - d.x / len * nl, 0, P.pos.z - d.z / len * nl }; }
             }
-            audio_play(SFX_STINGER); glitch = 0.7f;
+            audio_play(SFX_STINGER); glitch = 0.7f; haunt_title();
+            // and the game turns your head to look at it
+            float bd = 1e9f; Vector3 bp = P.pos;
+            for (int i = 0; i < L.watchers.size; i++) { float d = Vector3Distance(L.watchers.data[i].pos, P.pos); if (d < bd) { bd = d; bp = L.watchers.data[i].pos; } }
+            if (bd < 1e8f) { pullYaw = atan2f(bp.x - P.pos.x, -(bp.z - P.pos.z)) * RAD2DEG; pullT = 0.7f; }
         }
     } else if (haunted && !tr.on) {
         nextBlackout -= dt;
@@ -366,6 +399,13 @@ int main(void) {
         prev = now;
         clock += frameDt;
         float time = (float)clock;
+        bool frozen = false;
+        if (state == S_PLAY && freezeT > 0) {
+            freezeT -= frameDt; frozen = true; frameDt = 0; glitch = 0.9f;
+            audio_set(1, 0, 0, 0.0f);
+            if (freezeT <= 0) { audio_play(SFX_KNOCK); glitch = 1; }
+        }
+        if (titleT > 0) { titleT -= frameDt; if (titleT <= 0) SetWindowTitle("MURK"); }
 
         if (state == S_TITLE) {
             if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) new_game();
@@ -376,6 +416,12 @@ int main(void) {
                 if (shotWorld < 0) { P.yaw += md.x * 0.085f; P.pitch -= md.y * 0.085f; }
                 if (P.pitch > 88) P.pitch = 88;
                 if (P.pitch < -88) P.pitch = -88;
+            }
+            if (pullT > 0) {   // something takes the camera for a moment
+                pullT -= frameDt;
+                float diff = fmodf(pullYaw - P.yaw + 540.0f, 360.0f) - 180.0f;
+                P.yaw += diff * fminf(1.0f, frameDt * 7.0f);
+                P.pitch *= 1.0f - fminf(1.0f, frameDt * 5.0f);
             }
             if (IsKeyPressed(KEY_SPACE)) P.jumpBuf = 0.12f;
             if (IsKeyPressed(KEY_F) && (P.fx & (1u << FX_LAMP))) lampOn = lampOn > 0.5f ? 0.0f : 1.0f;
@@ -434,7 +480,7 @@ int main(void) {
                 Vector3 fwd = player_forward(&P);
                 if (level_watchers(&L, player_eye(&P), fwd, P.pos, frameDt, blackout > 0)) {
                     dead = true; say("it was standing right there.", 4);
-                    audio_play(SFX_SCREAM); glitch = 1;
+                    audio_play(SFX_SCREAM); glitch = 1; haunt_title();
                 }
                 if (L.sawWatcher) { L.sawWatcher = false; audio_play(SFX_STINGER); glitch = 0.8f; madness = fminf(1, madness + 0.3f); }
                 if (P.slipped) { P.slipped = false; audio_play(SFX_KNOCK); glitch = 0.5f; }
@@ -463,7 +509,7 @@ int main(void) {
             tension = madness;
             float tone = L.id == W_HUB ? 1.0f : L.id == W_SHAFT ? 0.75f : L.id == W_DRAINS ? 0.9f : L.id == W_VOID ? 1.4f : 2.0f;
             float whisper = L.nearest < 18 ? 1.0f - L.nearest / 18.0f : 0.0f;
-            audio_set(tone, tension, whisper, tr.on ? 0.3f : 0.9f);
+            if (!frozen) audio_set(tone, tension, whisper, tr.on ? 0.3f : 0.9f);
         } else {
             endT += frameDt;
             if (IsKeyPressed(KEY_ENTER) && endT > 8) { if (levelLoaded) { level_free(&L); levelLoaded = false; } state = S_TITLE; audio_set(1, 0, 0, 0.4f); }
@@ -472,7 +518,7 @@ int main(void) {
         if (msgT > 0) msgT -= frameDt;
         if (flash > 0) flash = fmaxf(0, flash - frameDt * 1.2f);
         if (glitch > 0) glitch = fmaxf(0, glitch - frameDt * 1.6f);
-        if (levelLoaded && L.id == W_HUB) gfx_update_static(time, false);
+        if (levelLoaded && L.id == W_HUB) gfx_update_static(time, dreams >= 3 && fmodf(time, 19.0f) < 0.3f);
 
         // ---- render
         float fade = 0;
