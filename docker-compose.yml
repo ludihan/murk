@@ -5,7 +5,7 @@ services:
       target: caddy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2019/config/"]   # Caddy's admin API
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:2019/config/"]   # Caddy's admin API
       interval: 10s
       timeout: 3s
       retries: 3
