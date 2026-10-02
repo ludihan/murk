@@ -202,7 +202,8 @@ static void draw_scene(Camera3D cam, float time) {
         const Box *b = &L.boxes.data[i];
         if (b->flags & F_EMIT) continue;
         if (dist_to_box(eye, b) > cull) continue;
-        gfx_box(b->c, b->h, b->tex, b->tint, b->scale);
+        if (b->flags & F_DECAL) gfx_decal(b->c, b->h, (int)b->tex, b->scale);
+        else gfx_box(b->c, b->h, b->tex, b->tint, b->scale);
     }
     for (int i = 0; i < L.props.size; i++) {
         const Prop *pr = &L.props.data[i];

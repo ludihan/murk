@@ -1,4 +1,6 @@
 #include "world.h"
+#include "gfx.h"
+#include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,6 +25,19 @@ static void add_box(Level *L, Vector3 c, Vector3 h, TexId tex, Color tint, float
     b3ShapeId s = b3CreateHullShape(body, &sd, &hull.base);
     b3Shape_SetUserData(s, (void *)(uintptr_t)Boxes_size(&L->boxes)); // index + 1
 }
+
+// text scrawled on a wall. axis 0 = wall normal along x, 2 = along z; dir is which way the writing faces
+static void add_decal(Level *L, const char *txt, Vector3 p, int axis, int dir, float hh, Color col) {
+    int id = gfx_text_tex(txt, col);
+    hh *= 1.5f;
+    float hw = hh * gfx_text_aspect(id);
+    Vector3 c = p, h;
+    if (axis == 2) { c.z += dir * 0.03f; h = (Vector3){ hw, hh, 0.001f }; }
+    else           { c.x += dir * 0.03f; h = (Vector3){ 0.001f, hh, hw }; }
+    Box b = { c, h, (TexId)id, WHITE, (float)dir, F_DECAL | F_NOCOLLIDE };
+    Boxes_push(&L->boxes, b);
+}
+static const Color BLOOD = { 150, 22, 18, 255 };
 
 static void add_prop(Level *L, Vector3 c, Vector3 h, TexId tex, Color tint, float density, float gscale) {
     b3BodyDef bd = b3DefaultBodyDef();
@@ -107,6 +122,17 @@ static void build_hub(Level *L, int seed) {
     // stains on the floor
     for (int i = 0; i < 10; i++)
         add_box(L, (Vector3){ frand(-7, 7), 0.01f, frand(-7, 7) }, (Vector3){ frand(0.4f, 1.4f), 0.005f, frand(0.4f, 1.4f) }, TEX_SLUDGE, (Color){ 120, 90, 90, 255 }, 2.0f, F_NOCOLLIDE);
+    // things written on the walls
+    char buf[96];
+    snprintf(buf, sizeof buf, "%s IS STILL ASLEEP", g_user);
+    add_decal(L, buf, (Vector3){ S, 2.3f, -4.5f }, 0, -1, 0.26f, BLOOD);
+    if (g_launches > 1) add_decal(L, "YOU CAME BACK", (Vector3){ -S, 2.1f, 4.2f }, 0, 1, 0.24f, BLOOD);
+    if (g_wakes > 0) {
+        snprintf(buf, sizeof buf, "WOKEN %d TIMES", g_wakes);
+        add_decal(L, buf, (Vector3){ -5.0f, 2.4f, -S }, 2, 1, 0.22f, BLOOD);
+    }
+    if (seed >= 3) add_decal(L, "IT FOLLOWED YOU", (Vector3){ -4.6f, 2.0f, S }, 2, -1, 0.26f, BLOOD);
+    if (seed >= 5) add_decal(L, "DON'T LOOK BEHIND YOU", (Vector3){ 4.2f, 2.5f, S }, 2, -1, 0.22f, BLOOD);
     // visitors: they only move when you aren't looking, and there are more each time you wake
     int visitors = seed >= 3 ? (seed - 1) / 2 : 0;
     if (visitors > 3) visitors = 3;
@@ -173,6 +199,9 @@ static void build_shaft(Level *L) {
         if (k % 2 == 0) {
             // a slick band in the middle: lunge across it
             float m = (y0 + y1) / 2;
+            { static const int ax[4] = { 2, 0, 2, 0 }, dr[4] = { 1, -1, -1, 1 };
+              Vector3 wp = wall_pt(w, 3.25f, m, 0.0f);
+              add_decal(L, "LET GO", wp, ax[w], dr[w], 0.22f, BLOOD); }
             wall_box(L, w, 0.0f, 6.5f, y0, m - 0.7f, 0.25f, TEX_RUST, rust, F_GRIP);
             wall_box(L, w, 0.0f, 6.5f, m + 0.7f, y1, 0.25f, TEX_RUST, rust, F_GRIP);
         } else {
@@ -276,6 +305,23 @@ static void build_drains(Level *L, int seed) {
         if (GetRandomValue(0, 3) == 0)
             add_box(L, (Vector3){ c.x, H - 0.3f, c.z }, (Vector3){ C / 2, 0.16f, 0.16f }, TEX_RUST, (Color){ 120, 120, 110, 255 }, 1.0f, F_NOCOLLIDE);
     }
+    {   // dead ends get a message
+        static const char *DEAD[] = { "IT WAS HERE", "STAY", "DON'T STOP", "TOO LATE", "BEHIND YOU", "IT HEARS YOU" };
+        int placed = 0;
+        for (int i = 1; i < N * N && placed < 7; i++) {
+            int o = L->open[i], cnt = (o & 1) + ((o >> 1) & 1) + ((o >> 2) & 1) + ((o >> 3) & 1);
+            if (cnt != 1 || i == best) continue;
+            int d = -1;
+            for (int k = 0; k < 4; k++) if (!(o & (1 << k))) { d = k; if (GetRandomValue(0, 1)) break; }
+            Vector3 c = CELLC(i);
+            const char *txt = placed == 0 ? g_user : DEAD[GetRandomValue(0, 5)];
+            Vector3 wp = c; wp.y = 1.7f;
+            static const int ax[4] = { 2, 0, 2, 0 }, dr[4] = { 1, -1, -1, 1 };
+            if (d == 0) wp.z -= C / 2 - wt; else if (d == 1) wp.x += C / 2 - wt; else if (d == 2) wp.z += C / 2 - wt; else wp.x -= C / 2 - wt;
+            add_decal(L, txt, wp, ax[d], dr[d], 0.4f, BLOOD);
+            placed++;
+        }
+    }
     L->spawn = CELLC(0); L->spawn.y = 0.05f;
     L->spawnYaw = 90;
     Vector3 pc = CELLC(best); pc.y = 1.1f;
@@ -309,6 +355,8 @@ static void build_void(Level *L, int seed) {
     add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ half, 0.5f, half }, TEX_CONCRETE, (Color){ 150, 130, 170, 255 }, 2.0f, 0);
     L->spawn = (Vector3){ 0, 0.05f, 0 };
     L->spawnYaw = 0;
+    add_box(L, (Vector3){ 0, 2.5f, 5.0f }, (Vector3){ 1.3f, 2.5f, 0.12f }, TEX_CONCRETE, (Color){ 40, 36, 44, 255 }, 2.0f, F_NOCOLLIDE);
+    add_decal(L, "TURN BACK", (Vector3){ 0, 3.0f, 4.88f }, 2, -1, 0.3f, BLOOD);
     const int COUNT = 34;
     for (int i = 1; i <= COUNT; i++) {
         float nh = frand(1.3f, 2.4f);
@@ -352,6 +400,7 @@ static void build_end(Level *L) {
     add_box(L, (Vector3){ 0, 0.35f, -10.5f }, (Vector3){ 1.0f, 0.35f, 1.5f }, TEX_WOOD, (Color){ 220, 200, 190, 255 }, 1.0f, 0);
     add_box(L, (Vector3){ 0, 0.78f, -10.3f }, (Vector3){ 0.92f, 0.1f, 1.3f }, TEX_TILE, (Color){ 240, 230, 230, 255 }, 1.0f, F_NOCOLLIDE);
     add_box(L, (Vector3){ 0, 1.8f, -11.88f }, (Vector3){ 1.0f, 0.8f, 0.05f }, TEX_CONCRETE, (Color){ 255, 255, 250, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_decal(L, "DON'T LIE DOWN", (Vector3){ 0, 2.6f, -12.0f }, 2, 1, 0.28f, BLOOD);
     L->bed = (Vector3){ 0, 0, -9.0f };
 }
 
