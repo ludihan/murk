@@ -45,7 +45,7 @@ Update later with `git pull && docker compose up -d --build`.
 
 ## Continuous deploy (Jenkins)
 
-The `Jenkinsfile` rebuilds and restarts the site (`docker compose -p murk up -d --build`) on every push to `main`.
+The `Jenkinsfile` rebuilds and restarts the site (`docker compose -p murk up -d --build --wait`) on every push to `main`.
 Jenkins runs on the same server and uses the host's Docker through the mounted socket (no SSH, no keys). GitHub's
 push webhook reaches it through the site's own Caddy (`https://murk.ludihan.xyz/github-webhook/`); the Jenkins UI is
 never exposed publicly.

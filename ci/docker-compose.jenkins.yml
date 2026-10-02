@@ -1,8 +1,9 @@
+name: murk-jenkins
+
 services:
   jenkins:
     build: ./jenkins
     restart: unless-stopped
-    user: root
     networks:
       - web
     ports:

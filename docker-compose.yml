@@ -2,6 +2,12 @@ services:
   murk:
     build: .
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2019/config/"]   # Caddy's admin API
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     networks:
       - web                     # shared with Jenkins so Caddy can forward GitHub's webhook to it
     ports:
