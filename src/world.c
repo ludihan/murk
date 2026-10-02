@@ -425,6 +425,9 @@ static void build_drains(Level *L, int seed) {
 }
 
 // ---------------------------------------------------------------- VOID: platforms in nothing
+// support of an axis aligned footprint along a unit direction: how far its edge is from its center
+static float support(float hx, float hz, float dx, float dz) { return hx * fabsf(dx) + hz * fabsf(dz); }
+
 static void build_void(Level *L, int seed) {
     L->name = "THE STEPS";
     L->fog = (Color){ 24, 10, 36, 255 };
@@ -432,31 +435,105 @@ static void build_void(Level *L, int seed) {
     L->light = 1.35f;
     L->killY = -35;
     SetRandomSeed(seed * 104729 + 7);
-    Vector3 p = { 0, 0, 0 };
-    float half = 3.0f, yaw = 0;
-    add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ half, 0.5f, half }, TEX_CONCRETE, (Color){ 150, 130, 170, 255 }, 2.0f, 0);
+    const Color tint = { 150, 130, 170, 255 };
+    Vector3 p = { 0, 0, 0 };           // center of the top surface of the platform we're leaving
+    float phx = 3.0f, phz = 3.0f;      // its half extents
+    float yaw = 0;
+    add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ phx, 0.5f, phz }, TEX_CONCRETE, tint, 2.0f, 0);
     L->spawn = (Vector3){ 0, 0.05f, 0 };
     L->spawnYaw = 0;
     add_box(L, (Vector3){ 0, 2.5f, 5.0f }, (Vector3){ 1.3f, 2.5f, 0.12f }, TEX_CONCRETE, (Color){ 40, 36, 44, 255 }, 2.0f, F_NOCOLLIDE);
     add_decal(L, "TURN BACK", (Vector3){ 0, 3.0f, 4.88f }, 2, -1, 0.3f, BLOOD);
-    const int COUNT = 34;
+    const int COUNT = 30;
+    int last = -1;
     for (int i = 1; i <= COUNT; i++) {
-        float nh = frand(1.3f, 2.4f);
-        if (i == COUNT) nh = 3.0f;
         yaw += frand(-0.55f, 0.55f) + 0.07f;
-        float gap = frand(1.4f, 3.1f);
-        float dist = half + nh + gap;
-        float dy = frand(-0.3f, 1.0f);
-        p.x += sinf(yaw) * dist; p.z -= cosf(yaw) * dist; p.y += dy;
+        float dx = sinf(yaw), dz = -cosf(yaw);
+        float gap = frand(1.4f, 3.0f);
+        int type = (i == COUNT) ? 0 : GetRandomValue(0, 9);
+        if (type == last && type != 0) type = 0;
+        last = type;
         TexId tx = (i % 5 == 0) ? TEX_FLESH : (i % 3 == 0) ? TEX_RUST : TEX_CONCRETE;
-        add_box(L, (Vector3){ p.x, p.y - 0.5f, p.z }, (Vector3){ nh, 0.5f, nh }, tx, (Color){ 150, 130, 170, 255 }, 2.0f, 0);
-        // spires hanging under the islands, unreachable decoration
-        add_box(L, (Vector3){ p.x, p.y - 4.0f, p.z }, (Vector3){ nh * 0.25f, 3.2f, nh * 0.25f }, TEX_CONCRETE, (Color){ 90, 70, 110, 255 }, 2.0f, F_NOCOLLIDE);
-        half = nh;
+        float nhx, nhz;
+        Vector3 c;
+        switch (type) {
+        case 4: case 5: {   // a beam: long, narrow, dead straight
+            bool alongX = fabsf(dx) > fabsf(dz);
+            float hl = frand(3.0f, 5.0f), hw = 0.55f;
+            nhx = alongX ? hl : hw; nhz = alongX ? hw : hl;
+            float d = support(phx, phz, dx, dz) + support(nhx, nhz, dx, dz) + gap;
+            c = (Vector3){ p.x + dx * d, p.y + frand(-0.2f, 0.6f), p.z + dz * d };
+            add_box(L, (Vector3){ c.x, c.y - 0.4f, c.z }, (Vector3){ nhx, 0.4f, nhz }, TEX_RUST, (Color){ 140, 120, 150, 255 }, 2.0f, 0);
+            break;
+        }
+        case 6: {           // stepping stones: three little islands
+            float cx = p.x, cz = p.z, cy = p.y;
+            float hx0 = phx, hz0 = phz;
+            for (int k = 0; k < 3; k++) {
+                float hs = 0.95f, d = support(hx0, hz0, dx, dz) + support(hs, hs, dx, dz) + frand(1.3f, 2.2f);
+                cx += dx * d + frand(-0.5f, 0.5f); cz += dz * d + frand(-0.5f, 0.5f); cy += frand(-0.3f, 0.5f);
+                add_box(L, (Vector3){ cx, cy - 0.4f, cz }, (Vector3){ hs, 0.4f, hs }, TEX_FLESH, tint, 1.5f, 0);
+                hx0 = hz0 = hs;
+            }
+            c = (Vector3){ cx, cy, cz }; nhx = nhz = 0.95f;
+            break;
+        }
+        case 7: {           // a ruin: pillars and a lintel to pass under
+            float nh = 2.6f;
+            nhx = nhz = nh;
+            float d = support(phx, phz, dx, dz) + support(nh, nh, dx, dz) + gap;
+            c = (Vector3){ p.x + dx * d, p.y + frand(0.0f, 0.8f), p.z + dz * d };
+            add_box(L, (Vector3){ c.x, c.y - 0.5f, c.z }, (Vector3){ nh, 0.5f, nh }, TEX_CONCRETE, tint, 2.0f, 0);
+            add_box(L, (Vector3){ c.x - nh + 0.5f, c.y + 1.8f, c.z }, (Vector3){ 0.4f, 1.8f, 0.4f }, TEX_CONCRETE, (Color){ 120, 105, 135, 255 }, 1.5f, 0);
+            add_box(L, (Vector3){ c.x + nh - 0.5f, c.y + 1.8f, c.z }, (Vector3){ 0.4f, 1.8f, 0.4f }, TEX_CONCRETE, (Color){ 120, 105, 135, 255 }, 1.5f, 0);
+            add_box(L, (Vector3){ c.x, c.y + 3.8f, c.z }, (Vector3){ nh, 0.25f, 0.5f }, TEX_CONCRETE, (Color){ 120, 105, 135, 255 }, 1.5f, 0);
+            break;
+        }
+        case 8: {           // a tower: a landing, then a column you grip your way up, then a tiny summit
+            float nh = 2.0f;
+            float d = support(phx, phz, dx, dz) + support(nh, nh, dx, dz) + gap;
+            Vector3 land = { p.x + dx * d, p.y + frand(-0.2f, 0.5f), p.z + dz * d };
+            add_box(L, (Vector3){ land.x, land.y - 0.5f, land.z }, (Vector3){ nh, 0.5f, nh }, TEX_CONCRETE, tint, 2.0f, 0);
+            float hgt = frand(5.0f, 7.5f), ch = 1.0f;
+            // the column sits flush with the far edge of the landing
+            Vector3 cc = { land.x + dx * (nh + ch), land.y + hgt / 2, land.z + dz * (nh + ch) };
+            add_box(L, cc, (Vector3){ ch, hgt / 2, ch }, TEX_CONCRETE, (Color){ 110, 100, 130, 255 }, 2.0f, 0);
+            // grip plates on the face toward the landing and the two sides
+            Vector3 n = { -dx, 0, -dz };
+            bool faceX = fabsf(dx) > fabsf(dz);
+            float sgn = faceX ? (dx > 0 ? 1 : -1) : (dz > 0 ? 1 : -1);
+            if (faceX) {
+                add_box(L, (Vector3){ cc.x - sgn * (ch + 0.125f), land.y + 0.5f + (hgt - 0.7f) / 2, cc.z }, (Vector3){ 0.125f, (hgt - 0.7f) / 2, ch }, TEX_RUST, (Color){ 235, 205, 180, 255 }, 2.0f, F_GRIP);
+                add_box(L, (Vector3){ cc.x, land.y + 0.5f + (hgt - 0.7f) / 2, cc.z - ch - 0.125f }, (Vector3){ ch, (hgt - 0.7f) / 2, 0.125f }, TEX_RUST, (Color){ 235, 205, 180, 255 }, 2.0f, F_GRIP);
+                add_box(L, (Vector3){ cc.x, land.y + 0.5f + (hgt - 0.7f) / 2, cc.z + ch + 0.125f }, (Vector3){ ch, (hgt - 0.7f) / 2, 0.125f }, TEX_RUST, (Color){ 235, 205, 180, 255 }, 2.0f, F_GRIP);
+            } else {
+                add_box(L, (Vector3){ cc.x, land.y + 0.5f + (hgt - 0.7f) / 2, cc.z - sgn * (ch + 0.125f) }, (Vector3){ ch, (hgt - 0.7f) / 2, 0.125f }, TEX_RUST, (Color){ 235, 205, 180, 255 }, 2.0f, F_GRIP);
+                add_box(L, (Vector3){ cc.x - ch - 0.125f, land.y + 0.5f + (hgt - 0.7f) / 2, cc.z }, (Vector3){ 0.125f, (hgt - 0.7f) / 2, ch }, TEX_RUST, (Color){ 235, 205, 180, 255 }, 2.0f, F_GRIP);
+                add_box(L, (Vector3){ cc.x + ch + 0.125f, land.y + 0.5f + (hgt - 0.7f) / 2, cc.z }, (Vector3){ 0.125f, (hgt - 0.7f) / 2, ch }, TEX_RUST, (Color){ 235, 205, 180, 255 }, 2.0f, F_GRIP);
+            }
+            (void)n;
+            c = (Vector3){ cc.x, land.y + hgt, cc.z }; nhx = nhz = ch;
+            break;
+        }
+        default: {          // an island
+            float nh = (i == COUNT) ? 3.0f : frand(1.3f, 2.4f);
+            nhx = nhz = nh;
+            float d = support(phx, phz, dx, dz) + support(nh, nh, dx, dz) + gap;
+            c = (Vector3){ p.x + dx * d, p.y + frand(-0.3f, 1.0f), p.z + dz * d };
+            add_box(L, (Vector3){ c.x, c.y - 0.5f, c.z }, (Vector3){ nh, 0.5f, nh }, tx, tint, 2.0f, 0);
+            break;
+        }
+        }
+        // spires hanging under it, unreachable decoration
+        add_box(L, (Vector3){ c.x, c.y - 4.0f, c.z }, (Vector3){ fmaxf(nhx, nhz) * 0.25f, 3.2f, fmaxf(nhx, nhz) * 0.25f }, TEX_CONCRETE, (Color){ 90, 70, 110, 255 }, 2.0f, F_NOCOLLIDE);
+        p = c; phx = nhx; phz = nhz;
         // drifting rubble, simulated but weightless
         if (i % 2 == 0)
             add_prop(L, (Vector3){ p.x + frand(-6, 6), p.y + frand(1, 6), p.z + frand(-6, 6) }, (Vector3){ frand(0.3f, 0.9f), frand(0.3f, 0.9f), frand(0.3f, 0.9f) },
                      TEX_FLESH, (Color){ 170, 140, 170, 255 }, 40, 0.0f);
+        if (i == 12) {
+            add_box(L, (Vector3){ p.x - dz * 3.5f, p.y + 2.0f, p.z + dx * 3.5f }, (Vector3){ 1.0f, 2.0f, 0.1f }, TEX_CONCRETE, (Color){ 40, 36, 44, 255 }, 2.0f, F_NOCOLLIDE);
+        }
     }
     for (int i = 0; i < L->props.size; i++) {
         b3Body_SetAngularVelocity(L->props.data[i].body, (b3Vec3){ frand(-.6f, .6f), frand(-.6f, .6f), frand(-.6f, .6f) });
