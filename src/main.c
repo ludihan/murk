@@ -34,6 +34,7 @@ static float madness, tension, flash, lampOn, nameT, stepDist, endT;
 static float blackout, nextBlackout = 25, glitch;
 static float freezeT, nextFreeze = 70, pullT, pullYaw, phantomT = 15, stepGap, titleT;
 static int phantomLeft;
+static float sens = 0.085f;   // degrees per mouse count; [ and ] change it
 static float stareT, nextEvent = 30, eyesOpenT, eyeBoost;
 static bool gardenCaught;
 
@@ -57,18 +58,24 @@ static const char *FX_DESC[FX_COUNT] = {
 // the game keeps a tiny file about you
 static void save_memory(void) {
 #ifdef __EMSCRIPTEN__
-    web_save_int("murk.launches", g_launches); web_save_int("murk.wakes", g_wakes);
+    web_save_int("murk.launches", g_launches); web_save_int("murk.wakes", g_wakes); web_save_int("murk.sens", (int)(sens * 10000));
 #else
     FILE *f = fopen("murk.sav", "w");
-    if (f) { fprintf(f, "%d %d\n", g_launches, g_wakes); fclose(f); }
+    if (f) { fprintf(f, "%d %d %d\n", g_launches, g_wakes, (int)(sens * 10000)); fclose(f); }
 #endif
 }
 static void load_memory(void) {
 #ifdef __EMSCRIPTEN__
     g_launches = web_load_int("murk.launches"); g_wakes = web_load_int("murk.wakes");
+    { int sv = web_load_int("murk.sens"); if (sv >= 100 && sv <= 5000) sens = sv / 10000.0f; }
 #else
     FILE *f = fopen("murk.sav", "r");
-    if (f) { if (fscanf(f, "%d %d", &g_launches, &g_wakes) != 2) g_launches = g_wakes = 0; fclose(f); }
+    if (f) {
+        int sv = 0, n = fscanf(f, "%d %d %d", &g_launches, &g_wakes, &sv);
+        if (n < 2) g_launches = g_wakes = 0;
+        if (n == 3 && sv >= 100 && sv <= 5000) sens = sv / 10000.0f;
+        fclose(f);
+    }
     const char *u = getenv("USER");
     if (u && *u) { snprintf(g_user, sizeof g_user, "%s", u); for (char *c = g_user; *c; c++) if (*c >= 'a' && *c <= 'z') *c -= 32; }
 #endif
@@ -592,6 +599,13 @@ static void frame(void) {
         }
         if (titleT > 0) { titleT -= frameDt; if (titleT <= 0) SetWindowTitle("MURK"); }
 
+        if (state != S_ENDING && (IsKeyPressed(KEY_LEFT_BRACKET) || IsKeyPressed(KEY_RIGHT_BRACKET) || IsKeyPressed(KEY_MINUS) || IsKeyPressed(KEY_EQUAL))) {
+            bool up = IsKeyPressed(KEY_RIGHT_BRACKET) || IsKeyPressed(KEY_EQUAL);
+            sens = Clamp(sens * (up ? 1.2f : 1.0f / 1.2f), 0.01f, 0.5f);
+            save_memory();
+            char b[64]; snprintf(b, sizeof b, "mouse sensitivity %.0f%%  ( [ lower   ] higher )", sens / 0.085f * 100.0f);
+            say(b, 2.5f);
+        }
         if (state == S_TITLE) {
             audio_set(0.8f, 0.0f, 0.0f, 0.6f); audio_music(0.55f, 0.0f);
             if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) new_game();
@@ -599,7 +613,7 @@ static void frame(void) {
             const float DT = 1.0f / 120.0f;
             if (!tr.on || tr.t > 0.6f) {
                 Vector2 md = GetMouseDelta();
-                if (shotWorld < 0) { P.yaw += md.x * 0.085f; P.pitch -= md.y * 0.085f; }
+                if (shotWorld < 0) { P.yaw += md.x * sens; P.pitch -= md.y * sens; }
                 if (P.pitch > 88) P.pitch = 88;
                 if (P.pitch < -88) P.pitch = -88;
             }
@@ -739,8 +753,9 @@ static void frame(void) {
             char memo[96] = "";
             if (g_launches >= 6) snprintf(memo, sizeof memo, "it kept your place, %s.", g_user);
             else if (g_launches >= 2) snprintf(memo, sizeof memo, "you came back, %s.", g_user);
+            if (msgT > 0) text_c(msg, 172, 10, (Color){ 210, 200, 180, (unsigned char)(fminf(1.0f, msgT) * 255) });
             if (memo[0]) text_c(memo, 156, 10, (Color){ 130, 40, 34, (unsigned char)(150 + 60 * sinf(time * 2.0f)) });
-            text_c("WASD · SHIFT · SPACE · hold LMB to grip · F lamp · R wake up", RT_H - 18, 10, (Color){ 90, 85, 75, 255 });
+            text_c("WASD · SHIFT · SPACE · hold LMB to grip · F lamp · R wake up · [ ] mouse sensitivity", RT_H - 18, 10, (Color){ 90, 85, 75, 255 });
         } else {
             Vector3 eye = player_eye(&P), fwd = player_forward(&P);
             Camera3D cam = { 0 };

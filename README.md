@@ -45,7 +45,7 @@ Update later with `git pull && docker compose up -d --build`.
 
 ## Controls
 WASD move · Shift run · Space jump · **hold LMB at rusty plates to grip** (W climb, A/D shuffle,
-Space lunge/kick off) · hold Space in the air to glide (feather) · F lamp (once found) · R wake up · Esc quit
+Space lunge/kick off) · [ ] mouse sensitivity (remembered) · hold Space in the air to glide (feather) · F lamp (once found) · R wake up · Esc quit
 
 ## Layout
 - `src/gfx.c`    procedural grime textures, fog/object shader, low-res render target + CRT/VHS post pass (raylib)
