@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>MURK</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; outline: none; cursor: none; }
+  #boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column;
+          color: #6a6458; font: 14px/1.6 monospace; letter-spacing: .2em; background: #000; z-index: 2; transition: opacity 1.2s; }
+  #boot.gone { opacity: 0; pointer-events: none; }
+  #boot b { color: #b9ad90; font-size: 28px; letter-spacing: .6em; font-weight: normal; margin-bottom: 1em; }
+  #warn { position: fixed; bottom: 12px; width: 100%; text-align: center; color: #3b372f; font: 11px monospace; z-index: 3; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="boot"><b>MURK</b><span id="status">waking up...</span></div>
+<canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+<div id="warn">headphones. dark room. click to begin. esc lets go of the mouse.</div>
+<script>
+  var statusEl = document.getElementById('status'), boot = document.getElementById('boot');
+  var Module = {
+    canvas: (function () {
+      var c = document.getElementById('canvas');
+      c.addEventListener('webglcontextlost', function (e) { alert('WebGL context lost. Reload the page.'); e.preventDefault(); }, false);
+      return c;
+    })(),
+    print: function (t) { console.log(t); },
+    printErr: function (t) { console.warn(t); },
+    setStatus: function (t) { if (t) statusEl.textContent = t.toLowerCase(); else setTimeout(function () { boot.classList.add('gone'); }, 400); },
+    onAbort: function () { statusEl.textContent = 'it stopped. reload.'; boot.classList.remove('gone'); }
+  };
+  window.addEventListener('click', function () { document.getElementById('canvas').focus(); });
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

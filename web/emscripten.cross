@@ -1,0 +1,15 @@
+# meson setup build-web --cross-file web/emscripten.cross   (with emsdk_env.sh sourced)
+[binaries]
+c = 'emcc'
+cpp = 'em++'
+ar = 'emar'
+ranlib = 'emranlib'
+strip = 'emstrip'
+cmake = 'cmake'
+pkg-config = 'false'
+
+[host_machine]
+system = 'emscripten'
+cpu_family = 'wasm32'
+cpu = 'wasm32'
+endian = 'little'
