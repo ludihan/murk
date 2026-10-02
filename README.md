@@ -33,13 +33,15 @@ nginx (HTTPS recommended; browsers are stricter with audio and mouse capture on 
 In the browser the game asks for a name once and keeps your launches and wake-ups in `localStorage`
 (the native build uses `$USER` and a `murk.sav` file). Click to start; Esc releases the mouse, click to take it back.
 
-## Docker (murk.ludihan.xyz next to an existing site)
+## Docker (murk.ludihan.xyz on its own VPS)
 
-    docker compose up -d --build          # builds the wasm in a container, serves it on 127.0.0.1:8081
+Point an `A` record for `murk` at the VPS (the apex domain can stay wherever it is), open ports 80 and 443, then:
 
-Then add `web/murk.ludihan.xyz.nginx` as a second nginx server block on the VPS (it proxies the subdomain
-to that port and leaves `ludihan.xyz` alone), point an `A` record for `murk` at the VPS, and run
-`certbot --nginx -d murk.ludihan.xyz` for HTTPS. Update later with `git pull && docker compose up -d --build`.
+    docker compose up -d --build
+
+Caddy inside the container serves the game and fetches the HTTPS certificate for `murk.ludihan.xyz` by itself
+(browsers need HTTPS for mouse capture and audio). To use another name, edit `web/Caddyfile`.
+Update later with `git pull && docker compose up -d --build`.
 
 ## Controls
 WASD move · Shift run · Space jump · **hold LMB at rusty plates to grip** (W climb, A/D shuffle,

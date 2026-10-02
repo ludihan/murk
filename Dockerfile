@@ -9,8 +9,8 @@ COPY . .
 ENV EMSDK=/emsdk
 RUN sh web/build.sh
 
-# Stage 2: serve the three static files (index.html, murk.js, murk.wasm) with nginx
-FROM nginx:1.27-alpine
-COPY web/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /src/dist/ /usr/share/nginx/html/
-EXPOSE 80
+# Stage 2: serve the three static files (index.html, murk.js, murk.wasm) with Caddy, which also handles HTTPS
+FROM caddy:2-alpine
+COPY web/Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /src/dist/ /srv/
+EXPOSE 80 443

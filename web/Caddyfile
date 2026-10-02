@@ -1,0 +1,7 @@
+# Caddy gets and renews the HTTPS certificate for this name by itself.
+murk.ludihan.xyz {
+	root * /srv
+	encode gzip
+	file_server
+	header Cache-Control "no-cache"
+}
