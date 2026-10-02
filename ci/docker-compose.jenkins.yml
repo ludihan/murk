@@ -1,0 +1,20 @@
+services:
+  jenkins:
+    build: ./jenkins
+    restart: unless-stopped
+    user: root
+    networks:
+      - web
+    ports:
+      - "127.0.0.1:8080:8080"   # not public: reach it via an SSH tunnel or a reverse proxy with auth
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  jenkins_home:
+
+networks:
+  web:
+    name: murk-web
+    external: true              # created once: docker network create murk-web
