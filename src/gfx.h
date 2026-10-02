@@ -1,5 +1,6 @@
 #pragma once
 #include "common.h"
+#include "world.h"
 
 void gfx_init(void);
 void gfx_shutdown(void);
@@ -24,5 +25,14 @@ float gfx_text_aspect(int id);
 void gfx_decal(Vector3 c, Vector3 h, int id, float dir);
 // final pass: low-res target -> window with the nasty post shader
 void gfx_present(float time, float madness, float fade, float flash, float glitch);
+
+// additive glow: soft billboard blobs (bulbs, doors, eyes). bracket with begin/end
+void gfx_begin_glow(void);
+void gfx_halo(Vector3 p, float size, Color col, float intensity);
+void gfx_end_glow(void);
+// sky dome (gradient, stars, aurora, moon, the eye). draw first, after gfx_begin_scene
+void gfx_sky(const Sky *sk, float time, Vector3 playerPos);
+// colour grade of the post pass: 128 = neutral
+void gfx_grade(Color lo, Color hi);
 
 extern RenderTexture2D gfx_rt;

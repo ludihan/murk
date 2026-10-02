@@ -8,7 +8,7 @@
 // ---- shared types -------------------------------------------------------
 
 typedef enum {
-    TEX_CONCRETE, TEX_RUST, TEX_TILE, TEX_FLESH, TEX_SLUDGE, TEX_WOOD, TEX_STATIC, TEX_COUNT
+    TEX_CONCRETE, TEX_RUST, TEX_TILE, TEX_FLESH, TEX_SLUDGE, TEX_WOOD, TEX_STATIC, TEX_GRASS, TEX_MOSAIC, TEX_EYES, TEX_WATER, TEX_COUNT
 } TexId;
 
 enum { F_GRIP = 1, F_EMIT = 2, F_NOCOLLIDE = 4, F_DECAL = 8 };
@@ -21,13 +21,15 @@ typedef struct Box {
     uint8_t flags;
 } Box;
 
-typedef enum { FX_LAMP, FX_GLOVES, FX_BOOTS, FX_COUNT } EffectId;
+typedef enum { FX_LAMP, FX_GLOVES, FX_BOOTS, FX_FEATHER, FX_COUNT } EffectId;
+#define FX_ALL ((1 << FX_COUNT) - 1)
 
 typedef struct Pickup  { Vector3 pos; EffectId fx; bool taken; } Pickup;
-typedef enum { W_HUB, W_SHAFT, W_DRAINS, W_VOID, W_END, W_COUNT } WorldId;
+typedef enum { W_HUB, W_SHAFT, W_DRAINS, W_VOID, W_GARDEN, W_END, W_COUNT } WorldId;
 typedef struct Portal  { Vector3 pos; float radius; WorldId to; int needs; Color col; const char *label; } Portal;
 typedef struct Watcher { Vector3 pos; float phase; bool seen; } Watcher;
 typedef struct Mote    { Vector3 pos, vel; float life; } Mote;
+typedef struct Bloom   { Vector3 pos; Color col; float size, yaw; } Bloom;   // a flower that watches you
 typedef struct Prop    { b3BodyId body; Vector3 h; TexId tex; Color tint; } Prop;
 
 #define i_type Boxes,    Box
@@ -39,6 +41,8 @@ typedef struct Prop    { b3BodyId body; Vector3 h; TexId tex; Color tint; } Prop
 #define i_type Watchers, Watcher
 #include <stc/vec.h>
 #define i_type Motes,    Mote
+#include <stc/vec.h>
+#define i_type Blooms,   Bloom
 #include <stc/vec.h>
 #define i_type Props,    Prop
 #include <stc/vec.h>

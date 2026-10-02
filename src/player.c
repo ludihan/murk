@@ -81,11 +81,12 @@ Input input_read(void) {
     in.mz = (IsKeyDown(KEY_W) ? 1 : 0) - (IsKeyDown(KEY_S) ? 1 : 0);
     in.sprint = IsKeyDown(KEY_LEFT_SHIFT);
     in.grip = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+    in.glide = IsKeyDown(KEY_SPACE);
     return in;
 }
 
 void player_update(Player *p, Level *L, const Input *in, float dt) {
-    const bool gloves = p->fx & (1u << FX_GLOVES), boots = p->fx & (1u << FX_BOOTS);
+    const bool gloves = p->fx & (1u << FX_GLOVES), boots = p->fx & (1u << FX_BOOTS), feather = p->fx & (1u << FX_FEATHER);
     float yaw = p->yaw * DEG2RAD;
     Vector3 fwd = { sinf(yaw), 0, -cosf(yaw) }, right = { cosf(yaw), 0, sinf(yaw) };
     float mx = in->mx, mz = in->mz;
@@ -162,15 +163,17 @@ void player_update(Player *p, Level *L, const Input *in, float dt) {
         }
     } else {
         // ---- walking / falling
-        float speed = sprint ? 6.0f : 3.6f;
+        float speed = (sprint ? 6.0f : 3.6f) * (p->gliding ? 1.35f : 1.0f);
         Vector3 wish = Vector3Add(Vector3Scale(right, mx), Vector3Scale(fwd, mz));
         if (Vector3Length(wish) > 1) wish = Vector3Normalize(wish);
-        float k = p->grounded ? 14.0f : 2.2f;
+        p->gliding = feather && in->glide && !p->grounded && p->vel.y < 1.0f && p->jumpBuf <= 0;
+        float k = p->grounded ? 14.0f : p->gliding ? 5.0f : 2.2f;
         float a = 1.0f - expf(-k * dt);
         p->vel.x += (wish.x * speed - p->vel.x) * a;
         p->vel.z += (wish.z * speed - p->vel.z) * a;
         if (p->grounded && p->vel.y < 0) p->vel.y = -1.0f;   // stick to the floor instead of accumulating fall speed
         else p->vel.y -= 20.0f * dt;
+        if (p->gliding && p->vel.y < -2.0f) p->vel.y += (-2.0f - p->vel.y) * fminf(1.0f, dt * 9.0f);   // the feather catches the air
         if (p->vel.y < -45) p->vel.y = -45;
         if (jumpPressed) {
             if (p->coyote > 0) { p->vel.y = 7.4f; p->coyote = 0; p->grounded = false; p->jumpBuf = 0; p->jumped = true; }

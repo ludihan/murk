@@ -5,3 +5,4 @@ void audio_shutdown(void);
 void audio_set(float tone, float tension, float whisper, float volume); // drone pitch, heartbeat/dread 0..1, master
 void audio_play(Sfx s);
 void audio_play_ex(Sfx s, float vol, float pitch);
+void audio_music(float amount, float sour); // music box volume 0..1, how out of tune it is 0..1

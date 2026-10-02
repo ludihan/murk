@@ -14,6 +14,10 @@ static uint32_t decalCol[MAX_DECAL];
 static int decalN;
 static Texture2D tex[TEX_COUNT];
 static Shader obj, post;
+static Texture2D haloTex, moonTex, scleraTex, irisTex;
+static Vector3 camPos, camR, camU, camF;
+static Color gradeLo = { 128, 128, 128, 255 }, gradeHi = { 128, 128, 128, 255 };
+static int p_glo, p_ghi;
 static int u_fog, u_dens, u_flick, u_emit;
 static int p_time, p_mad, p_fade, p_flash, p_res, p_glitch;
 
@@ -108,6 +112,46 @@ static Color texel(TexId id, int x, int y) {
         if (((x + plank * 37) % 128) == 0) c = shade(c, 0.4f);
         return shade(c, 0.9f + 0.2f * grain);
     }
+    case TEX_GRASS: {
+        Color c = mix((Color){10, 38, 36, 255}, (Color){34, 96, 78, 255}, n);
+        float blade = vnoise(u * 48, v * 6, 48, 91);
+        c = shade(c, 0.7f + 0.7f * blade);
+        if (grain > 0.992f) c = mix(c, (Color){255, 170, 220, 255}, 0.9f);       // pollen / tiny flowers
+        else if (grain < 0.004f) c = mix(c, (Color){150, 240, 255, 255}, 0.9f);
+        return shade(c, 0.9f + 0.2f * grain);
+    }
+    case TEX_MOSAIC: {
+        static const Color PAL[6] = { { 140, 30, 80, 255 }, { 30, 90, 130, 255 }, { 220, 170, 60, 255 }, { 50, 140, 110, 255 }, { 100, 50, 150, 255 }, { 220, 90, 60, 255 } };
+        int a = (x + y) / 16, b = (x - y + 128) / 16;
+        Color c = PAL[hash2(a, b, 5) % 6];
+        int fa = (x + y) % 16, fb = (x - y + 128) % 16;
+        if (fa < 1 || fb < 1) c = (Color){ 24, 18, 26, 255 };
+        else if (fa > 6 && fa < 9 && fb > 6 && fb < 9) c = shade(c, 1.5f);   // a gem in each tile
+        c = shade(c, 0.75f + 0.5f * n);
+        return shade(c, 0.9f + 0.2f * grain);
+    }
+    case TEX_EYES: {
+        // wallpaper of closed-lidded eyes in rows. some of them are open.
+        int cx = x % 32, cy = y % 32, row = y / 32, col = (x + (row & 1) * 16) / 32;
+        float dx = ((x + (row & 1) * 16) % 32) - 16.0f, dy = cy - 16.0f;
+        Color c = mix((Color){ 54, 14, 30, 255 }, (Color){ 96, 26, 52, 255 }, n);
+        if (((cx + cy) % 16) < 1) c = shade(c, 0.6f);                              // damask lattice
+        float e = (dx * dx) / (11.0f * 11.0f) + (dy * dy) / (5.0f * 5.0f);
+        bool open = hash2(col, row, 77) % 3 == 0;
+        if (e < 1.0f) {
+            c = open ? (Color){ 226, 214, 176, 255 } : (Color){ 20, 6, 14, 255 };
+            if (open && dx * dx + dy * dy < 14) c = (Color){ 12, 4, 6, 255 };
+            else if (open && dx * dx + dy * dy < 30) c = (Color){ 190, 60, 40, 255 };
+        } else if (e < 1.35f) c = (Color){ 18, 6, 10, 255 };
+        return shade(c, 0.85f + 0.3f * grain);
+        (void)cx;
+    }
+    case TEX_WATER: {
+        Color c = mix((Color){ 6, 14, 40, 255 }, (Color){ 24, 60, 100, 255 }, n);
+        float k = fabsf(fbm(u, v, 4, 140) - 0.5f), k2 = fabsf(fbm(v, u, 6, 150) - 0.5f);
+        if (k < 0.03f || k2 < 0.025f) c = mix(c, (Color){ 140, 230, 255, 255 }, 0.8f);
+        return shade(c, 0.9f + 0.2f * grain);
+    }
     default: {
         uint8_t g = (uint8_t)(rnd(x, y, 1000) * 255);
         return (Color){ g, g, g, 255 };
@@ -146,19 +190,22 @@ GLSL_HEAD
 "uniform sampler2D texture0; uniform vec4 colDiffuse;\n"
 "uniform vec3 fogColor; uniform float fogDensity; uniform float flicker; uniform float emit;\n"
 "void main(){\n"
-"  vec4 t = texture(texture0, fragTexCoord) * fragColor * colDiffuse;\n"
-"  if (t.a < 0.3) discard;\n"
+"  vec4 tx = texture(texture0, fragTexCoord);\n"
+"  if (tx.a < 0.3) discard;\n"
+"  vec4 t = tx * fragColor * colDiffuse;\n"
 "  float d = 1.0/gl_FragCoord.w;\n"
 "  float f = 1.0 - exp(-pow(d*fogDensity, 1.5));\n"
-"  vec3 lit = mix(t.rgb * flicker * 2.3, fragColor.rgb * colDiffuse.rgb, emit);\n"
-"  vec3 col = mix(lit, fogColor, clamp(f,0.0,1.0)*(1.0-emit));\n"
-"  finalColor = vec4(col, 1.0); }\n";
+"  float e = min(emit, 1.0); float te = step(1.5, emit);\n"
+"  vec3 flat_ = fragColor.rgb * colDiffuse.rgb * mix(vec3(1.0), tx.rgb, te);\n"
+"  vec3 lit = mix(t.rgb * flicker * 2.3, flat_, e);\n"
+"  vec3 col = mix(lit, fogColor, clamp(f,0.0,1.0)*(1.0-e));\n"
+"  finalColor = vec4(col, mix(1.0, fragColor.a * colDiffuse.a, e)); }\n";
 
 static const char *POST_FS =
 GLSL_HEAD
 "in vec2 fragTexCoord; out vec4 finalColor;\n"
 "uniform sampler2D texture0;\n"
-"uniform float time; uniform float madness; uniform float fade; uniform float flash; uniform float glitch; uniform vec2 res;\n"
+"uniform float time; uniform float madness; uniform float fade; uniform float flash; uniform float glitch; uniform vec2 res; uniform vec3 gLo; uniform vec3 gHi;\n"
 "float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }\n"
 "void main(){\n"
 "  vec2 uv = fragTexCoord; vec2 c = uv - 0.5; float r2 = dot(c,c);\n"
@@ -169,7 +216,12 @@ GLSL_HEAD
 "  if (gr < glitch*0.55) uv.x += (gr-0.25)*0.25*glitch;\n"
 "  float ca = 0.0012 + madness*0.008 + glitch*0.02;\n"
 "  vec3 col = vec3(texture(texture0, uv+vec2(ca,0)).r, texture(texture0, uv).g, texture(texture0, uv-vec2(ca,0)).b);\n"
+"  vec3 bl = vec3(0.0);\n"
+"  for (int i = 0; i < 10; i++) { float a = float(i) * 0.6283; vec2 o = vec2(cos(a), sin(a));\n"
+"    bl += max(texture(texture0, uv + o*3.0/res).rgb - 0.5, 0.0) + max(texture(texture0, uv + o*8.0/res).rgb - 0.5, 0.0) * 0.8; }\n"
+"  col += bl * 0.11;\n"
 "  float lum = dot(col, vec3(0.3,0.5,0.2));\n"
+"  col *= mix(gLo, gHi, smoothstep(0.0, 0.7, lum));\n"
 "  col = mix(vec3(lum)*vec3(1.0,1.05,0.85), col, 1.0 - 0.45*madness);\n"
 "  col += (hash(uv*res + fract(time)*91.0) - 0.5) * 0.13;\n"
 "  col *= 0.93 + 0.07*sin(uv.y*res.y*3.14159);\n"
@@ -181,6 +233,59 @@ GLSL_HEAD
 "  col = mix(col, 1.0-col, step(0.9, hash(vec2(floor(time*18.0), 7.0)))*glitch);\n"
 "  col *= (1.0 - fade);\n"
 "  finalColor = vec4(col, 1.0); }\n";
+
+static Texture2D sprite(int w, int h, Color (*fn)(int, int, int, int)) {
+    Color *px = malloc(w * h * sizeof(Color));
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) px[y * w + x] = fn(x, y, w, h);
+    Image img = { px, w, h, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 };
+    Texture2D t = LoadTextureFromImage(img);
+    free(px);
+    SetTextureFilter(t, TEXTURE_FILTER_BILINEAR);
+    SetTextureWrap(t, TEXTURE_WRAP_CLAMP);
+    return t;
+}
+static Color sp_halo(int x, int y, int w, int h) {
+    float dx = (x + 0.5f) / w * 2 - 1, dy = (y + 0.5f) / h * 2 - 1, r = sqrtf(dx * dx + dy * dy);
+    float k = r >= 1 ? 0 : powf(1 - r, 2.4f);
+    uint8_t g = (uint8_t)(k * 255);
+    return (Color){ g, g, g, 255 };
+}
+static Color sp_moon(int x, int y, int w, int h) {
+    float dx = (x + 0.5f) / w * 2 - 1, dy = (y + 0.5f) / h * 2 - 1, r = sqrtf(dx * dx + dy * dy);
+    if (r > 1) return (Color){ 0, 0, 0, 0 };
+    float n = fbm((x + 0.5f) / w, (y + 0.5f) / h, 4, 600);
+    float c = powf(vnoise(x * 0.18f, y * 0.18f, 64, 33), 2.0f);
+    float k = 0.78f + 0.3f * n - 0.35f * c - 0.25f * powf(r, 3.0f);
+    float lit = 0.6f + 0.4f * (-dx * 0.6f - dy * 0.4f + 0.5f);          // terminator
+    k *= lit;
+    return (Color){ (uint8_t)fminf(255, 250 * k), (uint8_t)fminf(255, 240 * k), (uint8_t)fminf(255, 222 * k), 255 };
+}
+static Color sp_sclera(int x, int y, int w, int h) {
+    float dx = (x + 0.5f) / w * 2 - 1, dy = (y + 0.5f) / h * 2 - 1;
+    float lid = 1.0f - dx * dx;                                  // almond: height shrinks toward the corners
+    if (lid <= 0 || fabsf(dy) > lid) return (Color){ 0, 0, 0, 0 };
+    float e = fabsf(dy) / lid;
+    Color c = mix((Color){ 232, 214, 190, 255 }, (Color){ 150, 40, 44, 255 }, powf(e, 3.0f));
+    float vein = fabsf(fbm((x + 0.5f) / w, (y + 0.5f) / h, 6, 710) - 0.5f);
+    if (vein < 0.03f) c = mix(c, (Color){ 140, 20, 30, 255 }, 0.8f);
+    if (e > 0.9f) c = (Color){ 30, 8, 14, 255 };
+    return c;
+}
+static Color sp_iris(int x, int y, int w, int h) {
+    float dx = (x + 0.5f) / w * 2 - 1, dy = (y + 0.5f) / h * 2 - 1, r = sqrtf(dx * dx + dy * dy);
+    if (r > 1) return (Color){ 0, 0, 0, 0 };
+    if (r < 0.34f) return (Color){ 3, 2, 4, 255 };
+    float a = atan2f(dy, dx), f = 0.5f + 0.5f * sinf(a * 17.0f + r * 6.0f);
+    Color c = mix((Color){ 40, 150, 130, 255 }, (Color){ 220, 200, 70, 255 }, f * (1 - r));
+    if (r > 0.9f) c = (Color){ 6, 20, 24, 255 };
+    return c;
+}
+static void make_sprites(void) {
+    haloTex = sprite(64, 64, sp_halo);
+    moonTex = sprite(96, 96, sp_moon);
+    scleraTex = sprite(192, 96, sp_sclera);
+    irisTex = sprite(64, 64, sp_iris);
+}
 
 void gfx_init(void) {
     for (int i = 0; i < TEX_COUNT; i++) tex[i] = make_tex((TexId)i);
@@ -198,6 +303,9 @@ void gfx_init(void) {
     p_flash = GetShaderLocation(post, "flash");
     p_res = GetShaderLocation(post, "res");
     p_glitch = GetShaderLocation(post, "glitch");
+    p_glo = GetShaderLocation(post, "gLo");
+    p_ghi = GetShaderLocation(post, "gHi");
+    make_sprites();
     float res[2] = { RT_W, RT_H };
     SetShaderValue(post, p_res, res, SHADER_UNIFORM_VEC2);
 }
@@ -205,6 +313,7 @@ void gfx_init(void) {
 void gfx_shutdown(void) {
     for (int i = 0; i < TEX_COUNT; i++) UnloadTexture(tex[i]);
     for (int i = 0; i < decalN; i++) UnloadTexture(decalTex[i]);
+    UnloadTexture(haloTex); UnloadTexture(moonTex); UnloadTexture(scleraTex); UnloadTexture(irisTex);
     UnloadRenderTexture(gfx_rt);
     UnloadShader(obj); UnloadShader(post);
 }
@@ -276,6 +385,10 @@ void gfx_set_emit(bool on) { set_emit(on ? 1.0f : 0.0f); }
 
 void gfx_begin_scene(Camera3D cam, Color fog, float density, float flicker, float time) {
     (void)time;
+    camPos = cam.position;
+    camF = Vector3Normalize(Vector3Subtract(cam.target, cam.position));
+    camR = Vector3Normalize(Vector3CrossProduct(camF, cam.up));
+    camU = Vector3CrossProduct(camR, camF);
     ClearBackground(fog);
     BeginMode3D(cam);
     rlDisableBackfaceCulling();
@@ -379,10 +492,182 @@ void gfx_present(float time, float madness, float fade, float flash, float glitc
     SetShaderValue(post, p_fade, &fade, SHADER_UNIFORM_FLOAT);
     SetShaderValue(post, p_flash, &flash, SHADER_UNIFORM_FLOAT);
     SetShaderValue(post, p_glitch, &glitch, SHADER_UNIFORM_FLOAT);
+    float lo[3] = { gradeLo.r / 128.f, gradeLo.g / 128.f, gradeLo.b / 128.f }, hi[3] = { gradeHi.r / 128.f, gradeHi.g / 128.f, gradeHi.b / 128.f };
+    SetShaderValue(post, p_glo, lo, SHADER_UNIFORM_VEC3);
+    SetShaderValue(post, p_ghi, hi, SHADER_UNIFORM_VEC3);
     float sw = GetScreenWidth(), sh = GetScreenHeight();
     float k = fminf(sw / RT_W, sh / RT_H);
     Rectangle dst = { (sw - RT_W * k) / 2, (sh - RT_H * k) / 2, RT_W * k, RT_H * k };
     DrawTexturePro(gfx_rt.texture, (Rectangle){ 0, 0, RT_W, -RT_H }, dst, (Vector2){ 0, 0 }, 0, WHITE);
     EndShaderMode();
     EndDrawing();
+}
+
+
+void gfx_grade(Color lo, Color hi) { gradeLo = lo; gradeHi = hi; }
+
+// ---------------------------------------------------------------- glow, sky
+void gfx_begin_glow(void) {
+    set_emit(2.0f);
+    rlDisableDepthMask();
+    BeginBlendMode(BLEND_ADDITIVE);
+}
+void gfx_end_glow(void) {
+    EndBlendMode();
+    rlDrawRenderBatchActive();
+    rlEnableDepthMask();
+    set_emit(0.0f);
+}
+static void sprite_quad(Texture2D t, Vector3 c, Vector3 r, Vector3 u, Color col) {
+    rlCheckRenderBatchLimit(8);
+    rlSetTexture(t.id);
+    rlBegin(RL_QUADS);
+    rlColor4ub(col.r, col.g, col.b, col.a);
+    Vector3 a = Vector3Subtract(Vector3Subtract(c, r), u), b = Vector3Subtract(Vector3Add(c, r), u);
+    Vector3 d = Vector3Add(Vector3Add(c, r), u), e = Vector3Add(Vector3Subtract(c, r), u);
+    rlTexCoord2f(0, 1); rlVertex3f(a.x, a.y, a.z);
+    rlTexCoord2f(1, 1); rlVertex3f(b.x, b.y, b.z);
+    rlTexCoord2f(1, 0); rlVertex3f(d.x, d.y, d.z);
+    rlTexCoord2f(0, 0); rlVertex3f(e.x, e.y, e.z);
+    rlEnd();
+    rlSetTexture(0);
+}
+// soft additive blob facing the camera. call between gfx_begin_glow / gfx_end_glow
+void gfx_halo(Vector3 p, float size, Color col, float intensity) {
+    if (intensity <= 0) return;
+    Vector3 to = Vector3Subtract(p, camPos);
+    if (Vector3DotProduct(to, camF) < 0) return;
+    col.a = (unsigned char)(fminf(1.0f, intensity) * 255);
+    sprite_quad(haloTex, p, Vector3Scale(camR, size), Vector3Scale(camU, size), col);
+}
+
+static float hashf(int a, int b) { return (hash2(a, b, 4242) & 0xffff) / 65535.0f; }
+
+static Vector3 dome(float az, float el, float R) {
+    float ce = cosf(el);
+    return (Vector3){ camPos.x + R * ce * sinf(az), camPos.y + R * sinf(el), camPos.z - R * ce * cosf(az) };
+}
+static void dome_basis(Vector3 d, Vector3 *r, Vector3 *u) {
+    Vector3 dir = Vector3Normalize(Vector3Subtract(d, camPos));
+    *r = Vector3Normalize(Vector3CrossProduct((Vector3){ 0, 1, 0 }, dir));
+    *r = Vector3Scale(*r, -1);
+    *u = Vector3CrossProduct(*r, dir); *u = Vector3Scale(*u, -1);
+}
+
+void gfx_sky(const Sky *sk, float time, Vector3 playerPos) {
+    if (!sk->on) return;
+    const float R = 300.0f;
+    rlDrawRenderBatchActive();
+    rlDisableDepthTest();
+    set_emit(2.0f);
+    // gradient dome
+    static const float EL[] = { -90, -25, -4, 0, 5, 12, 24, 40, 62, 90 };
+    int rows = (int)(sizeof EL / sizeof *EL), seg = 24;
+    rlSetTexture(0);
+    rlBegin(RL_QUADS);
+    for (int i = 0; i + 1 < rows; i++) for (int j = 0; j < seg; j++) {
+        float a0 = j * 6.2831853f / seg, a1 = (j + 1) * 6.2831853f / seg;
+        Color c[2];
+        for (int k = 0; k < 2; k++) {
+            float el = EL[i + k];
+            if (el <= 0) c[k] = mix(sk->ground, sk->horizon, el < -4 ? 0.0f : (el + 4) / 4.0f);
+            else c[k] = mix(sk->horizon, sk->zenith, powf(el / 90.0f, 0.55f));
+        }
+        Vector3 v0 = dome(a0, EL[i] * DEG2RAD, R), v1 = dome(a1, EL[i] * DEG2RAD, R), v2 = dome(a1, EL[i + 1] * DEG2RAD, R), v3 = dome(a0, EL[i + 1] * DEG2RAD, R);
+        rlColor4ub(c[0].r, c[0].g, c[0].b, 255); rlVertex3f(v0.x, v0.y, v0.z); rlVertex3f(v1.x, v1.y, v1.z);
+        rlColor4ub(c[1].r, c[1].g, c[1].b, 255); rlVertex3f(v2.x, v2.y, v2.z); rlVertex3f(v3.x, v3.y, v3.z);
+    }
+    rlEnd();
+    rlDrawRenderBatchActive();
+    BeginBlendMode(BLEND_ADDITIVE);
+    // stars
+    int ns = (int)(320 * sk->stars);
+    for (int i = 0; i < ns; i++) {
+        float az = hashf(i, 1) * 6.2831853f, el = asinf(0.03f + 0.97f * hashf(i, 2));
+        float tw = 0.55f + 0.45f * sinf(time * (1.0f + hashf(i, 3) * 3.0f) + i);
+        float sz = 0.35f + hashf(i, 4) * 0.8f, b = (0.5f + 0.5f * hashf(i, 5)) * tw;
+        Vector3 p = dome(az, el, R), r, u;
+        dome_basis(p, &r, &u);
+        Color col = hashf(i, 6) < 0.15f ? (Color){ 255, 190, 170, 255 } : hashf(i, 6) < 0.3f ? (Color){ 170, 200, 255, 255 } : (Color){ 255, 250, 230, 255 };
+        col = (Color){ col.r * b, col.g * b, col.b * b, 255 };
+        sprite_quad(haloTex, p, Vector3Scale(r, sz * 3), Vector3Scale(u, sz * 3), col);   // soft little points (drawn additively below)
+    }
+    // aurora ribbons
+    if (sk->aurAmt > 0) {
+        rlSetTexture(0);
+        for (int k = 0; k < 3; k++) {
+            rlBegin(RL_QUADS);
+            int n = 48;
+            for (int j = 0; j < n; j++) {
+                float a0 = j * 6.2831853f / n, a1 = (j + 1) * 6.2831853f / n;
+                float b0 = (18 + k * 9) * DEG2RAD + sinf(a0 * 3 + time * 0.25f + k * 2) * 0.09f, b1 = (18 + k * 9) * DEG2RAD + sinf(a1 * 3 + time * 0.25f + k * 2) * 0.09f;
+                float h = (11 + 3 * sinf(a0 * 5 - time * 0.4f)) * DEG2RAD;
+                float amt = sk->aurAmt * (0.5f + 0.5f * sinf(a0 * 2 + time * 0.3f + k * 1.7f));
+                Color c = sk->aurora; Color lo = { c.r, c.g, c.b, 0 }, mid = { c.r, c.g, c.b, (unsigned char)(amt * 110) };
+                Vector3 p0 = dome(a0, b0, R), p1 = dome(a1, b1, R), p2 = dome(a1, b1 + h, R), p3 = dome(a0, b0 + h, R);
+                rlColor4ub(mid.r, mid.g, mid.b, mid.a); rlVertex3f(p0.x, p0.y, p0.z); rlVertex3f(p1.x, p1.y, p1.z);
+                rlColor4ub(lo.r, lo.g, lo.b, 0);       rlVertex3f(p2.x, p2.y, p2.z); rlVertex3f(p3.x, p3.y, p3.z);
+            }
+            rlEnd();
+        }
+    }
+    // shooting star
+    {
+        float per = 9.0f; int slot = (int)floorf(time / per); float ph = (time - slot * per) / 1.1f;
+        if (sk->stars > 0 && ph < 1 && hashf(slot, 9) > 0.3f) {
+            float az = hashf(slot, 10) * 6.2831853f, el = (25 + 30 * hashf(slot, 11)) * DEG2RAD;
+            float dir = hashf(slot, 12) * 6.2831853f;
+            Vector3 head = dome(az + cosf(dir) * ph * 0.5f, el + sinf(dir) * ph * 0.3f, R);
+            Vector3 tail = dome(az + cosf(dir) * (ph - 0.25f) * 0.5f, el + sinf(dir) * (ph - 0.25f) * 0.3f, R);
+            Vector3 r, u; dome_basis(head, &r, &u);
+            Vector3 side = Vector3Scale(Vector3Normalize(Vector3CrossProduct(Vector3Subtract(head, tail), Vector3Subtract(head, camPos))), 0.8f);
+            float f = sinf(ph * 3.14159f);
+            rlSetTexture(0);
+            rlBegin(RL_QUADS);
+            rlColor4ub(255, 255, 255, (unsigned char)(255 * f));
+            rlVertex3f(head.x + side.x, head.y + side.y, head.z + side.z); rlVertex3f(head.x - side.x, head.y - side.y, head.z - side.z);
+            rlColor4ub(255, 255, 255, 0);
+            rlVertex3f(tail.x - side.x, tail.y - side.y, tail.z - side.z); rlVertex3f(tail.x + side.x, tail.y + side.y, tail.z + side.z);
+            rlEnd();
+        }
+    }
+    if (sk->moon) {
+        Vector3 m = Vector3Add(camPos, Vector3Scale(Vector3Normalize(sk->moonDir), R));
+        Color mc = sk->moonCol; mc.a = 150;
+        Vector3 r, u; dome_basis(m, &r, &u);
+        sprite_quad(haloTex, m, Vector3Scale(r, 70), Vector3Scale(u, 70), mc);
+        sprite_quad(haloTex, m, Vector3Scale(r, 170), Vector3Scale(u, 170), (Color){ mc.r / 3, mc.g / 3, mc.b / 3, 90 });
+    }
+    rlDrawRenderBatchActive();
+    EndBlendMode();
+    if (sk->moon) {
+        Vector3 m = Vector3Add(camPos, Vector3Scale(Vector3Normalize(sk->moonDir), R)), r, u;
+        dome_basis(m, &r, &u);
+        sprite_quad(moonTex, m, Vector3Scale(r, 34), Vector3Scale(u, 34), sk->moonCol);
+    }
+    if (sk->eye && sk->eyeAmt > 0.01f) {
+        float az = 200 * DEG2RAD, el = 30 * DEG2RAD;
+        Vector3 c = dome(az, el, R * 0.95f), r, u;
+        dome_basis(c, &r, &u);
+        Vector3 d = Vector3Normalize(Vector3Subtract(c, camPos));
+        float blink = fmaxf(0.0f, 1.0f - fabsf(fmodf(time, 8.3f) - 0.15f) * 6.0f);       // lids come down for a moment
+        float open = sk->eyeAmt * (1.0f - blink * 0.95f);
+        float facing = fmaxf(0.0f, (Vector3DotProduct(camF, d) - 0.7f) / 0.3f);
+        float wx = sinf(time * 0.37f) * 0.35f * (1 - facing), wy = sinf(time * 0.53f) * 0.15f;
+        // the eye tracks you: iris slides toward the way you are standing relative to it
+        Vector3 toP = Vector3Subtract(playerPos, camPos);
+        (void)toP;
+        float W = 78, H = 40 * open;
+        sprite_quad(scleraTex, c, Vector3Scale(r, W), Vector3Scale(u, fmaxf(0.5f, H)), (Color){ 255, 255, 255, 255 });
+        Vector3 ic = Vector3Add(Vector3Add(c, Vector3Scale(r, wx * W * 0.5f)), Vector3Add(Vector3Scale(u, wy * H * 0.4f), Vector3Scale(d, -2.0f)));
+        float is = 30.0f;
+        sprite_quad(irisTex, ic, Vector3Scale(r, is), Vector3Scale(u, fminf(is, H * 0.95f)), (Color){ 255, 255, 255, 255 });
+        gfx_begin_glow();
+        sprite_quad(haloTex, c, Vector3Scale(r, 160), Vector3Scale(u, 90), (Color){ 160, 30, 40, (unsigned char)(120 * open) });
+        gfx_end_glow();
+        set_emit(2.0f);
+    }
+    rlDrawRenderBatchActive();
+    rlEnableDepthTest();
+    set_emit(0.0f);
 }

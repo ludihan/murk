@@ -7,7 +7,40 @@
 static AudioStream drone;
 static Sound sfx[SFX_COUNT];
 static bool ready;
+static volatile float g_music = 0.0f, g_sour = 0.0f;
 static volatile float g_tone = 1.0f, g_tension = 0.0f, g_vol = 0.0f, g_whisper = 0.0f;
+
+#define DLY 5200
+static float dly[DLY];
+static int dpos;
+
+// a music box in A minor that wanders; `sour` drags it out of tune and slows it down
+static float music_box(float amt, float sour) {
+    static float t, nv[3], ph[3], seqT; static int step, note = 4;
+    static const float SC[] = { 0, 3, 5, 7, 10, 12, 15, 17, 19 };   // minor pentatonic-ish, semitones above A3
+    seqT -= 1.0f / RATE;
+    if (seqT <= 0) {
+        seqT = (0.42f + 0.2f * sour) * ((step % 8 == 7) ? 1.8f : 1.0f);
+        note += (rand() % 5) - 2; if (note < 0) note = 1; if (note > 8) note = 7;
+        if (rand() % 6 == 0) note = (note + 4) % 9;
+        float semi = SC[note] - (sour > 0.5f && rand() % 3 == 0 ? 1.0f : 0.0f);
+        float f = 220.0f * powf(2.0f, (semi + (rand() % 100 - 50) * 0.002f * sour * 10.0f) / 12.0f);
+        int v = step % 3; step++;
+        ph[v] = 0; nv[v] = f;
+        t = 0;
+    }
+    float out = 0;
+    for (int v = 0; v < 3; v++) {
+        if (nv[v] <= 0) continue;
+        ph[v] += 1.0f / RATE;
+        float e = expf(-ph[v] * 3.2f);
+        if (e < 0.002f) { nv[v] = 0; continue; }
+        float w = 2 * 3.14159265f * nv[v] * ph[v];
+        out += (sinf(w) + 0.35f * sinf(w * 2.76f) * expf(-ph[v] * 9.0f) + 0.12f * sinf(w * 5.4f) * expf(-ph[v] * 18.0f)) * e;
+    }
+    (void)t;
+    return out * 0.16f * amt;
+}
 
 static float frnd(void) { return (float)rand() / RAND_MAX * 2.0f - 1.0f; }
 
@@ -38,6 +71,12 @@ static void drone_cb(void *buffer, unsigned frames) {
         wsmooth += (g_whisper - wsmooth) * 0.0003f;
         s += (wh1 - wh2) * 5.0f * wenv * wsmooth * 0.35f;
         s *= vol * 0.5f;
+        float mb = music_box(g_music, g_sour) * vol * 1.4f;
+        // a long soft echo makes every sound feel like it happens in a bigger room
+        float dl = dly[dpos];
+        dly[dpos] = (s + mb) * 0.9f + dl * 0.46f;
+        if (++dpos >= DLY) dpos = 0;
+        s += mb + dl * 0.38f;
         s = fmaxf(-1.0f, fminf(1.0f, s));
         out[i] = (short)(s * 30000);
     }
@@ -104,6 +143,8 @@ void audio_shutdown(void) {
 }
 
 void audio_set(float tone, float tension, float whisper, float volume) { g_tone = tone; g_tension = tension; g_whisper = whisper; g_vol = volume; }
+
+void audio_music(float amount, float sour) { g_music = amount; g_sour = sour; }
 
 void audio_play_ex(Sfx s, float vol, float pitch) {
     if (!ready) return;

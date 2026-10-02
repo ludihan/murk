@@ -1,6 +1,16 @@
 #pragma once
 #include "common.h"
 
+typedef struct Sky {
+    bool on;
+    Color zenith, horizon, ground;
+    float stars;            // 0..1 density
+    bool moon; Color moonCol; Vector3 moonDir;
+    Color aurora; float aurAmt;
+    bool eye;               // a vast eye that watches from the sky
+    float eyeAmt;           // how wide open it is
+} Sky;
+
 typedef struct Level {
     WorldId id;
     const char *name;
@@ -11,6 +21,13 @@ typedef struct Level {
     Watchers watchers;
     Motes motes;
     Props props;
+    Blooms blooms;
+    Sky sky;
+    Color moteCol;          // dust / pollen / embers
+    Color gradeLo, gradeHi; // colour grading of the whole dream
+    bool water; float waterY, waterHalf; Vector3 waterC;
+    bool moteGlow;
+    bool creepers;          // watchers that only move when unseen (open levels)
 
     Color fog;
     float fogDensity;

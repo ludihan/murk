@@ -1,0 +1,7 @@
+services:
+  murk:
+    build: .
+    restart: unless-stopped
+    # only reachable from the VPS itself: your existing reverse proxy forwards murk.ludihan.xyz here
+    ports:
+      - "127.0.0.1:8081:80"

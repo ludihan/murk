@@ -14,10 +14,11 @@ typedef struct Player {
     Vector3 wallN;
     unsigned fx;            // collected effect bitmask
     float speedMeter;
+    bool gliding;
 } Player;
 
 void player_spawn(Player *p, const Level *L);
-typedef struct Input { float mx, mz; bool sprint, grip; } Input;
+typedef struct Input { float mx, mz; bool sprint, grip, glide; } Input;
 Input input_read(void);
 void player_update(Player *p, Level *L, const Input *in, float dt);
 Vector3 player_eye(const Player *p);

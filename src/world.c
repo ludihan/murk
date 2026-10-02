@@ -84,20 +84,23 @@ static void build_hub(Level *L, int seed) {
     L->fog = (Color){ 34, 30, 26, 255 };
     L->fogDensity = 0.06f;
     L->light = 1.0f;
+    L->gradeLo = (Color){ 118, 128, 150, 255 }; L->gradeHi = (Color){ 150, 128, 112, 255 };
+    L->moteCol = (Color){ 150, 140, 120, 255 };
     L->spawn = (Vector3){ 0, 0.05f, 2.0f };
     L->spawnYaw = 0;
     L->killY = -50;
     const float S = 8, H = 4.2f;
-    room(L, S, S, H, TEX_TILE, (Color){ 200, 205, 180, 255 }, TEX_WOOD, (Color){ 190, 170, 150, 255 }, TEX_CONCRETE, (Color){ 140, 140, 130, 255 });
+    room(L, S, S, H, seed >= 7 ? TEX_EYES : TEX_TILE, seed >= 7 ? (Color){ 190, 170, 170, 255 } : (Color){ 200, 205, 180, 255 }, TEX_WOOD, (Color){ 190, 170, 150, 255 }, TEX_CONCRETE, (Color){ 140, 140, 130, 255 });
 
     // doors: slab glows in a dark frame, set into the wall faces
-    struct { Vector3 p; int axis; Color c; WorldId to; int needs; const char *lbl; } d[4] = {
+    struct { Vector3 p; int axis; Color c; WorldId to; int needs; const char *lbl; } d[5] = {
         { { 0, 1.3f, -S + 0.15f }, 0, { 230, 120, 40, 255 },  W_SHAFT,  0, "THE SHAFT" },
         { { S - 0.15f, 1.3f, 0 }, 1, { 90, 220, 90, 255 },   W_DRAINS, 0, "THE DRAINS" },
         { { -S + 0.15f, 1.3f, 0 }, 1, { 170, 90, 255, 255 }, W_VOID,   0, "THE STEPS" },
-        { { 0, 1.3f, S - 0.15f }, 0, { 255, 245, 235, 255 }, W_END,    7, "THE WAY OUT" },
+        { { 0, 1.3f, S - 0.15f }, 0, { 255, 245, 235, 255 }, W_END,    FX_ALL, "THE WAY OUT" },
+        { { 3.4f, 1.3f, -S + 0.15f }, 0, { 255, 110, 190, 255 }, W_GARDEN, 0, "THE ORCHARD" },
     };
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 5; i++) {
         Vector3 fh = d[i].axis == 0 ? (Vector3){ 1.35f, 1.5f, 0.12f } : (Vector3){ 0.12f, 1.5f, 1.35f };
         Vector3 sh = d[i].axis == 0 ? (Vector3){ 1.0f, 1.25f, 0.05f } : (Vector3){ 0.05f, 1.25f, 1.0f };
         add_box(L, d[i].p, fh, TEX_CONCRETE, (Color){ 40, 38, 36, 255 }, 1.0f, F_NOCOLLIDE);
@@ -146,6 +149,13 @@ static void build_hub(Level *L, int seed) {
         add_box(L, (Vector3){ fx, 0.9f, fz }, (Vector3){ 0.2f, 0.9f, 0.14f }, TEX_CONCRETE, (Color){ 20, 18, 18, 255 }, 1.0f, F_NOCOLLIDE);
         add_box(L, (Vector3){ fx, 1.95f, fz }, (Vector3){ 0.14f, 0.18f, 0.14f }, TEX_CONCRETE, (Color){ 26, 22, 22, 255 }, 1.0f, F_NOCOLLIDE);
     }
+    // a threadbare rug, and a window onto somewhere that isn't there
+    add_box(L, (Vector3){ 0, 0.008f, 0 }, (Vector3){ 2.6f, 0.004f, 3.4f }, TEX_MOSAIC, (Color){ 52, 40, 48, 255 }, 1.4f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ -3.6f, 2.4f, -S + 0.1f }, (Vector3){ 0.95f, 0.85f, 0.1f }, TEX_CONCRETE, (Color){ 22, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ -3.6f, 2.4f, -S + 0.23f }, (Vector3){ 0.8f, 0.72f, 0.03f }, TEX_CONCRETE, (Color){ 50, 80, 150, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_box(L, (Vector3){ -3.6f, 2.4f, -S + 0.27f }, (Vector3){ 0.03f, 0.74f, 0.02f }, TEX_CONCRETE, (Color){ 22, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ -3.6f, 2.4f, -S + 0.27f }, (Vector3){ 0.82f, 0.03f, 0.02f }, TEX_CONCRETE, (Color){ 22, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ -3.6f, 0.012f, -S + 1.8f }, (Vector3){ 0.8f, 0.004f, 1.5f }, TEX_CONCRETE, (Color){ 40, 60, 100, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE); // moonlight on the boards
     // hanging bulb
     add_box(L, (Vector3){ 0, 3.7f, 0 }, (Vector3){ 0.01f, 0.5f, 0.01f }, TEX_CONCRETE, (Color){ 20, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
     add_box(L, (Vector3){ 0, 3.15f, 0 }, (Vector3){ 0.1f, 0.14f, 0.1f }, TEX_CONCRETE, (Color){ 255, 220, 140, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
@@ -159,7 +169,7 @@ static void build_hub(Level *L, int seed) {
     if (g_launches > 1) add_decal(L, "YOU CAME BACK", (Vector3){ -S, 2.1f, 4.2f }, 0, 1, 0.24f, BLOOD);
     if (g_wakes > 0) {
         snprintf(buf, sizeof buf, "WOKEN %d TIMES", g_wakes);
-        add_decal(L, buf, (Vector3){ -5.0f, 2.4f, -S }, 2, 1, 0.22f, BLOOD);
+        add_decal(L, buf, (Vector3){ -S, 2.4f, -4.0f }, 0, 1, 0.22f, BLOOD);
     }
     if (seed >= 3) add_decal(L, "IT FOLLOWED YOU", (Vector3){ -4.6f, 2.0f, S }, 2, -1, 0.26f, BLOOD);
     if (seed >= 5) add_decal(L, "DON'T LOOK BEHIND YOU", (Vector3){ 4.2f, 2.5f, S }, 2, -1, 0.22f, BLOOD);
@@ -209,6 +219,8 @@ static void build_shaft(Level *L, int seed) {
     L->fogDensity = frand(0.028f, 0.045f);
     L->light = 0.95f;
     L->killY = -60;
+    L->gradeLo = (Color){ 126, 118, 138, 255 }; L->gradeHi = (Color){ 160, 130, 104, 255 };
+    L->moteCol = (Color){ 190, 120, 70, 255 };
     L->sludge = true;
     L->sludgeY = -3;
     L->sludgeSpeed = frand(0.30f, 0.42f);
@@ -288,6 +300,8 @@ static void build_drains(Level *L, int seed) {
     L->fog = (Color){ 6, 12, 8, 255 };
     L->fogDensity = 0.115f;
     L->light = 0.85f;
+    L->gradeLo = (Color){ 108, 134, 126, 255 }; L->gradeHi = (Color){ 140, 140, 116, 255 };
+    L->moteCol = (Color){ 120, 170, 120, 255 };
     L->killY = -50;
     SetRandomSeed(seed * 7919 + 13);
     const int N = 9;
@@ -382,6 +396,11 @@ static void build_drains(Level *L, int seed) {
             else if (r < 5) add_box(L, (Vector3){ c.x + frand(-1.2f, 1.2f), 0.012f, c.z + frand(-1.2f, 1.2f) }, (Vector3){ frand(0.8f, 2.2f), 0.01f, frand(0.8f, 2.2f) }, TEX_SLUDGE, (Color){ 100, 120, 100, 255 }, 3.0f, F_NOCOLLIDE);
             else if (r < 7) add_prop(L, (Vector3){ c.x + frand(-1.5f, 1.5f), 0.4f, c.z + frand(-1.5f, 1.5f) }, (Vector3){ 0.4f, 0.4f, 0.4f }, TEX_WOOD, (Color){ 120, 130, 110, 255 }, 200, 1);
         }
+        // sick coloured lamps in the ceiling
+        if (GetRandomValue(0, 4) == 0) {
+            static const Color LC[4] = { { 120, 255, 140, 255 }, { 255, 220, 120, 255 }, { 255, 90, 60, 255 }, { 255, 120, 200, 255 } };
+            add_box(L, (Vector3){ c.x + frand(-1.5f, 1.5f), hc - 0.04f, c.z + frand(-1.5f, 1.5f) }, (Vector3){ 0.5f, 0.04f, 0.18f }, TEX_CONCRETE, LC[z], 1.0f, F_EMIT | F_NOCOLLIDE);
+        }
         // ceiling pipes
         if (GetRandomValue(0, 3) == 0)
             add_box(L, (Vector3){ c.x, hc - 0.3f, c.z }, (Vector3){ C / 2, 0.16f, 0.16f }, TEX_RUST, (Color){ 120, 120, 110, 255 }, 1.0f, F_NOCOLLIDE);
@@ -430,9 +449,12 @@ static float support(float hx, float hz, float dx, float dz) { return hx * fabsf
 
 static void build_void(Level *L, int seed) {
     L->name = "THE STEPS";
-    L->fog = (Color){ 24, 10, 36, 255 };
-    L->fogDensity = 0.026f;
+    L->fog = (Color){ 52, 20, 70, 255 };
+    L->fogDensity = 0.024f;
     L->light = 1.35f;
+    L->sky = (Sky){ true, { 6, 2, 22, 255 }, { 52, 20, 70, 255 }, { 52, 20, 70, 255 }, 1.0f, false, { 0, 0, 0, 0 }, { 0, 0, 0 }, { 80, 255, 190, 255 }, 1.0f, true, 0.7f };
+    L->gradeLo = (Color){ 116, 118, 160, 255 }; L->gradeHi = (Color){ 160, 124, 138, 255 };
+    L->moteCol = (Color){ 200, 150, 255, 255 }; L->moteGlow = true;
     L->killY = -35;
     SetRandomSeed(seed * 104729 + 7);
     const Color tint = { 150, 130, 170, 255 };
@@ -521,6 +543,14 @@ static void build_void(Level *L, int seed) {
             float d = support(phx, phz, dx, dz) + support(nh, nh, dx, dz) + gap;
             c = (Vector3){ p.x + dx * d, p.y + frand(-0.3f, 1.0f), p.z + dz * d };
             add_box(L, (Vector3){ c.x, c.y - 0.5f, c.z }, (Vector3){ nh, 0.5f, nh }, tx, tint, 2.0f, 0);
+            {   // a glowing seam around the rim: you can see where the edge is
+                static const Color TR[3] = { { 90, 240, 255, 255 }, { 255, 90, 200, 255 }, { 190, 150, 255, 255 } };
+                Color tc = TR[i % 3];
+                add_box(L, (Vector3){ c.x, c.y + 0.015f, c.z - nh + 0.08f }, (Vector3){ nh, 0.015f, 0.06f }, TEX_CONCRETE, tc, 1.0f, F_EMIT | F_NOCOLLIDE);
+                add_box(L, (Vector3){ c.x, c.y + 0.015f, c.z + nh - 0.08f }, (Vector3){ nh, 0.015f, 0.06f }, TEX_CONCRETE, tc, 1.0f, F_EMIT | F_NOCOLLIDE);
+                add_box(L, (Vector3){ c.x - nh + 0.08f, c.y + 0.015f, c.z }, (Vector3){ 0.06f, 0.015f, nh }, TEX_CONCRETE, tc, 1.0f, F_EMIT | F_NOCOLLIDE);
+                add_box(L, (Vector3){ c.x + nh - 0.08f, c.y + 0.015f, c.z }, (Vector3){ 0.06f, 0.015f, nh }, TEX_CONCRETE, tc, 1.0f, F_EMIT | F_NOCOLLIDE);
+            }
             break;
         }
         }
@@ -545,6 +575,111 @@ static void build_void(Level *L, int seed) {
     add_box(L, (Vector3){ p.x, p.y + 20, p.z }, (Vector3){ 0.04f, 20, 0.04f }, TEX_CONCRETE, (Color){ 200, 160, 255, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
 }
 
+// ---------------------------------------------------------------- GARDEN: an orchard under a bad moon
+static void flower_at(Level *L, float x, float z, float hgt, Color col, float size) {
+    add_box(L, (Vector3){ x, hgt / 2, z }, (Vector3){ 0.05f, hgt / 2, 0.05f }, TEX_GRASS, (Color){ 90, 150, 130, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ x + 0.25f, hgt * 0.35f, z }, (Vector3){ 0.22f, 0.03f, 0.1f }, TEX_GRASS, (Color){ 90, 150, 130, 255 }, 1.0f, F_NOCOLLIDE);   // a leaf
+    Bloom b = { { x, hgt + size * 0.4f, z }, col, size, 0 };
+    Blooms_push(&L->blooms, b);
+}
+
+static void build_garden(Level *L, int seed) {
+    L->name = "THE ORCHARD";
+    SetRandomSeed(seed * 6007 + 3);
+    L->fog = (Color){ 70, 30, 84, 255 };
+    L->fogDensity = 0.021f;
+    L->light = 1.3f;
+    L->killY = -7;
+    L->sky = (Sky){ true, { 8, 4, 38, 255 }, { 70, 30, 84, 255 }, { 70, 30, 84, 255 }, 1.0f, true, { 255, 236, 230, 255 }, { -0.35f, 0.42f, -0.84f }, { 70, 255, 200, 255 }, 0.9f, false, 0 };
+    L->gradeLo = (Color){ 112, 124, 158, 255 }; L->gradeHi = (Color){ 158, 128, 124, 255 };
+    L->moteCol = (Color){ 255, 170, 230, 255 }; L->moteGlow = true;
+    L->creepers = true;
+    const float E = 50, P = 14;       // half size of the field, half size of the pond
+    Color gc = { 100, 135, 130, 255 };
+    // the ground, with a square pond cut out of the middle
+    add_box(L, (Vector3){ 0, -0.5f, -(E + P) / 2 }, (Vector3){ E + 1, 0.5f, (E - P) / 2 }, TEX_GRASS, gc, 3.0f, 0);
+    add_box(L, (Vector3){ 0, -0.5f, (E + P) / 2 }, (Vector3){ E + 1, 0.5f, (E - P) / 2 }, TEX_GRASS, gc, 3.0f, 0);
+    add_box(L, (Vector3){ -(E + P) / 2, -0.5f, 0 }, (Vector3){ (E - P) / 2, 0.5f, P }, TEX_GRASS, gc, 3.0f, 0);
+    add_box(L, (Vector3){ (E + P) / 2, -0.5f, 0 }, (Vector3){ (E - P) / 2, 0.5f, P }, TEX_GRASS, gc, 3.0f, 0);
+    // the edge of the world: low walls of hedge that the fog hides
+    add_box(L, (Vector3){ 0, 3, -E - 1 }, (Vector3){ E + 2, 3, 1 }, TEX_GRASS, (Color){ 40, 80, 70, 255 }, 3.0f, 0);
+    add_box(L, (Vector3){ 0, 3, E + 1 }, (Vector3){ E + 2, 3, 1 }, TEX_GRASS, (Color){ 40, 80, 70, 255 }, 3.0f, 0);
+    add_box(L, (Vector3){ -E - 1, 3, 0 }, (Vector3){ 1, 3, E + 2 }, TEX_GRASS, (Color){ 40, 80, 70, 255 }, 3.0f, 0);
+    add_box(L, (Vector3){ E + 1, 3, 0 }, (Vector3){ 1, 3, E + 2 }, TEX_GRASS, (Color){ 40, 80, 70, 255 }, 3.0f, 0);
+    L->water = true; L->waterY = -0.8f; L->waterHalf = P; L->waterC = (Vector3){ 0, 0, 0 };
+    // an island in the pond with a lone lantern, and two planks to reach it
+    add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ 3.2f, 0.5f, 3.2f }, TEX_MOSAIC, (Color){ 150, 130, 160, 255 }, 1.5f, 0);
+    add_box(L, (Vector3){ 0, -0.15f, (P + 3.2f) / 2 }, (Vector3){ 1.0f, 0.15f, (P - 3.2f) / 2 + 0.2f }, TEX_WOOD, (Color){ 150, 130, 160, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ 0, -0.15f, -(P + 3.2f) / 2 }, (Vector3){ 1.0f, 0.15f, (P - 3.2f) / 2 + 0.2f }, TEX_WOOD, (Color){ 150, 130, 160, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ 0, 1.2f, 0 }, (Vector3){ 0.07f, 1.2f, 0.07f }, TEX_RUST, (Color){ 60, 50, 60, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ 0, 2.6f, 0 }, (Vector3){ 0.25f, 0.3f, 0.25f }, TEX_CONCRETE, (Color){ 255, 190, 120, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_decal(L, "SOMEONE LIT THIS FOR YOU", (Vector3){ 0, 1.0f, 3.1f }, 2, 1, 0.2f, (Color){ 255, 190, 120, 255 });
+    // a mound with a shrine at the far end, built from shallow steps
+    const float MZ = -40;
+    float tw = 9.5f, ty = 0;
+    for (int i = 0; i < 7; i++) {
+        ty += 0.28f;
+        add_box(L, (Vector3){ 0, ty / 2, MZ }, (Vector3){ tw, ty / 2, tw }, (i & 1) ? TEX_MOSAIC : TEX_CONCRETE, (Color){ 150, 135, 170, 255 }, 1.5f, 0);
+        tw -= 1.1f;
+    }
+    float top = ty;
+    for (int i = 0; i < 4; i++) {
+        float a = i * 1.5708f + 0.785f;
+        Vector3 pc = { sinf(a) * 2.4f, top + 1.7f, MZ + cosf(a) * 2.4f };
+        add_box(L, pc, (Vector3){ 0.25f, 1.7f, 0.25f }, TEX_CONCRETE, (Color){ 190, 180, 200, 255 }, 1.2f, 0);
+        add_box(L, (Vector3){ pc.x, top + 3.5f, pc.z }, (Vector3){ 0.2f, 0.2f, 0.2f }, TEX_CONCRETE, (Color){ 255, 120, 200, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    }
+    add_box(L, (Vector3){ 0, top + 0.3f, MZ }, (Vector3){ 0.7f, 0.3f, 0.7f }, TEX_FLESH, (Color){ 220, 190, 200, 255 }, 1.0f, 0);
+    Pickup pk = { { 0, top + 1.8f, MZ }, FX_FEATHER, false };
+    Pickups_push(&L->pickups, pk);
+    add_box(L, (Vector3){ 0, 25, MZ }, (Vector3){ 0.05f, 25, 0.05f }, TEX_CONCRETE, (Color){ 255, 200, 240, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_decal(L, "TAKE IT AND GO", (Vector3){ 0, 1.2f, MZ + 9.6f }, 2, 1, 0.22f, BLOOD);
+    L->spawn = (Vector3){ 0, 0.05f, 42 };
+    L->spawnYaw = 0;
+    // fruit trees: tall dark trunks hung with lanterns
+    static const Color FRUIT[4] = { { 255, 120, 180, 255 }, { 255, 190, 90, 255 }, { 110, 240, 255, 255 }, { 190, 150, 255, 255 } };
+    for (int i = 0; i < 46; i++) {
+        float x = frand(-E + 4, E - 4), z = frand(-E + 4, E - 4);
+        if (fabsf(x) < P + 2 && fabsf(z) < P + 2) continue;                 // pond
+        if (fabsf(x) < 3.0f) continue;                                      // keep a lane open down the middle
+        if (z < MZ + 12 && z > MZ - 12 && fabsf(x) < 12) continue;          // mound
+        if (z > 36) continue;                                               // spawn clearing
+        float h = frand(4.5f, 8.0f);
+        add_box(L, (Vector3){ x, h / 2, z }, (Vector3){ 0.32f, h / 2, 0.32f }, TEX_WOOD, (Color){ 120, 90, 130, 255 }, 1.5f, 0);
+        add_box(L, (Vector3){ x + 0.9f, h - 1.0f, z }, (Vector3){ 0.9f, 0.1f, 0.1f }, TEX_WOOD, (Color){ 120, 90, 130, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ x, h - 1.8f, z - 0.9f }, (Vector3){ 0.1f, 0.1f, 0.9f }, TEX_WOOD, (Color){ 120, 90, 130, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ x, h + 0.2f, z }, (Vector3){ 1.8f, 0.5f, 1.8f }, TEX_GRASS, (Color){ 100, 150, 130, 255 }, 1.0f, F_NOCOLLIDE);
+        for (int k = 0; k < 4; k++) {
+            Bloom b = { { x + frand(-1.6f, 1.6f), h - frand(0.4f, 2.2f), z + frand(-1.6f, 1.6f) }, FRUIT[GetRandomValue(0, 3)], 0.12f, 1 };
+            Blooms_push(&L->blooms, b);
+        }
+    }
+    // flowers that watch. more of them near the path to the shrine.
+    static const Color PET[4] = { { 255, 100, 170, 255 }, { 120, 235, 255, 255 }, { 255, 220, 110, 255 }, { 200, 150, 255, 255 } };
+    for (int i = 0; i < 150; i++) {
+        float x = frand(-E + 3, E - 3), z = frand(-E + 3, E - 3);
+        if (fabsf(x) < P && fabsf(z) < P) continue;
+        if (z > 38 && fabsf(x) < 2.5f) continue;
+        flower_at(L, x, z, frand(0.8f, 3.4f), PET[GetRandomValue(0, 3)], frand(0.55f, 1.2f));
+    }
+    // standing stones with writing on them
+    static const char *STONE[] = { "WAKE UP", "YOU ARE NOT ALONE HERE", "THEY GROW WHERE YOU LOOK AWAY", "DON'T COUNT THEM", "IT'S SO BEAUTIFUL" };
+    for (int i = 0; i < 5; i++) {
+        float x = (i % 2 ? 1 : -1) * frand(6, 16), z = 36 - i * 13.0f;
+        if (fabsf(z) < P + 2 && fabsf(x) < P + 2) continue;
+        add_box(L, (Vector3){ x, 1.3f, z }, (Vector3){ 0.9f, 1.3f, 0.2f }, TEX_CONCRETE, (Color){ 150, 140, 160, 255 }, 1.5f, 0);
+        add_decal(L, STONE[i], (Vector3){ x, 1.5f, z + 0.2f }, 2, 1, 0.16f, (i % 2) ? BLOOD : (Color){ 230, 200, 255, 255 });
+    }
+    // gardeners
+    int n = 3 + (seed / 3 > 3 ? 3 : seed / 3);
+    for (int i = 0; i < n; i++) {
+        float x = frand(-E + 6, E - 6), z = frand(-E + 6, 10);
+        if (fabsf(x) < P + 2 && fabsf(z) < P + 2) { x = (x < 0 ? -1 : 1) * (P + 4); }
+        Watcher w = { { x, 0, z }, frand(0, 6), false };
+        Watchers_push(&L->watchers, w);
+    }
+}
+
 // ---------------------------------------------------------------- END: the way out
 static void build_end(Level *L) {
     L->name = "THE WAY OUT";
@@ -552,6 +687,8 @@ static void build_end(Level *L) {
     L->fogDensity = 0.05f;
     L->light = 1.2f;
     L->killY = -50;
+    L->gradeLo = (Color){ 134, 128, 126, 255 }; L->gradeHi = (Color){ 140, 130, 122, 255 };
+    L->moteCol = (Color){ 230, 225, 210, 255 };
     L->spawn = (Vector3){ 0, 0.05f, 7 };
     L->spawnYaw = 0;
     // a long white hall that ends at a bed
@@ -578,19 +715,22 @@ void level_build(Level *L, WorldId id, int seed) {
     case W_SHAFT:  build_shaft(L, seed); break;
     case W_DRAINS: build_drains(L, seed); break;
     case W_VOID:   build_void(L, seed); break;
+    case W_GARDEN: build_garden(L, seed); break;
     default:       build_end(L); break;
     }
     // ash motes
     for (int i = 0; i < 140; i++) {
         Mote m = { { 0, 0, 0 }, { frand(-.1f, .1f), frand(-.25f, -.05f), frand(-.1f, .1f) }, frand(0, 1) };
+        if (L->moteGlow) m.vel = (Vector3){ frand(-.25f, .25f), frand(0.05f, 0.35f), frand(-.25f, .25f) };
         Motes_push(&L->motes, m);
     }
+    if (L->moteCol.a == 0) L->moteCol = (Color){ 150, 140, 120, 255 };
 }
 
 void level_free(Level *L) {
     if (b3World_IsValid(L->phys)) b3DestroyWorld(L->phys);
     Boxes_drop(&L->boxes); Pickups_drop(&L->pickups); Portals_drop(&L->portals);
-    Watchers_drop(&L->watchers); Motes_drop(&L->motes); Props_drop(&L->props);
+    Watchers_drop(&L->watchers); Motes_drop(&L->motes); Blooms_drop(&L->blooms); Props_drop(&L->props);
     free(L->open); free(L->dist);
     memset(L, 0, sizeof *L);
 }

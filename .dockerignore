@@ -1,0 +1,10 @@
+build
+build-web
+dist
+.git
+*.png
+murk.sav
+subprojects/packagecache
+subprojects/raylib
+subprojects/box3d
+subprojects/STC-*

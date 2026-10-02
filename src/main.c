@@ -34,6 +34,8 @@ static float madness, tension, flash, lampOn, nameT, stepDist, endT;
 static float blackout, nextBlackout = 25, glitch;
 static float freezeT, nextFreeze = 70, pullT, pullYaw, phantomT = 15, stepGap, titleT;
 static int phantomLeft;
+static float stareT, nextEvent = 30, eyesOpenT, eyeBoost;
+static bool gardenCaught;
 
 // eyes that hang in the fog at the edge of sight and are gone when you face them
 typedef struct { Vector3 pos; float life, seenT; bool on; } Lurker;
@@ -44,11 +46,12 @@ static float msgT;
 
 static struct { bool on; float t; WorldId to; bool wake, loaded; } tr;
 
-static const char *FX_NAME[FX_COUNT] = { "LAMP", "GLOVES", "BOOTS" };
+static const char *FX_NAME[FX_COUNT] = { "LAMP", "GLOVES", "BOOTS", "FEATHER" };
 static const char *FX_DESC[FX_COUNT] = {
     "press F to toggle it. the dark pulls back a little.",
     "your grip drains slower. you climb faster.",
     "you can jump once more in the air.",
+    "hold SPACE in the air. you fall like something that was never heavy.",
 };
 
 // the game keeps a tiny file about you
@@ -127,7 +130,38 @@ static bool ray_clear(Vector3 a, Vector3 b) {
 
 static void hub_reposition(Watcher *w) {
     float a = frand_(0, 6.2831f);
-    w->pos = (Vector3){ sinf(a) * 6.5f, 0, cosf(a) * 6.5f };
+    float r = L.id == W_GARDEN ? 30.0f : 6.5f;
+    Vector3 p = { sinf(a) * r, 0, cosf(a) * r };
+    if (L.id == W_GARDEN) { p.x = Clamp(p.x + P.pos.x, -46, 46); p.z = Clamp(p.z + P.pos.z, -46, 46); }
+    w->pos = p;
+}
+
+static const char *WHISPERS[W_COUNT][4] = {
+    { "did you hear that?", "someone is breathing in the room.", "the ceiling is lower than it was.", "you left the door open." },
+    { "don't look down.", "it's getting closer to your heels.", "your hands are not yours.", "up. only up." },
+    { "something is dragging.", "they know the way better than you.", "count the steps behind you.", "the walls are wet." },
+    { "the eye has noticed you.", "there is no floor. there never was.", "you are falling very slowly.", "everything here is looking." },
+    { "the flowers were people.", "someone planted you here.", "it is so quiet. why is it so quiet.", "don't pick anything." },
+    { "stay.", "stay.", "stay.", "stay." },
+};
+
+// something happens every half minute or so, so no dream ever just sits there
+static void director(float dt) {
+    if (tr.on || L.id == W_END) return;
+    nextEvent -= dt;
+    if (nextEvent > 0) return;
+    nextEvent = frand_(22, 45);
+    int kind = GetRandomValue(0, 2);
+    if (kind == 0 || (L.id != W_GARDEN && L.id != W_VOID)) {
+        say(WHISPERS[L.id][GetRandomValue(0, 3)], 4.0f);
+        audio_play_ex(SFX_KNOCK, 0.25f, frand_(0.5f, 0.8f)); glitch = 0.45f;
+    } else if (L.id == W_GARDEN) {
+        eyesOpenT = 5.0f; audio_play(SFX_STINGER); glitch = 0.6f;
+        say("every flower opens its eyes.", 4.0f);
+    } else {
+        eyeBoost = 5.0f; audio_play(SFX_STINGER); glitch = 0.7f; madness = fminf(1.0f, madness + 0.3f);
+        say("the eye opens all the way.", 4.0f);
+    }
 }
 
 static void scare_update(float dt) {
@@ -151,10 +185,11 @@ static void scare_update(float dt) {
         if (stepGap <= 0) { audio_play_ex(SFX_STEP, 0.3f, 0.6f); stepGap = 0.5f; phantomLeft--; }
     }
     // ---- blackouts: the lights just stop. in the drains, things keep walking.
-    bool haunted = (L.id == W_DRAINS) || (L.id == W_HUB && L.watchers.size > 0);
+    bool creeping = L.id == W_HUB || L.creepers;
+    bool haunted = (L.id == W_DRAINS) || (creeping && L.watchers.size > 0);
     if (blackout > 0) {
         blackout -= dt;
-        if (blackout <= 0 && L.id == W_HUB) {
+        if (blackout <= 0 && creeping) {
             for (int i = 0; i < L.watchers.size; i++) {
                 Watcher *w = &L.watchers.data[i];
                 Vector3 d = { P.pos.x - w->pos.x, 0, P.pos.z - w->pos.z };
@@ -175,8 +210,8 @@ static void scare_update(float dt) {
             audio_play(SFX_KNOCK); glitch = 0.6f;
         }
     }
-    // ---- hub visitors creep whenever you aren't looking
-    if (L.id == W_HUB) {
+    // ---- hub visitors and gardeners creep whenever you aren't looking
+    if (creeping) {
         float nearest = 99;
         for (int i = 0; i < L.watchers.size; i++) {
             Watcher *w = &L.watchers.data[i];
@@ -187,8 +222,10 @@ static void scare_update(float dt) {
             Vector3 d = { P.pos.x - w->pos.x, 0, P.pos.z - w->pos.z };
             float len = Vector3Length(d);
             if (len < nearest) nearest = len;
-            if (!seen && len > 0.01f) w->pos = Vector3Add(w->pos, Vector3Scale(d, (blackout > 0 ? 1.8f : 0.55f) * dt / len));
-            if (len < 1.1f) {
+            float sp = L.id == W_GARDEN ? 1.1f + 0.1f * (dreams > 8 ? 8 : dreams) : 0.55f;
+            if (!seen && len > 0.01f) w->pos = Vector3Add(w->pos, Vector3Scale(d, (blackout > 0 ? sp * 3.3f : sp) * dt / len));
+            if (len < 1.1f && L.id == W_GARDEN) { gardenCaught = true; say("it only wanted to hold you.", 4); }
+            else if (len < 1.1f) {
                 audio_play(SFX_SCREAM); glitch = 1; flash = 1;
                 hub_reposition(w); blackout = 1.4f; madness = 1;
                 say("it was behind you the whole time.", 4);
@@ -196,6 +233,7 @@ static void scare_update(float dt) {
         }
         L.nearest = nearest;
     }
+    director(dt);
     // ---- lurkers
     if (L.id != W_END) {
         for (int i = 0; i < 3; i++) {
@@ -240,7 +278,7 @@ static float dist_to_box(Vector3 p, const Box *b) {
 }
 
 static Color fx_color(EffectId f) {
-    return f == FX_LAMP ? (Color){ 255, 225, 120, 255 } : f == FX_GLOVES ? (Color){ 255, 140, 60, 255 } : (Color){ 190, 140, 255, 255 };
+    return f == FX_LAMP ? (Color){ 255, 225, 120, 255 } : f == FX_GLOVES ? (Color){ 255, 140, 60, 255 } : f == FX_BOOTS ? (Color){ 190, 140, 255, 255 } : (Color){ 255, 150, 220, 255 };
 }
 
 static Color scale_col(Color c, float k) {
@@ -252,6 +290,7 @@ static void draw_scene(Camera3D cam, float time) {
     float light = L.light * flicker(time, L.id == W_HUB ? 1.0f + 0.12f * (dreams > 8 ? 8 : dreams) : 0.25f) * (lampOn > 0.5f ? 1.2f : 1.0f);
     if (blackout > 0) { light *= 0.04f; dens *= 1.8f; }
     gfx_begin_scene(cam, L.fog, dens, light, time);
+    gfx_sky(&L.sky, time, P.pos);
     float cull = 3.2f / dens + 6;
     Vector3 eye = cam.position;
     for (int i = 0; i < (int)L.boxes.size; i++) {
@@ -269,17 +308,25 @@ static void draw_scene(Camera3D cam, float time) {
     }
     for (int i = 0; i < L.watchers.size; i++) {
         const Watcher *w = &L.watchers.data[i];
+        if (L.creepers) {   // a gardener: pale, too tall, and its head is a flower
+            float sway = sinf(w->phase * 1.1f) * 0.06f;
+            gfx_box((Vector3){ w->pos.x + sway, 1.5f, w->pos.z }, (Vector3){ 0.13f, 1.5f, 0.1f }, TEX_FLESH, (Color){ 215, 200, 210, 255 }, 1.0f);
+            gfx_box((Vector3){ w->pos.x - 0.25f + sway, 1.8f, w->pos.z }, (Vector3){ 0.04f, 1.1f, 0.04f }, TEX_FLESH, (Color){ 200, 185, 195, 255 }, 1.0f);
+            gfx_box((Vector3){ w->pos.x + 0.25f + sway, 1.8f, w->pos.z }, (Vector3){ 0.04f, 1.1f, 0.04f }, TEX_FLESH, (Color){ 200, 185, 195, 255 }, 1.0f);
+            continue;
+        }
         Vector3 c = { w->pos.x + sinf(w->phase * 1.3f) * 0.04f, 1.45f, w->pos.z };
         gfx_box(c, (Vector3){ 0.2f, 1.45f, 0.2f }, TEX_CONCRETE, (Color){ 14, 14, 16, 255 }, 1.0f);
         gfx_box((Vector3){ c.x, 3.05f, c.z }, (Vector3){ 0.16f, 0.2f, 0.16f }, TEX_CONCRETE, (Color){ 20, 20, 22, 255 }, 1.0f);
     }
     if (L.sludge) gfx_slab(L.sludgeY, 6.0f, TEX_SLUDGE, (Color){ 140, 160, 90, 255 }, time * 12.0f);
+    if (L.water) gfx_slab(L.waterY, L.waterHalf, TEX_WATER, (Color){ 150, 190, 255, 255 }, time * 3.0f);
 
     gfx_set_emit(true);
     for (int i = 0; i < L.boxes.size; i++) {
         const Box *b = &L.boxes.data[i];
         if (!(b->flags & F_EMIT)) continue;
-        float k = (L.id == W_HUB && b->h.y < 0.2f) ? flicker(time, 1.0f) : 1.0f;
+        float k = ((L.id == W_HUB || L.id == W_DRAINS) && b->h.y < 0.2f) ? flicker(time, 1.0f) : 1.0f;
         gfx_glow(b->c, b->h, scale_col(b->tint, k));
     }
     for (int i = 0; i < L.pickups.size; i++) {
@@ -310,8 +357,141 @@ static void draw_scene(Camera3D cam, float time) {
     for (int i = 0; i < L.motes.size; i++) {
         const Mote *m = &L.motes.data[i];
         float a = sinf(fminf(m->life, 1.0f) * 3.14159f);
-        gfx_glow(m->pos, (Vector3){ 0.012f, 0.012f, 0.012f }, scale_col(L.id == W_END ? (Color){ 120, 120, 120, 255 } : (Color){ 150, 140, 120, 255 }, a));
+        float sz = L.moteGlow ? 0.03f : 0.012f;
+        if (!L.moteGlow) gfx_glow(m->pos, (Vector3){ sz, sz, sz }, scale_col(L.moteCol, a));
     }
+    // gardeners' heads and the flowers that watch
+    for (int i = 0; i < L.watchers.size && L.creepers; i++) {
+        const Watcher *w = &L.watchers.data[i];
+        Vector3 hc = { w->pos.x, 3.35f, w->pos.z };
+        Vector3 to = Vector3Normalize((Vector3){ P.pos.x - w->pos.x, 0, P.pos.z - w->pos.z });
+        float pulse = 0.9f + 0.1f * sinf(time * 3 + i);
+        gfx_glow(hc, (Vector3){ 0.55f * pulse, 0.03f, 0.16f }, (Color){ 255, 120, 190, 255 });
+        gfx_glow(hc, (Vector3){ 0.16f, 0.03f, 0.55f * pulse }, (Color){ 255, 120, 190, 255 });
+        gfx_glow(hc, (Vector3){ 0.3f, 0.035f, 0.3f }, (Color){ 255, 220, 150, 255 });
+        Vector3 ec = Vector3Add(hc, (Vector3){ to.x * 0.22f, 0.02f, to.z * 0.22f });
+        gfx_glow(ec, (Vector3){ 0.13f, 0.13f, 0.13f }, (Color){ 240, 236, 220, 255 });
+        gfx_glow(Vector3Add(ec, Vector3Scale(to, 0.1f)), (Vector3){ 0.05f, 0.07f, 0.05f }, (Color){ 4, 2, 4, 255 });
+    }
+    for (int i = 0; i < L.blooms.size; i++) {
+        const Bloom *b = &L.blooms.data[i];
+        float d = Vector3Distance(b->pos, eye);
+        if (d > 55) continue;
+        if (b->yaw > 0.5f) { gfx_glow(b->pos, (Vector3){ b->size, b->size, b->size }, b->col); continue; }
+        float s = b->size, br = 0.85f + 0.15f * sinf(time * 1.5f + i);
+        Color pc = scale_col(b->col, br);
+        gfx_glow(b->pos, (Vector3){ s, 0.025f, s * 0.38f }, pc);
+        gfx_glow(b->pos, (Vector3){ s * 0.38f, 0.025f, s }, pc);
+        gfx_glow(b->pos, (Vector3){ s * 0.27f, 0.04f, s * 0.27f }, (Color){ 255, 230, 160, 255 });
+        bool open = eyesOpenT > 0 || (d < 22 && sinf(time * 0.9f + i * 3.1f) > -0.85f);
+        if (open) {   // an eye on the flower, turned toward you
+            Vector3 to = Vector3Normalize((Vector3){ cam.position.x - b->pos.x, 0.25f, cam.position.z - b->pos.z });
+            Vector3 ec = Vector3Add(b->pos, Vector3Scale(to, s * 0.3f));
+            gfx_glow(ec, (Vector3){ s * 0.2f, s * 0.2f, s * 0.2f }, (Color){ 240, 236, 220, 255 });
+            gfx_glow(Vector3Add(ec, Vector3Scale(to, s * 0.14f)), (Vector3){ s * 0.09f, s * 0.12f, s * 0.09f }, (Color){ 4, 2, 4, 255 });
+        }
+    }
+    // soft glow around everything bright
+    gfx_begin_glow();
+    for (int i = 0; i < L.boxes.size; i++) {
+        const Box *b = &L.boxes.data[i];
+        if (!(b->flags & F_EMIT)) continue;
+        float mx = fmaxf(b->h.x, fmaxf(b->h.y, b->h.z));
+        if (mx > 1.6f || b->h.y > 3.0f) continue;
+        if (dist_to_box(eye, b) > cull) continue;
+        float k = ((L.id == W_HUB || L.id == W_DRAINS) && b->h.y < 0.2f) ? flicker(time, 1.0f) : 1.0f;
+        Vector3 ho = Vector3Add(b->c, Vector3Scale(Vector3Normalize(Vector3Subtract(eye, b->c)), 0.45f));   // pull it off the wall it hangs on
+        gfx_halo(ho, 0.9f + mx * 2.6f, b->tint, 0.55f * k);
+    }
+    for (int i = 0; i < L.pickups.size; i++) {
+        const Pickup *pk = &L.pickups.data[i];
+        if (!pk->taken) gfx_halo(pk->pos, 2.6f + sinf(time * 3) * 0.3f, fx_color(pk->fx), 0.9f);
+    }
+    for (int i = 0; i < L.blooms.size; i++) {
+        const Bloom *b = &L.blooms.data[i];
+        if (Vector3Distance(b->pos, eye) > 45) continue;
+        gfx_halo(b->pos, b->yaw > 0.5f ? 1.0f : b->size * 3.5f, b->col, b->yaw > 0.5f ? 0.55f : 0.4f);
+    }
+    for (int i = 0; i < L.watchers.size; i++) {
+        const Watcher *w = &L.watchers.data[i];
+        if (L.creepers) gfx_halo((Vector3){ w->pos.x, 3.35f, w->pos.z }, 2.4f, (Color){ 255, 90, 160, 255 }, 0.6f);
+        else gfx_halo((Vector3){ w->pos.x, 2.5f, w->pos.z }, 0.6f, (Color){ 255, 230, 200, 255 }, 0.4f);
+    }
+    for (int i = 0; i < 3; i++) {
+        const Lurker *k = &lurk[i];
+        if (!k->on) continue;
+        gfx_halo(k->pos, 0.8f, (i % 2) ? (Color){ 255, 50, 30, 255 } : (Color){ 235, 235, 205, 255 }, 0.5f);
+    }
+    if (L.moteGlow) for (int i = 0; i < L.motes.size; i++) {
+        const Mote *m = &L.motes.data[i];
+        gfx_halo(m->pos, 0.22f, L.moteCol, 0.5f * sinf(fminf(m->life, 1.0f) * 3.14159f));
+    }
+    gfx_end_glow();
+    gfx_set_emit(false);
+    gfx_end_scene();
+}
+
+// ---------------------------------------------------------------- title: a lit door at the end of the orchard
+static void draw_title(float time) {
+    static const Sky sky = { true, { 8, 4, 38, 255 }, { 70, 30, 84, 255 }, { 70, 30, 84, 255 }, 1.0f, true, { 255, 236, 230, 255 }, { -0.4f, 0.36f, -0.84f }, { 70, 255, 200, 255 }, 1.0f, false, 0 };
+    Camera3D cam = { 0 };
+    float yaw = sinf(time * 0.09f) * 0.28f;
+    cam.position = (Vector3){ 0, 1.6f, 0 };
+    cam.target = (Vector3){ sinf(yaw) * 10, 2.1f + sinf(time * 0.2f) * 0.15f, -cosf(yaw) * 10 };
+    cam.up = (Vector3){ 0, 1, 0 };
+    cam.fovy = 70;
+    cam.projection = CAMERA_PERSPECTIVE;
+    gfx_begin_scene(cam, sky.horizon, 0.024f, 1.2f, time);
+    gfx_sky(&sky, time, cam.position);
+    gfx_box((Vector3){ 0, -0.5f, 0 }, (Vector3){ 90, 0.5f, 90 }, TEX_GRASS, (Color){ 140, 170, 160, 255 }, 3.0f);
+    gfx_box((Vector3){ 0, 2.2f, -26 }, (Vector3){ 1.8f, 2.2f, 0.25f }, TEX_CONCRETE, (Color){ 36, 32, 40, 255 }, 1.0f);
+    for (int i = 0; i < 6; i++) {
+        float z = -4 - i * 3.6f;
+        gfx_box((Vector3){ -3.2f, 0.9f, z }, (Vector3){ 0.1f, 0.9f, 0.1f }, TEX_RUST, (Color){ 70, 60, 70, 255 }, 1.0f);
+        gfx_box((Vector3){ 3.2f, 0.9f, z - 1.8f }, (Vector3){ 0.1f, 0.9f, 0.1f }, TEX_RUST, (Color){ 70, 60, 70, 255 }, 1.0f);
+    }
+    static const Color PET[4] = { { 255, 100, 170, 255 }, { 120, 235, 255, 255 }, { 255, 220, 110, 255 }, { 200, 150, 255, 255 } };
+    for (int i = 0; i < 70; i++) {
+        float a = (i * 2.399f), r = 5 + (i * 37 % 41);
+        float x = sinf(a) * r * 0.9f, z = -cosf(a) * r - 2.0f;
+        if (fabsf(x) < 1.6f) continue;
+        float h = 0.8f + (i * 13 % 25) / 10.0f;
+        gfx_box((Vector3){ x, h / 2, z }, (Vector3){ 0.05f, h / 2, 0.05f }, TEX_GRASS, (Color){ 90, 150, 130, 255 }, 1.0f);
+    }
+    gfx_set_emit(true);
+    gfx_glow((Vector3){ 0, 1.9f, -25.7f }, (Vector3){ 1.3f, 1.8f, 0.05f }, (Color){ 255, 238, 215, 255 });
+    for (int i = 0; i < 6; i++) {
+        gfx_glow((Vector3){ -3.2f, 1.95f, -4 - i * 3.6f }, (Vector3){ 0.14f, 0.14f, 0.14f }, (Color){ 255, 190, 120, 255 });
+        gfx_glow((Vector3){ 3.2f, 1.95f, -5.8f - i * 3.6f }, (Vector3){ 0.14f, 0.14f, 0.14f }, (Color){ 255, 190, 120, 255 });
+    }
+    for (int i = 0; i < 70; i++) {
+        float a = (i * 2.399f), r = 5 + (i * 37 % 41);
+        float x = sinf(a) * r * 0.9f, z = -cosf(a) * r - 2.0f;
+        if (fabsf(x) < 1.6f) continue;
+        float h = 0.8f + (i * 13 % 25) / 10.0f, sz = 0.3f + (i % 5) * 0.07f;
+        Color c = scale_col(PET[i % 4], 0.85f + 0.15f * sinf(time * 1.5f + i));
+        gfx_glow((Vector3){ x, h + 0.1f, z }, (Vector3){ sz, 0.025f, sz * 0.38f }, c);
+        gfx_glow((Vector3){ x, h + 0.1f, z }, (Vector3){ sz * 0.38f, 0.025f, sz }, c);
+        gfx_glow((Vector3){ x, h + 0.1f, z }, (Vector3){ sz * 0.25f, 0.04f, sz * 0.25f }, (Color){ 255, 230, 160, 255 });
+    }
+    gfx_begin_glow();
+    gfx_halo((Vector3){ 0, 1.9f, -25.0f }, 9.0f, (Color){ 255, 220, 190, 255 }, 0.8f);
+    for (int i = 0; i < 6; i++) {
+        gfx_halo((Vector3){ -3.2f, 1.95f, -4 - i * 3.6f }, 1.4f, (Color){ 255, 190, 120, 255 }, 0.7f);
+        gfx_halo((Vector3){ 3.2f, 1.95f, -5.8f - i * 3.6f }, 1.4f, (Color){ 255, 190, 120, 255 }, 0.7f);
+    }
+    for (int i = 0; i < 70; i++) {
+        float a = (i * 2.399f), r = 5 + (i * 37 % 41);
+        float x = sinf(a) * r * 0.9f, z = -cosf(a) * r - 2.0f;
+        if (fabsf(x) < 1.6f) continue;
+        float h = 0.8f + (i * 13 % 25) / 10.0f;
+        gfx_halo((Vector3){ x, h + 0.1f, z }, 1.1f, PET[i % 4], 0.4f);
+    }
+    for (int i = 0; i < 50; i++) {   // fireflies
+        float t = time * 0.2f + i * 1.7f;
+        gfx_halo((Vector3){ sinf(t * 1.3f + i) * 9, 0.8f + fmodf(t * 0.5f + i, 4.0f), -4 - fmodf(i * 3.7f, 20) + cosf(t) * 2 }, 0.3f, (Color){ 255, 170, 230, 255 }, 0.6f);
+    }
+    gfx_end_glow();
     gfx_set_emit(false);
     gfx_end_scene();
 }
@@ -413,6 +593,7 @@ static void frame(void) {
         if (titleT > 0) { titleT -= frameDt; if (titleT <= 0) SetWindowTitle("MURK"); }
 
         if (state == S_TITLE) {
+            audio_set(0.8f, 0.0f, 0.0f, 0.6f); audio_music(0.55f, 0.0f);
             if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) new_game();
         } else if (state == S_PLAY) {
             const float DT = 1.0f / 120.0f;
@@ -465,6 +646,7 @@ static void frame(void) {
                         say(b, 10);
                         audio_play(SFX_PICKUP);
                         if (pk->fx == FX_LAMP) lampOn = 1;
+                        flash = 0.0f; glitch = 0.3f;
                     }
                 }
                 // doors
@@ -493,6 +675,7 @@ static void frame(void) {
                 if (L.sawWatcher) { L.sawWatcher = false; audio_play(SFX_STINGER); glitch = 0.8f; madness = fminf(1, madness + 0.3f); }
                 if (P.slipped) { P.slipped = false; audio_play(SFX_KNOCK); glitch = 0.5f; }
                 scare_update(frameDt);
+                if (gardenCaught) { gardenCaught = false; dead = true; audio_play(SFX_SCREAM); glitch = 1; }
                 if (dead) go(W_HUB, true);
             }
 
@@ -503,8 +686,17 @@ static void frame(void) {
                 if (tr.t >= 1.3f) tr.on = false;
             }
 
+            // the eye in the sky: it grows the longer you look back
+            if (L.sky.eye) {
+                Vector3 ed = { sinf(200 * DEG2RAD) * cosf(30 * DEG2RAD), sinf(30 * DEG2RAD), -cosf(200 * DEG2RAD) * cosf(30 * DEG2RAD) };
+                if (Vector3DotProduct(player_forward(&P), ed) > 0.8f) stareT = fminf(8, stareT + frameDt); else stareT = fmaxf(0, stareT - frameDt * 0.7f);
+                if (eyeBoost > 0) eyeBoost -= frameDt;
+                L.sky.eyeAmt = fminf(1.0f, 0.5f + stareT * 0.07f + (eyeBoost > 0 ? 0.5f : 0.0f) + 0.02f * (dreams > 10 ? 10 : dreams));
+            }
+            if (eyesOpenT > 0) eyesOpenT -= frameDt;
             // mood
             float m = 0.04f;
+            if (stareT > 1.5f) m += (stareT - 1.5f) * 0.08f;
             if (P.gripping) m += (1.0f - P.grip) * 0.6f;
             if (P.grip < 0.25f) m += (0.25f - P.grip) * 2.0f;
             if (L.sludge && L.sludgeArmed) { float g = P.pos.y - L.sludgeY; if (g < 9) m += (9 - g) / 9.0f * 0.6f; }
@@ -515,12 +707,14 @@ static void frame(void) {
             if (m > 1) m = 1;
             madness += (m - madness) * fminf(1, frameDt * 3);
             tension = madness;
-            float tone = L.id == W_HUB ? 1.0f : L.id == W_SHAFT ? 0.75f : L.id == W_DRAINS ? 0.9f : L.id == W_VOID ? 1.4f : 2.0f;
+            float tone = L.id == W_HUB ? 1.0f : L.id == W_SHAFT ? 0.75f : L.id == W_DRAINS ? 0.9f : L.id == W_VOID ? 1.4f : L.id == W_GARDEN ? 1.15f : 2.0f;
+            float mus = L.id == W_GARDEN ? 0.8f : L.id == W_VOID ? 0.5f : L.id == W_END ? 0.8f : (L.id == W_HUB && dreams >= 4) ? 0.25f : 0.0f;
+            audio_music(frozen ? 0.0f : mus, fminf(1.0f, madness * 0.9f + (blackout > 0 ? 0.4f : 0.0f)));
             float whisper = L.nearest < 18 ? 1.0f - L.nearest / 18.0f : 0.0f;
             if (!frozen) audio_set(tone, tension, whisper, tr.on ? 0.3f : 0.9f);
         } else {
             endT += frameDt;
-            if (IsKeyPressed(KEY_ENTER) && endT > 8) { if (levelLoaded) { level_free(&L); levelLoaded = false; } state = S_TITLE; audio_set(1, 0, 0, 0.4f); }
+            if (IsKeyPressed(KEY_ENTER) && endT > 8) { if (levelLoaded) { level_free(&L); levelLoaded = false; } state = S_TITLE; }
         }
         if (nameT > 0) nameT -= frameDt;
         if (msgT > 0) msgT -= frameDt;
@@ -535,9 +729,11 @@ static void frame(void) {
 
         BeginTextureMode(gfx_rt);
         if (state == S_TITLE || !levelLoaded) {
-            ClearBackground((Color){ 6, 5, 5, 255 });
+            draw_title(time);
+            DrawRectangleGradientV(0, 50, RT_W, 130, (Color){ 0, 0, 0, 0 }, (Color){ 0, 0, 0, 150 });
             int j = (int)(sinf(time * 40) * 1.2f * (sinf(time * 0.7f) > 0.95f));
-            text_c("M U R K", 80 + j, 40, (Color){ 190, 180, 150, 255 });
+            text_c("M U R K", 82 + j, 40, (Color){ 120, 20, 40, 255 });
+            text_c("M U R K", 80 + j, 40, (Color){ 235, 220, 195, 255 });
             text_c("a descent into other people's dreams", 128, 10, (Color){ 120, 110, 95, 255 });
             if ((int)(time * 1.5f) % 2) text_c("press ENTER or click", 190, 10, (Color){ 170, 160, 140, 255 });
             char memo[96] = "";
@@ -566,6 +762,12 @@ static void frame(void) {
             }
         }
         EndTextureMode();
+        {
+            Color lo = { 128, 128, 128, 255 }, hi = lo;
+            if (state == S_TITLE || !levelLoaded) { lo = (Color){ 112, 124, 158, 255 }; hi = (Color){ 158, 128, 124, 255 }; }
+            else if (L.gradeLo.a) { lo = L.gradeLo; hi = L.gradeHi; }
+            gfx_grade(lo, hi);
+        }
         gfx_present(time, state == S_PLAY ? madness : 0.0f, fade, flash, glitch);
 
         if (shotWorld >= 0 && ++shotFrame >= shotFrames) { TakeScreenshot(shotPath); quit = true; }
@@ -591,7 +793,8 @@ int main(void) {
     // dev hook: MURK_SHOT="world,x,y,z,yaw,pitch,fx,frames,path" renders a frame and exits
     float sx = 0, sy = 0, sz = 0, syaw = 0, spit = 0; int sfxmask = 0;
     const char *env = getenv("MURK_SHOT");
-    if (env && sscanf(env, "%d,%f,%f,%f,%f,%f,%d,%d,%255s", &shotWorld, &sx, &sy, &sz, &syaw, &spit, &sfxmask, &shotFrames, shotPath) == 9) {
+    if (env && !strncmp(env, "title", 5)) { shotWorld = 99; shotFrames = 30; snprintf(shotPath, sizeof shotPath, "%s", env + 6); }
+    else if (env && sscanf(env, "%d,%f,%f,%f,%f,%f,%d,%d,%255s", &shotWorld, &sx, &sy, &sz, &syaw, &spit, &sfxmask, &shotFrames, shotPath) == 9) {
         new_game();
         P.fx = sfxmask;
         load_world((WorldId)shotWorld, false);
