@@ -55,6 +55,7 @@ static void add_prop(Level *L, Vector3 c, Vector3 h, TexId tex, Color tint, floa
     Props_push(&L->props, p);
 }
 
+static Color scale_tint(Color c, float k) { return (Color){ (unsigned char)(c.r * k), (unsigned char)(c.g * k), (unsigned char)(c.b * k), 255 }; }
 static float frand(float a, float b) { return a + (b - a) * (GetRandomValue(0, 10000) / 10000.0f); }
 
 const Box *level_box_of_shape(const Level *L, b3ShapeId s) {
@@ -337,31 +338,55 @@ static void build_drains(Level *L, int seed) {
     float ox = -N * C / 2;
     #define CELLC(i) ((Vector3){ ox + ((i) % N + 0.5f) * C, 0, ox + ((i) / N + 0.5f) * C })
 
-    // geometry
+    // geometry. the maze is carved into four kinds of zone, each with its own walls, floor and ceiling height
+    static const float ZH[4] = { 4.0f, 3.0f, 5.6f, 2.6f };
+    static const TexId ZW[4] = { TEX_CONCRETE, TEX_TILE, TEX_RUST, TEX_FLESH };
+    static const TexId ZF[4] = { TEX_TILE, TEX_CONCRETE, TEX_WOOD, TEX_SLUDGE };
+    static const Color ZC[4] = { { 130, 150, 130, 255 }, { 150, 150, 125, 255 }, { 120, 110, 100, 255 }, { 170, 120, 120, 255 } };
+    #define ZONE(x, y) ((((x) / 3) * 2 + ((y) / 3) * 3 + seed) & 3)
     float tot = N * C;
-    add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ tot / 2 + 1, 0.5f, tot / 2 + 1 }, TEX_TILE, (Color){ 120, 150, 120, 255 }, 2.0f, 0);
-    add_box(L, (Vector3){ 0, H + 0.5f, 0 }, (Vector3){ tot / 2 + 1, 0.5f, tot / 2 + 1 }, TEX_CONCRETE, (Color){ 90, 100, 90, 255 }, 3.0f, 0);
-    Color wc = (Color){ 130, 150, 130, 255 };
+    add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ tot / 2 + 1, 0.5f, tot / 2 + 1 }, TEX_CONCRETE, (Color){ 110, 120, 110, 255 }, 2.0f, 0);
     float wt = 0.35f;
+    uint8_t *room = calloc(N * N, 1);
+    // rooms: knock out the inner walls of a few 2x2 blocks to get open halls
+    for (int r = 0; r < 3; r++) {
+        int rx = GetRandomValue(1, N - 3), ry = GetRandomValue(1, N - 3);
+        if (rx <= 1 && ry <= 1) continue;
+        for (int dy = 0; dy < 2; dy++) for (int dx = 0; dx < 2; dx++) {
+            int i = (ry + dy) * N + rx + dx;
+            room[i] = 1;
+            if (dx == 0) { L->open[i] |= 2; L->open[i + 1] |= 8; }
+            if (dy == 0) { L->open[i] |= 4; L->open[i + N] |= 1; }
+        }
+    }
     for (int y = 0; y < N; y++) for (int x = 0; x < N; x++) {
-        int i = y * N + x;
+        int i = y * N + x, z = ZONE(x, y);
+        float hc = ZH[z];
         Vector3 c = CELLC(i);
+        float hs = (y + 1 < N) ? fmaxf(hc, ZH[ZONE(x, y + 1)]) : hc, he = (x + 1 < N) ? fmaxf(hc, ZH[ZONE(x + 1, y)]) : hc;
+        // ceiling and per-zone floor skin
+        add_box(L, (Vector3){ c.x, hc + 0.5f, c.z }, (Vector3){ C / 2 + wt, 0.5f, C / 2 + wt }, z == 3 ? TEX_FLESH : TEX_CONCRETE, scale_tint(ZC[z], 0.75f), 3.0f, 0);
+        add_box(L, (Vector3){ c.x, 0.006f, c.z }, (Vector3){ C / 2, 0.006f, C / 2 }, ZF[z], ZC[z], 2.0f, F_NOCOLLIDE);
         // south and east walls, plus north/west on the rim
-        if (!(L->open[i] & 4) || y == N - 1) add_box(L, (Vector3){ c.x, H / 2, c.z + C / 2 }, (Vector3){ C / 2 + wt, H / 2, wt }, TEX_CONCRETE, wc, 2.0f, 0);
-        if (!(L->open[i] & 2) || x == N - 1) add_box(L, (Vector3){ c.x + C / 2, H / 2, c.z }, (Vector3){ wt, H / 2, C / 2 + wt }, TEX_CONCRETE, wc, 2.0f, 0);
-        if (y == 0) add_box(L, (Vector3){ c.x, H / 2, c.z - C / 2 }, (Vector3){ C / 2 + wt, H / 2, wt }, TEX_CONCRETE, wc, 2.0f, 0);
-        if (x == 0) add_box(L, (Vector3){ c.x - C / 2, H / 2, c.z }, (Vector3){ wt, H / 2, C / 2 + wt }, TEX_CONCRETE, wc, 2.0f, 0);
+        if (!(L->open[i] & 4) || y == N - 1) add_box(L, (Vector3){ c.x, hs / 2, c.z + C / 2 }, (Vector3){ C / 2 + wt, hs / 2, wt }, ZW[z], ZC[z], 2.0f, 0);
+        if (!(L->open[i] & 2) || x == N - 1) add_box(L, (Vector3){ c.x + C / 2, he / 2, c.z }, (Vector3){ wt, he / 2, C / 2 + wt }, ZW[z], ZC[z], 2.0f, 0);
+        if (y == 0) add_box(L, (Vector3){ c.x, hc / 2, c.z - C / 2 }, (Vector3){ C / 2 + wt, hc / 2, wt }, ZW[z], ZC[z], 2.0f, 0);
+        if (x == 0) add_box(L, (Vector3){ c.x - C / 2, hc / 2, c.z }, (Vector3){ wt, hc / 2, C / 2 + wt }, ZW[z], ZC[z], 2.0f, 0);
         // clutter
         int r = GetRandomValue(0, 9);
         if (i != 0 && i != best) {
-            if (r < 2) add_box(L, (Vector3){ c.x + frand(-1.5f, 1.5f), H / 2, c.z + frand(-1.5f, 1.5f) }, (Vector3){ 0.35f, H / 2, 0.35f }, TEX_RUST, (Color){ 120, 110, 100, 255 }, 1.5f, 0);
+            if (room[i]) {
+                if (GetRandomValue(0, 2) == 0) add_box(L, (Vector3){ c.x + frand(-1.8f, 1.8f), hc / 2, c.z + frand(-1.8f, 1.8f) }, (Vector3){ 0.4f, hc / 2, 0.4f }, ZW[z], ZC[z], 1.5f, 0);
+                else if (GetRandomValue(0, 2) == 0) add_prop(L, (Vector3){ c.x + frand(-1.5f, 1.5f), 0.4f, c.z + frand(-1.5f, 1.5f) }, (Vector3){ 0.4f, 0.4f, 0.4f }, TEX_WOOD, (Color){ 120, 130, 110, 255 }, 200, 1);
+            } else if (r < 2) add_box(L, (Vector3){ c.x + frand(-1.5f, 1.5f), hc / 2, c.z + frand(-1.5f, 1.5f) }, (Vector3){ 0.35f, hc / 2, 0.35f }, TEX_RUST, (Color){ 120, 110, 100, 255 }, 1.5f, 0);
             else if (r < 5) add_box(L, (Vector3){ c.x + frand(-1.2f, 1.2f), 0.012f, c.z + frand(-1.2f, 1.2f) }, (Vector3){ frand(0.8f, 2.2f), 0.01f, frand(0.8f, 2.2f) }, TEX_SLUDGE, (Color){ 100, 120, 100, 255 }, 3.0f, F_NOCOLLIDE);
             else if (r < 7) add_prop(L, (Vector3){ c.x + frand(-1.5f, 1.5f), 0.4f, c.z + frand(-1.5f, 1.5f) }, (Vector3){ 0.4f, 0.4f, 0.4f }, TEX_WOOD, (Color){ 120, 130, 110, 255 }, 200, 1);
         }
         // ceiling pipes
         if (GetRandomValue(0, 3) == 0)
-            add_box(L, (Vector3){ c.x, H - 0.3f, c.z }, (Vector3){ C / 2, 0.16f, 0.16f }, TEX_RUST, (Color){ 120, 120, 110, 255 }, 1.0f, F_NOCOLLIDE);
+            add_box(L, (Vector3){ c.x, hc - 0.3f, c.z }, (Vector3){ C / 2, 0.16f, 0.16f }, TEX_RUST, (Color){ 120, 120, 110, 255 }, 1.0f, F_NOCOLLIDE);
     }
+    free(room);
     {   // dead ends get a message
         static const char *DEAD[] = { "IT WAS HERE", "STAY", "DON'T STOP", "TOO LATE", "BEHIND YOU", "IT HEARS YOU" };
         int placed = 0;
