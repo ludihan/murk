@@ -8,3 +8,8 @@ subprojects/packagecache
 subprojects/raylib
 subprojects/box3d
 subprojects/STC-*
+ci
+Jenkinsfile
+README.md
+docker-compose.yml
+Dockerfile
