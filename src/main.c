@@ -133,7 +133,7 @@ static void load_world(WorldId id, bool wake) {
     lampOn = (P.fx & (1u << FX_LAMP)) ? lampOn : 0;
     if (id == W_HUB && !wake && dreams <= 1) say("WASD walk · SHIFT run · CTRL kneel · E use · hold LMB at rusty walls to grip · R wake up", 12);
     if (id == W_SHAFT) say("hold LMB on the rusty plates. W climbs, A/D shuffle, SPACE lunges. don't let go.", 9);
-    if (id == W_DRAINS) say("don't let them see you stop. don't stop seeing them.", 7);
+    if (id == W_DRAINS) say("something down here is listening.", 7);
     if (id == W_VOID) say("there is nothing underneath.", 6);
 }
 
@@ -477,6 +477,15 @@ static void draw_scene(Camera3D cam, float time) {
         gfx_ellipsoid(ec, Vector3Scale(r, s * 0.2f), Vector3Scale(u, s * 0.2f), Vector3Scale(to, s * 0.14f), TEX_SKIN, (Color){ 250, 244, 236, 255 });
         gfx_ellipsoid(Vector3Add(ec, Vector3Scale(to, s * 0.13f)), Vector3Scale(r, s * 0.07f), Vector3Scale(u, s * 0.09f), Vector3Scale(to, s * 0.02f), TEX_CONCRETE, (Color){ 4, 2, 3, 255 });
     }
+    for (int i = 0; i < L.pickups.size; i++) {   // a grate over anything you have not earned yet
+        const Pickup *pk = &L.pickups.data[i];
+        if (pk->taken || !pk->locked) continue;
+        for (int k = 0; k < 10; k++) {
+            float a = k * 0.6283f;
+            gfx_box((Vector3){ pk->pos.x + sinf(a) * 0.55f, pk->pos.y - 0.1f, pk->pos.z + cosf(a) * 0.55f }, (Vector3){ 0.025f, 1.2f, 0.025f }, TEX_RUST, (Color){ 120, 100, 90, 255 }, 1.0f);
+        }
+        gfx_box((Vector3){ pk->pos.x, pk->pos.y + 1.1f, pk->pos.z }, (Vector3){ 0.6f, 0.03f, 0.6f }, TEX_RUST, (Color){ 120, 100, 90, 255 }, 1.0f);
+    }
     if (L.sludge) gfx_slab(L.sludgeY, 6.0f, TEX_SLUDGE, (Color){ 140, 160, 90, 255 }, time * 12.0f);
     if (L.water) gfx_slab(L.waterY, L.waterHalf, TEX_WATER, (Color){ 90, 100, 110, 255 }, time * 3.0f);
 
@@ -703,7 +712,18 @@ static const char *END_LINES[] = {
 
 static void use_thing(Use *u) {
     u->done = true;
-    if (u->kind == USE_CANDLE) { audio_play_ex(SFX_GRAB, 0.4f, 0.6f); play_from(SFX_PRAYER, u->pos, 0.4f, 0.9f); }
+    if (u->kind == USE_CANDLE) {
+        audio_play_ex(SFX_GRAB, 0.4f, 0.6f); play_from(SFX_PRAYER, u->pos, 0.4f, 0.9f);
+        P.noise = 1.0f;   // the match is loud. it heard that
+        int lit = 0, all = 0;
+        for (int i = 0; i < L.uses.size; i++) if (L.uses.data[i].kind == USE_CANDLE) { all++; lit += L.uses.data[i].done; }
+        if (lit < all) { char b[64]; snprintf(b, sizeof b, "%d of %d.", lit, all); say(b, 3); }
+        else {
+            for (int i = 0; i < L.pickups.size; i++) L.pickups.data[i].locked = false;
+            audio_play_ex(SFX_BELL, 0.5f, 1.0f); audio_play_ex(SFX_SCRAPE, 0.5f, 0.8f);
+            say("far off, iron scrapes on stone. the grate is open.", 5);
+        }
+    }
 }
 
 // ---------------------------------------------------------------- dev bot (MURK_BOT=climb|walk|jump)
@@ -813,6 +833,10 @@ static void frame(void) {
                 // pickups
                 for (int i = 0; i < L.pickups.size; i++) {
                     Pickup *pk = &L.pickups.data[i];
+                    if (!pk->taken && pk->locked && Vector3Distance(Vector3Add(P.pos, (Vector3){ 0, 1, 0 }), pk->pos) < 1.6f) {
+                        if (msgT < 0.5f) say("there is a grate over it. somewhere, three black candles.", 3);
+                        continue;
+                    }
                     if (!pk->taken && Vector3Distance(Vector3Add(P.pos, (Vector3){ 0, 1, 0 }), pk->pos) < 1.3f) {
                         pk->taken = true;
                         P.fx |= 1u << pk->fx;
@@ -843,11 +867,23 @@ static void frame(void) {
                 if (P.pos.y < L.killY) { dead = true; say("you fall for a long time.", 4); }
                 if (L.sludge && P.pos.y + 0.6f < L.sludgeY) { dead = true; say("it takes you.", 4); }
                 Vector3 fwd = player_forward(&P);
-                if (level_watchers(&L, player_eye(&P), fwd, P.pos, frameDt, blackout > 0)) {
-                    dead = true; say("it was standing right there.", 4);
-                    audio_play(SFX_BREATH); haunt_title();
+                if (level_watchers(&L, player_eye(&P), fwd, P.pos, frameDt, P.noise)) {
+                    dead = true; say("it heard you.", 4);
+                    audio_play_ex(SFX_CLICK, 0.9f, 0.8f); haunt_title();
                 }
-                if (L.sawWatcher) { L.sawWatcher = false; audio_play(SFX_SWELL); madness = fminf(1, madness + 0.3f); }
+                if (L.sawWatcher) { L.sawWatcher = false; audio_play_ex(SFX_SWELL, 0.35f, 0.9f); madness = fminf(1, madness + 0.2f); }
+                if (L.id == W_DRAINS) {   // you hear them before you see them: wet clicking, faster when they have heard you
+                    static float clickT[4];
+                    for (int i = 0; i < L.watchers.size && i < 4; i++) {
+                        Watcher *w = &L.watchers.data[i];
+                        clickT[i] -= frameDt;
+                        if (clickT[i] <= 0) {
+                            clickT[i] = w->state == 2 ? frand_(0.5f, 0.9f) : w->state == 1 ? frand_(1.0f, 1.8f) : frand_(2.0f, 4.0f);
+                            play_from(SFX_CLICK, w->pos, 0.9f, frand_(0.8f, 1.05f));
+                            if (w->state > 0 && GetRandomValue(0, 2) == 0) play_from(SFX_THUD, w->pos, 0.4f, frand_(0.9f, 1.1f));
+                        }
+                    }
+                }
                 if (P.slipped) { P.slipped = false; audio_play(SFX_KNOCK); }
                 scare_update(frameDt);
                 if (gardenCaught) { gardenCaught = false; dead = true; audio_play(SFX_BREATH); }

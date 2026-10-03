@@ -64,7 +64,7 @@ enum { NOTE_VIGIL, NOTE_DAY9, NOTE_DOORS, NOTE_GARDEN, NOTE_DRAINS, NOTE_CLIMB, 
 void level_build(Level *L, WorldId id, int seed);
 void level_free(Level *L);
 void level_step(Level *L, float dt, Vector3 player);
-// true if a watcher caught the player this frame
-bool level_watchers(Level *L, Vector3 eye, Vector3 fwd, Vector3 feet, float dt, bool blind);
+// the blind things in the drains: they go where they last heard you. true if one caught the player this frame
+bool level_watchers(Level *L, Vector3 eye, Vector3 fwd, Vector3 feet, float dt, float noise);
 bool level_seen(Level *L, Vector3 eye, Vector3 fwd, Vector3 pos);
 const Box *level_box_of_shape(const Level *L, b3ShapeId s);

@@ -356,7 +356,7 @@ static void build_hub(Level *L, int seed) {
     if (visitors > 3) visitors = 3;
     for (int i = 0; i < visitors; i++) {
         Vector3 sp = L->spots[L->nspots - 1 - GetRandomValue(0, 14)];
-        Watcher w = { sp, frand(0, 6), 0, frand(4, 9), 0, false };
+        Watcher w = { .pos = sp, .phase = frand(0, 6), .timer = frand(4, 9) };
         Watchers_push(&L->watchers, w);
     }
     // junk you can shove around
@@ -459,7 +459,7 @@ static void build_shaft(Level *L, int seed) {
     int w = (LEVELS + 1) % 4;
     wall_box(L, w, 0.0f, sEnd, top + STEP - 0.4f, top + STEP, 4.0f, TEX_FLESH, (Color){ 190, 160, 160, 255 }, 0);
     Vector3 pp = wall_pt(w, W, top + STEP + 0.5f, 1.8f);
-    Pickup pk = { pp, FX_GLOVES, false };
+    Pickup pk = { pp, FX_GLOVES, false, false };
     Pickups_push(&L->pickups, pk);
     wall_box(L, w, 0.0f, sMid, top + 0.6f, top + STEP + 3.0f, 0.25f, TEX_RUST, rust, F_GRIP);
     add_decal(L, "HE IS BELOW", wall_pt((w + 1) % 4, W, top + STEP + 2.5f, 0.0f), (((w + 1) % 4) % 2 == 0) ? 2 : 0,
@@ -605,16 +605,35 @@ static void build_drains(Level *L, int seed) {
     { Vector3 np = CELLC(0); add_note(L, (Vector3){ np.x - 1.6f, 0.02f, np.z + 1.2f }, NOTE_CANDLES); }
     L->spawnYaw = 90;
     Vector3 pc = CELLC(best); pc.y = 1.1f;
-    Pickup pk = { pc, FX_LAMP, false };
+    Pickup pk = { pc, FX_LAMP, false, true };   // behind a grate until the candles are lit
     Pickups_push(&L->pickups, pk);
+    {   // three black candles, as far apart as the dead ends allow
+        int ends[81], ne = 0;
+        for (int i = 1; i < N * N; i++) {
+            int o = L->open[i], cnt = (o & 1) + ((o >> 1) & 1) + ((o >> 2) & 1) + ((o >> 3) & 1);
+            if (i != best && far[i] >= 3 && (cnt == 1 || GetRandomValue(0, 5) == 0)) ends[ne++] = i;
+        }
+        int chosen[3], nc = 0;
+        for (int tries = 0; tries < 400 && nc < 3 && ne > 0; tries++) {
+            int c = ends[GetRandomValue(0, ne - 1)], ok = 1;
+            for (int k = 0; k < nc; k++) { int dx = c % N - chosen[k] % N, dy = c / N - chosen[k] / N; if (dx * dx + dy * dy < (tries < 200 ? 12 : 4)) ok = 0; }
+            if (ok) chosen[nc++] = c;
+        }
+        for (int k = 0; k < nc; k++) {
+            Vector3 cc = CELLC(chosen[k]);
+            Use u = { { cc.x + frand(-0.8f, 0.8f), 0, cc.z + frand(-0.8f, 0.8f) }, USE_CANDLE, k, false };
+            Uses_push(&L->uses, u);
+            add_sigil(L, (Vector3){ u.pos.x, 0.008f, u.pos.z }, 0.8f, CHALK, 90 + k);
+        }
+    }
     // lamp glow marker so it's findable in the dark: a tall dim beam
     add_box(L, (Vector3){ pc.x, H / 2, pc.z }, (Vector3){ 0.03f, H / 2, 0.03f }, TEX_CONCRETE, (Color){ 255, 230, 120, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
-    // watchers: start far from you, one near the lamp
-    int placed = 0;
-    for (int tries = 0; tries < 200 && placed < 4; tries++) {
+    // the blind ones: one, and a second if you keep coming back. they start far off, wandering
+    int placed = 0, want = seed >= 6 ? 2 : 1;
+    for (int tries = 0; tries < 200 && placed < want; tries++) {
         int i = GetRandomValue(0, N * N - 1);
-        if (far[i] < 6 && i != best) continue;
-        Watcher w = { CELLC(i), frand(0, 6), 0, 0, 0, false };
+        if (far[i] < 6) continue;
+        Watcher w = { .pos = CELLC(i), .goal = CELLC(i), .phase = frand(0, 6) };
         Watchers_push(&L->watchers, w);
         placed++;
     }
@@ -750,7 +769,7 @@ static void build_void(Level *L, int seed) {
         b3Body_SetLinearVelocity(L->props.data[i].body, (b3Vec3){ frand(-.3f, .3f), frand(-.3f, .3f), frand(-.3f, .3f) });
     }
     Vector3 pc = { p.x, p.y + 1.1f, p.z };
-    Pickup pk = { pc, FX_BOOTS, false };
+    Pickup pk = { pc, FX_BOOTS, false, false };
     Pickups_push(&L->pickups, pk);
     add_box(L, (Vector3){ p.x, p.y + 20, p.z }, (Vector3){ 0.04f, 20, 0.04f }, TEX_CONCRETE, (Color){ 200, 160, 255, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
 }
@@ -810,7 +829,7 @@ static void build_garden(Level *L, int seed) {
         add_candle(L, (Vector3){ pc.x, top + 3.4f, pc.z }, 0.25f, true);
     }
     add_box(L, (Vector3){ 0, top + 0.3f, MZ }, (Vector3){ 0.7f, 0.3f, 0.7f }, TEX_FLESH, (Color){ 220, 190, 200, 255 }, 1.0f, 0);
-    Pickup pk = { { 0, top + 1.8f, MZ }, FX_FEATHER, false };
+    Pickup pk = { { 0, top + 1.8f, MZ }, FX_FEATHER, false, false };
     Pickups_push(&L->pickups, pk);
     add_box(L, (Vector3){ 0, 25, MZ }, (Vector3){ 0.05f, 25, 0.05f }, TEX_CONCRETE, (Color){ 200, 170, 140, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
     add_sigil(L, (Vector3){ 0, top, MZ }, 2.0f, CHALK, 41);
@@ -857,7 +876,7 @@ static void build_garden(Level *L, int seed) {
     for (int i = 0; i < n; i++) {
         float x = frand(-E + 6, E - 6), z = frand(-E + 6, 10);
         if (fabsf(x) < P + 2 && fabsf(z) < P + 2) { x = (x < 0 ? -1 : 1) * (P + 4); }
-        Watcher w = { { x, 0, z }, frand(0, 6), 0, 0, 0, false };
+        Watcher w = { .pos = { x, 0, z }, .phase = frand(0, 6) };
         Watchers_push(&L->watchers, w);
     }
 }
@@ -952,22 +971,6 @@ static int cell_of(const Level *L, Vector3 p) {
     return y * L->mazeN + x;
 }
 
-static void refresh_dist(Level *L, int from) {
-    int n = L->mazeN;
-    for (int i = 0; i < n * n; i++) L->dist[i] = -1;
-    IntV q = { 0 }; int head = 0;
-    IntV_push(&q, from); L->dist[from] = 0;
-    while (head < IntV_size(&q)) {
-        int cur = q.data[head++];
-        for (int d = 0; d < 4; d++) if (L->open[cur] & (1 << d)) {
-            int nx = cur % n + DX[d], ny = cur / n + DY[d], nn = ny * n + nx;
-            if (L->dist[nn] < 0) { L->dist[nn] = L->dist[cur] + 1; IntV_push(&q, nn); }
-        }
-    }
-    L->distCell = from;
-    IntV_drop(&q);
-}
-
 bool level_seen(Level *L, Vector3 eye, Vector3 fwd, Vector3 pos) {
     Vector3 chest = { pos.x, pos.y + 1.6f, pos.z };
     Vector3 to = Vector3Subtract(chest, eye);
@@ -978,39 +981,63 @@ bool level_seen(Level *L, Vector3 eye, Vector3 fwd, Vector3 pos) {
     return !r.hit || r.fraction > 0.97f;
 }
 
-bool level_watchers(Level *L, Vector3 eye, Vector3 fwd, Vector3 feet, float dt, bool blind) {
+static Vector3 cell_center(const Level *L, int c) {
+    float ox = -L->mazeN * L->cell / 2;
+    return (Vector3){ ox + (c % L->mazeN + 0.5f) * L->cell, 0, ox + (c / L->mazeN + 0.5f) * L->cell };
+}
+// the neighbour of `from` that is one step closer to `to` through the maze
+static int next_toward(const Level *L, int from, int to) {
+    int n = L->mazeN, d[256], q[256], head = 0, tail = 0;
+    if (from == to || n * n > 256) return to;
+    for (int i = 0; i < n * n; i++) d[i] = -1;
+    q[tail++] = to; d[to] = 0;
+    while (head < tail) {
+        int cur = q[head++];
+        for (int k = 0; k < 4; k++) if (L->open[cur] & (1 << k)) {
+            int nn = (cur / n + DY[k]) * n + cur % n + DX[k];
+            if (d[nn] < 0) { d[nn] = d[cur] + 1; q[tail++] = nn; }
+        }
+    }
+    int best = to, bd = 1 << 30;
+    for (int k = 0; k < 4; k++) if (L->open[from] & (1 << k)) {
+        int nn = (from / n + DY[k]) * n + from % n + DX[k];
+        if (d[nn] >= 0 && d[nn] < bd) { bd = d[nn]; best = nn; }
+    }
+    return best;
+}
+
+// state 0: wandering. 1: going to where it heard something. 2: it heard you close, and it is coming fast.
+// when it gets there it stands still and listens. if you are kneeling and still, there is nothing to hear.
+bool level_watchers(Level *L, Vector3 eye, Vector3 fwd, Vector3 feet, float dt, float noise) {
     L->nearest = 99;
     if (!L->open) return false;
-    int pc = cell_of(L, feet);
-    if (pc != L->distCell) refresh_dist(L, pc);
-    float ox = -L->mazeN * L->cell / 2;
-    float speed = 2.7f + 0.22f * (L->dreamNo > 8 ? 8 : L->dreamNo);
+    float hear = noise * 17.0f;
+    int dn = L->dreamNo > 8 ? 8 : L->dreamNo;
     for (int i = 0; i < L->watchers.size; i++) {
         Watcher *w = &L->watchers.data[i];
         w->phase += dt;
-        float dist = Vector3Distance((Vector3){ w->pos.x, 1.6f, w->pos.z }, eye);
+        float dist = Vector3Distance((Vector3){ w->pos.x, 0, w->pos.z }, (Vector3){ feet.x, 0, feet.z });
         if (dist < L->nearest) L->nearest = dist;
-        if (dist < 0.9f) return true;
-        // in the dark they don't need you to look away
-        bool seen = !blind && level_seen(L, eye, fwd, w->pos);
+        if (dist < 0.85f) return true;
+        bool seen = level_seen(L, eye, fwd, w->pos);
         if (seen && !w->seen && dist < 22) L->sawWatcher = true;
         w->seen = seen;
-        if (seen) continue;
-        int wc = cell_of(L, w->pos);
-        Vector3 target = feet;
-        if (wc != pc) {
-            int best = -1, bd = L->dist[wc];
-            for (int d = 0; d < 4; d++) if (L->open[wc] & (1 << d)) {
-                int nn = (wc / L->mazeN + DY[d]) * L->mazeN + wc % L->mazeN + DX[d];
-                if (L->dist[nn] >= 0 && L->dist[nn] < bd) { bd = L->dist[nn]; best = nn; }
-            }
-            if (best >= 0) target = (Vector3){ ox + (best % L->mazeN + 0.5f) * L->cell, 0, ox + (best / L->mazeN + 0.5f) * L->cell };
-        }
+        if (noise > 0.05f && dist < hear) { w->goal = feet; w->state = dist < 8 ? 2 : 1; w->timer = 3.5f + (dist < 8 ? 2.0f : 0.0f); }
+        // right next to you it can hear your heart, if it waits long enough
+        if (dist < 1.9f) { w->sense += dt; if (w->sense > 1.8f) { w->goal = feet; w->state = 2; w->timer = 3; } }
+        else w->sense = fmaxf(0, w->sense - dt);
+        int wc = cell_of(L, w->pos), gc = cell_of(L, w->goal);
+        Vector3 target = wc == gc ? w->goal : cell_center(L, next_toward(L, wc, gc));
         Vector3 dir = Vector3Subtract(target, w->pos); dir.y = 0;
-        if (Vector3Length(dir) > 0.05f) {
-            float step = (blind ? speed * 1.4f : speed) * dt;
-            w->pos = Vector3Add(w->pos, Vector3Scale(Vector3Normalize(dir), step));
-            w->stride += step * 5.0f;
+        float dl = Vector3Length(dir);
+        float speed = (w->state == 0 ? 1.2f : w->state == 1 ? 2.3f : 3.2f) + 0.08f * dn;
+        if (wc == gc && dl < 0.35f) {   // arrived: listen, then wander off somewhere
+            if (w->state > 0) { w->timer -= dt; if (w->timer <= 0) w->state = 0; }
+            if (w->state == 0) w->goal = cell_center(L, GetRandomValue(0, L->mazeN * L->mazeN - 1));
+        } else if (dl > 0.01f) {
+            float step = fminf(dl, speed * dt);
+            w->pos = Vector3Add(w->pos, Vector3Scale(dir, step / dl));
+            w->stride += step * 4.5f;
         }
     }
     return false;
