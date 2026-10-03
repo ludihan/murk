@@ -151,12 +151,12 @@ static void load_world(WorldId id, bool wake) {
     }
     recN = 0; recT = 0;
     memset(&climber, 0, sizeof climber);
-    memset(&gaze, 0, sizeof gaze); gaze.t = 7.0f;
-    memset(&mass, 0, sizeof mass); mass.t = 8.0f;
-    memset(&grey, 0, sizeof grey); grey.t = frand_(14, 26);
+    memset(&gaze, 0, sizeof gaze); gaze.t = frand_(22, 30);
+    memset(&mass, 0, sizeof mass); mass.t = frand_(18, 24);
+    memset(&grey, 0, sizeof grey); grey.t = frand_(40, 70);
     memset(&dinner, 0, sizeof dinner);
     memset(&tallm, 0, sizeof tallm); tallm.t = frand_(50, 80); tallm.dist = 46; ringT = frand_(20, 40);
-    ghost.on = id != W_HUB && ghostN[id] > 40 && dreams >= 2 && GetRandomValue(0, 2) > 0; ghost.noticed = false; ghost.t = -frand_(4, 9);
+    ghost.on = id != W_HUB && ghostN[id] > 40 && dreams >= 3 && GetRandomValue(0, 3) == 0; ghost.noticed = false; ghost.t = -frand_(30, 60);
     level_build(&L, id, ++dreams);
     levelLoaded = true;
     player_spawn(&P, &L);
@@ -165,8 +165,9 @@ static void load_world(WorldId id, bool wake) {
         P.yaw = L.wakeYaw;
     }
     nameT = 3.5f;
-    blackout = 0; nextBlackout = 14 + GetRandomValue(0, 12); phantomLeft = 0;
-    memset(lurk, 0, sizeof lurk); lurkTimer = 6 + GetRandomValue(0, 6);
+    blackout = 0; nextBlackout = frand_(30, 50); phantomLeft = 0; phantomT = frand_(40, 80);
+    memset(lurk, 0, sizeof lurk); lurkTimer = frand_(70, 130);
+    nextEvent = frand_(50, 80);   // every dream starts quiet
     lampOn = (P.fx & (1u << FX_LAMP)) ? lampOn : 0;
     if (id == W_HUB && !wake && dreams <= 1) say("WASD walk · SHIFT run · CTRL kneel · E use · hold LMB at rusty walls to grip · R wake up", 12);
     if (id == W_SHAFT) say("hold LMB on the rusty plates. W climbs, A/D shuffle, SPACE lunges. don't let go.", 9);
@@ -237,10 +238,10 @@ static void director(float dt) {
     if (tr.on || L.id == W_END) return;
     nextEvent -= dt;
     if (nextEvent > 0) return;
-    nextEvent = frand_(22, 45);
+    nextEvent = frand_(70, 120);
     int kind = GetRandomValue(0, 2);
-    if (kind == 0 || L.id != W_GARDEN) {
-        say(WHISPERS[L.id][GetRandomValue(0, 3)], 4.0f);
+    if (kind == 0 || L.id != W_GARDEN || L.t < 60) {
+        if (GetRandomValue(0, 2) == 0) say(WHISPERS[L.id][GetRandomValue(0, 3)], 4.0f);
         static const Sfx AMB[] = { SFX_KNOCK, SFX_BELL, SFX_CHANT, SFX_PRAYER, SFX_HUM, SFX_CREAK, SFX_SCRAPE };
         Sfx a = AMB[GetRandomValue(0, 6)];
         play_behind(a, a == SFX_HUM || a == SFX_PRAYER ? 0.35f : 0.5f, frand_(0.85f, 1.0f));
@@ -253,10 +254,10 @@ static void director(float dt) {
 static bool update_climber(Vector3 eye, Vector3 fwd) {
     if (L.id != W_SHAFT) return false;
     if (!climber.on) {
-        if (!L.sludgeArmed) { climber.lastPY = P.pos.y; return false; }
-        climber.on = true; climber.y = P.pos.y - 11.0f; climber.lastPY = P.pos.y;
-        play_behind(SFX_SCRAPE, 0.5f, 0.8f);
-        say("something has started up the wall after you.", 4);
+        if (!L.sludgeArmed || P.pos.y < 12.0f) { climber.lastPY = P.pos.y; return false; }   // a quarter of the way up, far below, something starts
+        climber.on = true; climber.y = P.pos.y - 14.0f; climber.lastPY = P.pos.y;
+        play_behind(SFX_SCRAPE, 0.4f, 0.7f);
+        say("far below you, something has started to climb.", 4);
     }
     // it stays on whichever wall you are nearest, under you
     float W = L.shaftW - 0.06f;
@@ -317,7 +318,7 @@ static bool update_gaze(float dt) {
 
 // the orchard: the flowers are its eyes and the gardeners are its hands. the gardeners are blind; a flower
 // that sees you standing calls them to where you were. in the long grass, kneeling, the flowers can't see you
-static bool flower_open(int i, float t) { return eyesOpenT > 0 || sinf(t * 0.4f + i * 3.1f) > 0.2f; }
+static bool flower_open(int i, float t) { return eyesOpenT > 0 || (t > 25 && sinf(t * 0.4f + i * 3.1f) > 0.2f); }   // they wake up a while after you arrive
 static bool flower_has_eye(const Bloom *b, int i) { return b->yaw <= 0.5f && i % 4 == 0; }
 static void garden_update(float dt, Vector3 eye) {
     static float spotted;
@@ -435,7 +436,7 @@ static bool ward_update(float dt, Vector3 eye) {
     int k = g_wardLoop > 4 ? 4 : g_wardLoop;
     radioT -= dt;
     if (radioT <= 0) {
-        radioT = frand_(9, 14);
+        radioT = frand_(18, 30);
         play_from(SFX_PRAYER, (Vector3){ 0.75f, 0.9f, -3.4f }, 0.45f, 0.7f);
         say(RADIO[k][GetRandomValue(0, 1)], 4);
     }
@@ -470,7 +471,7 @@ static bool grey_update(float dt) {
     }
     Vector3 d = { wrapf(P.pos.x - grey.pos.x, L.wrap), 0, wrapf(P.pos.z - grey.pos.z, L.wrap) };
     float len = Vector3Length(d);
-    if (len > 45) { grey.on = false; grey.t = frand_(8, 16); return false; }   // you lost him. he will find you again
+    if (len > 45) { grey.on = false; grey.t = frand_(30, 50); return false; }   // you lost him. he will find you again
     float step = 1.15f * dt;
     if (len > 0.01f) { grey.pos = Vector3Add(grey.pos, Vector3Scale(d, step / len)); grey.stride += step * 3.0f; }
     grey.pos.x = wrapf(grey.pos.x, L.wrap); grey.pos.z = wrapf(grey.pos.z, L.wrap);
@@ -496,7 +497,10 @@ static bool dinner_update(float dt, Vector3 eye, Vector3 fwd) {
         return false;
     }
     // the host walks the length of the table toward you, but only while you aren't looking at him
-    if (dinner.host.y == 0 && dinner.host.x == 0) dinner.host = (Vector3){ -3.0f, 0.001f, wrapf(P.pos.z + 26.0f, L.wrap) };
+    if (dinner.host.y == 0 && dinner.host.x == 0) {   // he comes in once you have been at the table a while, from far down it
+        if (L.t < 35) return false;
+        dinner.host = (Vector3){ -3.0f, 0.001f, wrapf(P.pos.z + 30.0f, L.wrap) };
+    }
     Vector3 hp = wp(dinner.host, eye);
     bool seen = level_seen(&L, eye, fwd, hp);
     if (seen && !dinner.hostSeen) audio_play_ex(SFX_SWELL, 0.3f, 0.8f);
@@ -571,15 +575,15 @@ static void scare_update(float dt) {
     if (L.id == W_HUB) { blackout = 0; L.nearest = 99; return; }   // nothing follows you into the house
     Vector3 eye = player_eye(&P), fwd = player_forward(&P);
     // ---- the game hitches: everything stops and the sound drops out, then it all lurches back
-    if (dreams >= 2 && !tr.on) {
+    if (dreams >= 4 && !tr.on) {
         nextFreeze -= dt;
-        if (nextFreeze <= 0) { freezeT = frand_(0.5f, 1.1f); nextFreeze = frand_(50, 110); haunt_title(); }
+        if (nextFreeze <= 0) { freezeT = frand_(0.5f, 1.1f); nextFreeze = frand_(150, 300); haunt_title(); }
     }
     // ---- phantom footsteps and knocks while you stand still in a haunted place
     if (dreams >= 2 && L.id != W_END && P.speedMeter < 0.5f && !tr.on) {
         phantomT -= dt;
         if (phantomT <= 0) {
-            phantomT = frand_(9, 22);
+            phantomT = frand_(40, 80);
             if (GetRandomValue(0, 2) == 0) play_behind(GetRandomValue(0, 1) ? SFX_KNOCK : SFX_CREAK, 0.4f, frand_(0.8f, 1.0f));
             else { phantomLeft = GetRandomValue(3, 6); stepGap = 0; }
         }
@@ -596,7 +600,7 @@ static void scare_update(float dt) {
         nextBlackout -= dt;
         if (nextBlackout <= 0) {
             blackout = frand_(0.9f, 2.0f);
-            nextBlackout = fmaxf(7.0f, 26.0f - dreams * 1.2f) * frand_(0.6f, 1.4f);
+            nextBlackout = fmaxf(30.0f, 60.0f - dreams * 2.0f) * frand_(0.7f, 1.3f);
             audio_play(SFX_KNOCK);
         }
     }
@@ -642,12 +646,13 @@ static void scare_update(float dt) {
             if (k->seenT > 0.6f || k->life <= 0 || dist < 3.5f) k->on = false;
         }
         lurkTimer -= dt;
-        if (lurkTimer <= 0 && !tr.on) {
-            lurkTimer = frand_(5, 12) / (1.0f + 0.15f * (dreams > 10 ? 10 : dreams));
+        bool anyLurk = lurk[0].on || lurk[1].on || lurk[2].on;
+        if (lurkTimer <= 0 && !tr.on && !anyLurk && dreams >= 3) {
+            lurkTimer = frand_(120, 220);
             for (int i = 0; i < 3; i++) if (!lurk[i].on) {
                 for (int tries = 0; tries < 8; tries++) {
                     float a = (P.yaw + (GetRandomValue(0, 1) ? 1 : -1) * frand_(35, 120)) * DEG2RAD;
-                    float d = frand_(9, 18);
+                    float d = frand_(14, 22);
                     Vector3 p = { eye.x + sinf(a) * d, eye.y + 0.4f, eye.z - cosf(a) * d };
                     if (!ray_clear(eye, p)) continue;
                     b3RayResult fl = b3World_CastRayClosest(L.phys, b3v(p), (b3Vec3){ 0, -6, 0 }, b3DefaultQueryFilter());
@@ -1282,7 +1287,8 @@ static void frame(void) {
                         if (w->state < 0) continue;
                         clickT[i] -= frameDt;
                         if (clickT[i] <= 0) {
-                            clickT[i] = w->state == 2 ? frand_(0.5f, 0.9f) : w->state == 1 ? frand_(1.0f, 1.8f) : frand_(2.0f, 4.0f);
+                            clickT[i] = w->state == 2 ? frand_(0.5f, 0.9f) : w->state == 1 ? frand_(1.2f, 2.0f) : frand_(6.0f, 12.0f);
+                            if (L.t < 20) continue;   // at first there is nothing to hear at all
                             play_from(SFX_CLICK, w->pos, 0.9f, frand_(0.8f, 1.05f));
                             if (w->state > 0 && GetRandomValue(0, 2) == 0) play_from(SFX_THUD, w->pos, 0.4f, frand_(0.9f, 1.1f));
                         }

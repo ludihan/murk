@@ -893,7 +893,7 @@ static void build_garden(Level *L, int seed) {
         add_decal(L, STONE[i], (Vector3){ x, 1.5f, z + 0.2f }, 2, 1, 0.16f, (i % 2) ? BLOOD : CHALK);
     }
     // gardeners
-    int n = 3 + (seed / 3 > 3 ? 3 : seed / 3);
+    int n = 2 + (seed / 4 > 2 ? 2 : seed / 4);
     for (int i = 0; i < n; i++) {
         float x = frand(-E + 6, E - 6), z = frand(-E + 6, 10);
         if (fabsf(x) < P + 2 && fabsf(z) < P + 2) { x = (x < 0 ? -1 : 1) * (P + 4); }
@@ -1479,6 +1479,7 @@ bool level_watchers(Level *L, Vector3 eye, Vector3 fwd, Vector3 feet, float dt, 
         bool seen = level_seen(L, eye, fwd, w->pos);
         if (seen && !w->seen && dist < 22) L->sawWatcher = true;
         w->seen = seen;
+        if (L->t < 18 && w->state == 0) continue;   // it hasn't woken yet
         if (noise > 0.05f && dist < hear) { w->goal = feet; w->state = dist < 8 ? 2 : 1; w->timer = 3.5f + (dist < 8 ? 2.0f : 0.0f); }
         // right next to you it can hear your heart, if it waits long enough
         if (dist < 1.9f) { w->sense += dt; if (w->sense > 1.8f) { w->goal = feet; w->state = 2; w->timer = 3; } }

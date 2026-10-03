@@ -103,6 +103,13 @@ static void penitent(const Fig *f, const Frame *F, bool kneel) {
     gfx_ellipsoid(hc, Vector3Scale(hr, 0.2f), Vector3Scale(hu, 0.25f), Vector3Scale(hf, 0.22f), TEX_CLOTH, robe);
     // where the face should be there is only a hole
     gfx_ellipsoid(add3(hc, Vector3Scale(hf, 0.13f), Vector3Scale(hu, -0.03f)), Vector3Scale(hr, 0.13f), Vector3Scale(hu, 0.16f), Vector3Scale(hf, 0.11f), TEX_CONCRETE, (Color){ 5, 4, 4, 255 });
+    if (Vector3Distance(hc, f->lookAt) < 5.0f) {   // close enough, and there is a face in there after all
+        Vector3 fc = add3(hc, Vector3Scale(hf, 0.17f), Vector3Scale(hu, -0.04f));
+        gfx_ellipsoid(fc, Vector3Scale(hr, 0.085f), Vector3Scale(hu, 0.14f), Vector3Scale(hf, 0.05f), TEX_SKIN, (Color){ 214, 208, 200, 255 });
+        for (int s = -1; s <= 1; s += 2)
+            gfx_ellipsoid(add3(fc, Vector3Scale(hf, 0.035f), Vector3Add(Vector3Scale(hr, s * 0.035f), Vector3Scale(hu, 0.035f))), Vector3Scale(hr, 0.022f), Vector3Scale(hu, 0.028f), Vector3Scale(hf, 0.02f), TEX_CONCRETE, (Color){ 3, 2, 2, 255 });
+        gfx_ellipsoid(add3(fc, Vector3Scale(hf, 0.035f), Vector3Scale(hu, -0.065f)), Vector3Scale(hr, 0.022f), Vector3Scale(hu, 0.07f), Vector3Scale(hf, 0.02f), TEX_CONCRETE, (Color){ 3, 2, 2, 255 });
+    }
     for (int s = -1; s <= 1; s += 2) {
         Vector3 sh = W(F, s * 0.29f + sway, top - 0.03f, 0.03f), el, wr, fd;
         if (kneel) { el = W(F, s * 0.3f, top - 0.42f, 0.2f); wr = W(F, s * 0.05f, top - 0.28f, 0.34f); fd = Vector3Normalize(Vector3Add(F->u, Vector3Scale(F->f, 0.2f))); }
@@ -139,9 +146,11 @@ static void crawler(const Fig *f, const Frame *F) {
         Vector3 hip = W(F, s * 0.14f, 0.68f, -0.42f), knee = W(F, s * 0.3f, 0.32f + ll, -0.12f + lsw), foot = W(F, s * 0.24f, 0.03f + ll * 0.5f, -0.64f + lsw);
         gfx_limb(hip, knee, 0.07f, 0.05f, TEX_SKIN, pale);
         gfx_limb(knee, foot, 0.05f, 0.03f, TEX_SKIN, pale);
-        Vector3 s0 = W(F, s * 0.2f, 0.84f, 0.36f), el = W(F, s * 0.52f, 1.04f + al, 0.5f + asw), hand = W(F, s * 0.34f, 0.03f + al * 0.6f, 1.02f + asw);
+        // arms with one joint too many, folded like a spider's
+        Vector3 s0 = W(F, s * 0.2f, 0.84f, 0.36f), el = W(F, s * 0.62f, 1.3f + al, 0.38f + asw * 0.5f), el2 = W(F, s * 0.6f, 0.62f + al * 0.6f, 0.86f + asw), hand = W(F, s * 0.36f, 0.03f + al * 0.4f, 1.15f + asw);
         gfx_limb(s0, el, 0.055f, 0.04f, TEX_SKIN, pale);
-        gfx_limb(el, hand, 0.04f, 0.025f, TEX_SKIN, pale);
+        gfx_limb(el, el2, 0.04f, 0.032f, TEX_SKIN, pale);
+        gfx_limb(el2, hand, 0.032f, 0.022f, TEX_SKIN, pale);
         fingers(hand, Vector3Normalize(F->f), F->r, 0.2f, 4, pale);
     }
     // the head hangs under the shoulders, and now and then it jerks
@@ -154,7 +163,17 @@ static void crawler(const Fig *f, const Frame *F) {
     Vector3 hr, hu, hf;
     head_axes(&g, &hfF, hc, &hr, &hu, &hf);
     gfx_ellipsoid(hc, Vector3Scale(hr, 0.11f), Vector3Scale(hu, 0.15f), Vector3Scale(hf, 0.12f), TEX_SKIN, pale);
-    gfx_ellipsoid(add3(hc, Vector3Scale(hf, 0.09f), Vector3Scale(hu, -0.05f)), Vector3Scale(hr, 0.06f), Vector3Scale(hu, 0.11f), Vector3Scale(hf, 0.045f), TEX_CONCRETE, (Color){ 6, 2, 3, 255 });
+    // the jaw hangs open much further than a jaw should, and the teeth are all the same size
+    float gape = 0.16f + 0.04f * sinf(f->t * 2.3f);
+    Vector3 mc = add3(hc, Vector3Scale(hf, 0.09f), Vector3Scale(hu, -0.08f));
+    gfx_ellipsoid(mc, Vector3Scale(hr, 0.075f), Vector3Scale(hu, gape), Vector3Scale(hf, 0.05f), TEX_CONCRETE, (Color){ 6, 2, 3, 255 });
+    for (int k = 0; k < 5; k++) {
+        float x = (k - 2) * 0.026f;
+        Vector3 tp = add3(mc, Vector3Scale(hr, x), Vector3Add(Vector3Scale(hu, gape * 0.8f), Vector3Scale(hf, 0.04f)));
+        gfx_limb(tp, Vector3Add(tp, Vector3Scale(hu, -0.04f)), 0.008f, 0.002f, TEX_SKIN, (Color){ 230, 220, 190, 255 });
+        Vector3 bp = add3(mc, Vector3Scale(hr, x), Vector3Add(Vector3Scale(hu, -gape * 0.8f), Vector3Scale(hf, 0.04f)));
+        gfx_limb(bp, Vector3Add(bp, Vector3Scale(hu, 0.04f)), 0.008f, 0.002f, TEX_SKIN, (Color){ 230, 220, 190, 255 });
+    }
 }
 
 static void gardener(const Fig *f, const Frame *F) {
