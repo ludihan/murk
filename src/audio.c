@@ -13,8 +13,8 @@ static volatile float g_music = 0.0f, g_sour = 0.0f;
 static volatile float g_tone = 1.0f, g_tension = 0.0f, g_vol = 0.0f, g_whisper = 0.0f;
 static volatile float g_choir = 0.0f, g_breath = 0.0f, g_breathPan = 0.0f;
 
-static float frnd(void) { return (float)rand() / RAND_MAX * 2.0f - 1.0f; }
-static float urnd(void) { return (float)rand() / RAND_MAX; }
+static float frnd(void) { return (float)rand() / (float)RAND_MAX * 2.0f - 1.0f; }
+static float urnd(void) { return (float)rand() / (float)RAND_MAX; }
 
 // Chamberlin state variable filter: cheap resonant band-pass, fine below ~4 kHz at this rate
 typedef struct { float lo, bd; } Svf;
