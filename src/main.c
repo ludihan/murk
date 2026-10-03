@@ -76,6 +76,8 @@ static float radioT, wardFollow;   // the ward's radio, and how far along the th
 static struct { int phase; float t, noticed, lift; bool warned; } gaze;
 // the lower church: three tolls, then everyone kneels and he counts them
 static struct { int phase, tolls; float t, tollT, stare; bool warned; } mass;
+// the dinner: the host who moves along the table when you aren't looking, and the chair that was kept for you
+static struct { float sitT; Vector3 seat; Vector3 host; float hostStride; bool hostSeen; } dinner;
 // the static sea's grey man
 static struct { bool on; float t; Vector3 pos; float stride; } grey;
 
@@ -146,6 +148,7 @@ static void load_world(WorldId id, bool wake) {
     memset(&gaze, 0, sizeof gaze); gaze.t = 7.0f;
     memset(&mass, 0, sizeof mass); mass.t = 8.0f;
     memset(&grey, 0, sizeof grey); grey.t = frand_(14, 26);
+    memset(&dinner, 0, sizeof dinner);
     ghost.on = id != W_HUB && ghostN[id] > 40 && dreams >= 2 && GetRandomValue(0, 2) > 0; ghost.noticed = false; ghost.t = -frand_(4, 9);
     level_build(&L, id, ++dreams);
     levelLoaded = true;
@@ -162,6 +165,7 @@ static void load_world(WorldId id, bool wake) {
     if (id == W_SHAFT) say("hold LMB on the rusty plates. W climbs, A/D shuffle, SPACE lunges. don't let go.", 9);
     if (id == W_DRAINS) say("something down here is listening.", 7);
     if (id == W_STATIC) say("nothing is on.", 5);
+    if (id == W_DINNER) say("dinner is served. there is a place for you.", 6);
     if (id == W_WARD) say("the lights hum. the corridor goes on ahead of you.", 6);
     if (id == W_VOID) say("there is nothing underneath.", 6);
 }
@@ -469,6 +473,35 @@ static bool grey_update(float dt) {
     return false;
 }
 
+static bool dinner_update(float dt, Vector3 eye, Vector3 fwd) {
+    if (L.id != W_DINNER) return false;
+    if (dinner.sitT > 0) {   // every head at the table turns to you. then the meal begins
+        float before = dinner.sitT;
+        dinner.sitT += dt;
+        P.crouch = 0.55f;
+        for (int i = 0; i < L.effigies.size; i++) L.effigies.data[i].look = fminf(1.0f, dinner.sitT * 0.6f);
+        if (before < 1.6f && dinner.sitT >= 1.6f) audio_play_ex(SFX_BELL, 0.8f, 1.0f);
+        if (before < 3.2f && dinner.sitT >= 3.2f) { say("the meal can begin.", 4); audio_play_ex(SFX_CHANT, 0.7f, 0.9f); }
+        if (before < 5.0f && dinner.sitT >= 5.0f) go(W_WOMB, false);
+        return false;
+    }
+    // the host walks the length of the table toward you, but only while you aren't looking at him
+    if (dinner.host.y == 0 && dinner.host.x == 0) dinner.host = (Vector3){ -3.0f, 0.001f, wrapf(P.pos.z + 26.0f, L.wrap) };
+    Vector3 hp = wp(dinner.host, eye);
+    bool seen = level_seen(&L, eye, fwd, hp);
+    if (seen && !dinner.hostSeen) audio_play_ex(SFX_SWELL, 0.3f, 0.8f);
+    dinner.hostSeen = seen;
+    Vector3 d = { P.pos.x - hp.x, 0, P.pos.z - hp.z };
+    float len = Vector3Length(d);
+    if (!seen && len > 0.01f) {
+        float step = fminf(len, (1.6f + 0.08f * (dreams > 8 ? 8 : dreams)) * dt);
+        dinner.host.x += d.x / len * step; dinner.host.z += d.z / len * step;
+        dinner.host.x = wrapf(dinner.host.x, L.wrap); dinner.host.z = wrapf(dinner.host.z, L.wrap);
+        dinner.hostStride += step * 3.0f;
+    }
+    return len < 1.0f;
+}
+
 static void scare_update(float dt) {
     if (L.id == W_HUB) { blackout = 0; L.nearest = 99; return; }   // nothing follows you into the house
     Vector3 eye = player_eye(&P), fwd = player_forward(&P);
@@ -653,6 +686,11 @@ static void draw_scene(Camera3D cam, float time) {
     if (L.id == W_WARD && g_wardLoop == 3 && recN > 24) {
         Vector3 fp = rec[recN - 24], nx = rec[recN - 23];
         Fig f = { FIG_PENITENT, Vector3Lerp(fp, nx, recT / 0.25f), atan2f(nx.x - fp.x, -(nx.z - fp.z)), (float)recN, eye, 0.6f, 0.3f, time, { 0, 0, 1 }, (Color){ 20, 18, 18, 255 } };
+        figure_draw(&f);
+    }
+    if (L.id == W_DINNER && dinner.sitT <= 0 && (dinner.host.x != 0 || dinner.host.y != 0)) {   // the host: very tall, and his hands are wet
+        Vector3 hp = wp(dinner.host, eye); hp.y = 0;
+        Fig f = { FIG_GARDENER, hp, atan2f(eye.x - hp.x, -(eye.z - hp.z)), dinner.hostStride, eye, 1.0f, 0.2f, time, { 0, 0, 1 }, (Color){ 70, 30, 30, 255 } };
         figure_draw(&f);
     }
     if (grey.on) {   // a grey man in a grey coat, walking toward you. he isn't looking at you
@@ -943,7 +981,7 @@ static const char *END_LINES_KNOWN[] = {
 
 // touch the wrong thing and you are somewhere else: any dream but this one, the shallow ones or the deep
 static void link_random(void) {
-    static const WorldId DEST[] = { W_SHAFT, W_DRAINS, W_VOID, W_GARDEN, W_CHAPEL, W_WARD, W_STATIC };
+    static const WorldId DEST[] = { W_SHAFT, W_DRAINS, W_VOID, W_GARDEN, W_CHAPEL, W_WARD, W_STATIC, W_DINNER };
     int n = (int)(sizeof DEST / sizeof *DEST);
     WorldId to;
     do to = DEST[GetRandomValue(0, n - 1)]; while (to == L.id);
@@ -954,6 +992,13 @@ static void link_random(void) {
 
 static void use_thing(Use *u) {
     if (u->kind == USE_LINK) { link_random(); return; }
+    if (u->kind == USE_SIT) {   // you sit down in the place that was kept for you
+        dinner.sitT = 0.001f; dinner.seat = u->pos;
+        P.pos = (Vector3){ u->pos.x, 0.0f, u->pos.z }; P.vel = (Vector3){ 0 }; P.yaw = 270; P.pitch = -8; P.crouch = 0.55f;
+        audio_play_ex(SFX_CREAK, 0.5f, 0.7f);
+        u->done = true;
+        return;
+    }
     u->done = true;
     if (u->kind == USE_LILY) {   // you were told not to pick anything
         eyesOpenT = 4.5f;
@@ -1049,7 +1094,7 @@ static void frame(void) {
             acc += frameDt;
             while (acc >= DT) {
                 acc -= DT;
-                if (!tr.on) {
+                if (!tr.on && dinner.sitT <= 0) {
                     Input in = input_read();
                     if (bot) bot_input(&in, &P, &L, (float)clock);
                     player_update(&P, &L, &in, DT);
@@ -1080,7 +1125,7 @@ static void frame(void) {
                         if (dot > best) { best = dot; near = u; }
                     }
                 }
-                static const char *HINT[] = { [USE_NOTE] = "E  read", [USE_CANDLE] = "E  light it", [USE_LILY] = "E  pick it", [USE_LINK] = "E  touch the screen" };
+                static const char *HINT[] = { [USE_NOTE] = "E  read", [USE_CANDLE] = "E  light it", [USE_LILY] = "E  pick it", [USE_LINK] = "E  touch the screen", [USE_SIT] = "E  sit down" };
                 useHint = near ? HINT[near->kind] : NULL;
                 if (reading >= 0 && (IsKeyPressed(KEY_E) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || P.speedMeter > 4.5f)) reading = -1;
                 else if (near && IsKeyPressed(KEY_E)) {
@@ -1143,6 +1188,7 @@ static void frame(void) {
                     }
                 }
                 if (P.slipped) { P.slipped = false; audio_play(SFX_KNOCK); }
+                if (dinner_update(frameDt, player_eye(&P), fwd)) { dead = true; say("it is rude to leave the table.", 4); audio_play_ex(SFX_BREATH, 0.7f, 0.8f); }
                 if (grey_update(frameDt)) { dead = true; say("you forget something.", 5); audio_play_ex(SFX_SWELL, 0.6f, 0.6f); }
                 if (ward_update(frameDt, player_eye(&P))) { dead = true; say("it walked where you walked.", 4); audio_play_ex(SFX_BREATH, 0.7f, 0.8f); }
                 if (update_mass(frameDt, player_eye(&P))) { dead = true; say("he counted one too many.", 4); audio_play_ex(SFX_BREATH, 0.7f, 0.7f); }
@@ -1175,8 +1221,8 @@ static void frame(void) {
             if (m > 1) m = 1;
             madness += (m - madness) * fminf(1, frameDt * 3);
             tension = madness;
-            float tone = L.id == W_HUB ? 1.0f : L.id == W_SHAFT ? 0.75f : L.id == W_DRAINS ? 0.9f : L.id == W_VOID ? 1.4f : L.id == W_GARDEN ? 1.15f : L.id == W_CHAPEL ? 0.8f : L.id == W_WARD ? 1.25f : L.id == W_STATIC ? 0.6f : L.id == W_END ? 2.0f : 1.0f;
-            float mus = L.id == W_GARDEN ? 0.8f : L.id == W_VOID ? 0.5f : L.id == W_END ? 0.8f : L.id == W_HUB ? 0.4f : 0.0f;
+            float tone = L.id == W_HUB ? 1.0f : L.id == W_SHAFT ? 0.75f : L.id == W_DRAINS ? 0.9f : L.id == W_VOID ? 1.4f : L.id == W_GARDEN ? 1.15f : L.id == W_CHAPEL ? 0.8f : L.id == W_WARD ? 1.25f : L.id == W_STATIC ? 0.6f : L.id == W_DINNER ? 0.85f : L.id == W_END ? 2.0f : 1.0f;
+            float mus = L.id == W_DINNER ? 0.6f : L.id == W_GARDEN ? 0.8f : L.id == W_VOID ? 0.5f : L.id == W_END ? 0.8f : L.id == W_HUB ? 0.4f : 0.0f;
             bool home = L.id == W_HUB;   // the house: a music box in tune, a low warm hum, nothing else
             if (home) tension = madness = 0;
             audio_music(frozen ? 0.0f : mus, home ? 0.0f : fminf(1.0f, madness * 0.9f + (blackout > 0 ? 0.4f : 0.0f)));

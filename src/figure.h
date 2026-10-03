@@ -10,6 +10,7 @@ typedef enum {
     FIG_GARDENER,   // very tall and thin, and its head is a flower with an eye in it
     FIG_PRIEST,     // robed, arms raised, wearing the skull of a goat
     FIG_SLEEPER,    // someone lying on their back under a sheet
+    FIG_SEATED,     // a hooded figure sitting at a table, hands flat on it
 } FigKind;
 
 typedef struct Fig {

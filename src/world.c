@@ -852,6 +852,8 @@ static void build_garden(Level *L, int seed) {
     L->spawnYaw = 0;
     add_note(L, (Vector3){ 1.4f, 0.01f, 40.0f }, NOTE_FLOWERS);
     add_note(L, (Vector3){ 1.2f, 0.01f, -1.6f }, NOTE_GARDEN);   // on the island, under the lantern
+    // far out in the west hedge, a door, and the warm light of a dining room round its edges
+    add_door(L, (Vector3){ -E, 0, -30 }, (Vector3){ 1, 0, 0 }, (Color){ 255, 170, 90, 255 }, W_DINNER, 0, "THE DINNER");
     // fruit trees: tall dark trunks hung with lanterns
     static const Color FRUIT[4] = { { 200, 120, 70, 255 }, { 170, 90, 60, 255 }, { 210, 160, 90, 255 }, { 150, 60, 50, 255 } };
     for (int i = 0; i < 46; i++) {
@@ -1040,6 +1042,51 @@ static void build_static(Level *L, int seed) {
     add_note(L, (Vector3){ 9.7f, 0.01f, -8.4f }, NOTE_DOORS);
 }
 
+// ---------------------------------------------------------------- DINNER: the table
+// a dining table that does not end, lit by candles, with the family seated all along it. one chair is empty
+static void build_dinner(Level *L, int seed) {
+    L->name = "THE DINNER";
+    SetRandomSeed(seed * 787 + 41);
+    const float Wr = 64;
+    L->fog = (Color){ 10, 4, 3, 255 };
+    L->fogDensity = 0.07f;
+    L->light = 0.85f;
+    L->killY = -50;
+    L->wrap = Wr;
+    L->gradeLo = (Color){ 124, 116, 120, 255 }; L->gradeHi = (Color){ 160, 126, 104, 255 };
+    L->moteCol = (Color){ 140, 100, 70, 255 };
+    add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ 100, 0.5f, 100 }, TEX_MOSAIC, (Color){ 60, 18, 20, 255 }, 1.0f, 0);
+    // the table runs the whole length of the dream, so it has no end
+    add_box(L, (Vector3){ 0, 0.78f, 0 }, (Vector3){ 1.0f, 0.04f, Wr / 2 }, TEX_WOOD, (Color){ 90, 50, 36, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ 0, 0.81f, 0 }, (Vector3){ 0.85f, 0.005f, Wr / 2 }, TEX_CLOTH, (Color){ 200, 190, 170, 255 }, 1.0f, F_NOCOLLIDE);
+    for (float z = -Wr / 2 + 1; z < Wr / 2; z += 4) for (int s = -1; s <= 1; s += 2)
+        add_box(L, (Vector3){ s * 0.85f, 0.38f, z }, (Vector3){ 0.05f, 0.38f, 0.05f }, TEX_WOOD, (Color){ 70, 40, 30, 255 }, 1.0f, F_NOCOLLIDE);
+    for (float z = -Wr / 2 + 3; z < Wr / 2; z += 6) {   // candelabras
+        add_box(L, (Vector3){ 0, 0.95f, z }, (Vector3){ 0.03f, 0.14f, 0.03f }, TEX_RUST, (Color){ 160, 130, 70, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ 0, 1.08f, z }, (Vector3){ 0.2f, 0.015f, 0.015f }, TEX_RUST, (Color){ 160, 130, 70, 255 }, 1.0f, F_NOCOLLIDE);
+        for (int k = -1; k <= 1; k++) add_candle(L, (Vector3){ k * 0.2f, 1.09f, z }, 0.18f, false);
+    }
+    // the family, seated. every place is laid, and nobody has touched anything
+    int empty = GetRandomValue(0, 19);
+    for (int i = 0; i < 20; i++) {
+        float z = -Wr / 2 + 1.6f + i * 3.2f;
+        for (int s = -1; s <= 1; s += 2) {
+            float x = s * 1.45f;
+            add_chair(L, (Vector3){ x, 0, z }, s < 0 ? 1.5708f : -1.5708f);
+            add_box(L, (Vector3){ s * 0.5f, 0.82f, z }, (Vector3){ 0.18f, 0.008f, 0.18f }, TEX_SKIN, (Color){ 230, 226, 216, 255 }, 1.0f, F_NOCOLLIDE);
+            add_box(L, (Vector3){ s * 0.5f, 0.834f, z }, (Vector3){ 0.09f, 0.008f, 0.07f }, TEX_FLESH, (Color){ 90, 30, 30, 255 }, 1.0f, F_NOCOLLIDE);   // on every plate, something dark
+            if (i == empty && s > 0) {
+                Use u = { { x, 0.6f, z }, USE_SIT, 0, false };
+                Uses_push(&L->uses, u);
+                add_note(L, (Vector3){ s * 0.5f, 0.85f, z + 0.35f }, NOTE_FAMILY);
+                continue;
+            }
+            add_effigy(L, FIG_SEATED, (Vector3){ x - s * 0.05f, 0, z }, s < 0 ? 1.5708f : -1.5708f, frand(-0.2f, 0.2f));
+        }
+    }
+    L->spawn = (Vector3){ 3.5f, 0.05f, -Wr / 2 + 1.6f + empty * 3.2f + 6 }; L->spawnYaw = 270;
+}
+
 // ---------------------------------------------------------------- CHAPEL: the lower church
 // a nave full of people standing in their pews. when the bell has rung three times they kneel, and the one at
 // the altar counts them. the veil is on the altar
@@ -1140,6 +1187,7 @@ void level_build(Level *L, WorldId id, int seed) {
     case W_CHAPEL: build_chapel(L, seed); break;
     case W_WARD:   build_ward(L, seed); break;
     case W_STATIC: build_static(L, seed); break;
+    case W_DINNER: build_dinner(L, seed); break;
     default:       build_end(L); break;
     }
     // ash motes

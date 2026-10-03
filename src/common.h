@@ -32,7 +32,7 @@ typedef struct Watcher { Vector3 pos, goal; float phase, stride, timer, sense; i
 typedef struct Mote    { Vector3 pos, vel; float life; } Mote;
 typedef struct Bloom   { Vector3 pos; Color col; float size, yaw; } Bloom;   // a flower that watches you
 typedef struct Prop    { b3BodyId body; Vector3 h; TexId tex; Color tint; } Prop;
-typedef enum { USE_NOTE, USE_CANDLE, USE_LILY, USE_LINK } UseKind;   // USE_LINK: touch it and you are somewhere else
+typedef enum { USE_NOTE, USE_CANDLE, USE_LILY, USE_LINK, USE_SIT } UseKind;   // USE_LINK: touch it and you are somewhere else
 typedef struct Use     { Vector3 pos; int kind, arg; bool done; } Use;   // something you can press E on
 typedef struct Effigy  { int kind; Vector3 pos; float yaw, tilt, look; bool seen; } Effigy;   // a figure that stays where it was put (mostly)
 

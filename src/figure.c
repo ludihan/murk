@@ -34,6 +34,28 @@ static void fingers(Vector3 wrist, Vector3 dir, Vector3 side, float len, int n, 
     }
 }
 
+static void seated(const Fig *f, const Frame *F) {
+    Color robe = tint_or(f, (Color){ 30, 26, 28, 255 }), skin = { 150, 138, 136, 255 };
+    float top = 1.38f;
+    for (int s = -1; s <= 1; s += 2) {   // thighs out over the seat, shins straight down
+        gfx_limb(W(F, s * 0.13f, 0.52f, -0.05f), W(F, s * 0.14f, 0.52f, 0.38f), 0.1f, 0.09f, TEX_CLOTH, robe);
+        gfx_limb(W(F, s * 0.14f, 0.52f, 0.38f), W(F, s * 0.14f, 0.03f, 0.42f), 0.08f, 0.07f, TEX_CLOTH, robe);
+    }
+    gfx_limb(W(F, 0, 0.45f, -0.06f), W(F, 0, top, 0), 0.26f, 0.18f, TEX_CLOTH, robe);
+    gfx_limb(W(F, -0.24f, top, 0.02f), W(F, 0.24f, top, 0.02f), 0.11f, 0.11f, TEX_CLOTH, robe);
+    gfx_limb(W(F, 0, top + 0.02f, 0.02f), W(F, 0, top + 0.2f, 0.12f), 0.08f, 0.07f, TEX_CLOTH, robe);
+    Vector3 hc = W(F, 0, top + 0.28f, 0.13f), hr, hu, hf;
+    head_axes(f, F, hc, &hr, &hu, &hf);
+    gfx_ellipsoid(hc, Vector3Scale(hr, 0.19f), Vector3Scale(hu, 0.24f), Vector3Scale(hf, 0.21f), TEX_CLOTH, robe);
+    gfx_ellipsoid(add3(hc, Vector3Scale(hf, 0.12f), Vector3Scale(hu, -0.03f)), Vector3Scale(hr, 0.12f), Vector3Scale(hu, 0.15f), Vector3Scale(hf, 0.1f), TEX_CONCRETE, (Color){ 5, 4, 4, 255 });
+    for (int s = -1; s <= 1; s += 2) {   // forearms laid on the table
+        Vector3 sh = W(F, s * 0.28f, top - 0.04f, 0.03f), el = W(F, s * 0.3f, top - 0.45f, 0.18f), wr = W(F, s * 0.2f, 0.84f, 0.55f);
+        gfx_limb(sh, el, 0.09f, 0.11f, TEX_CLOTH, robe);
+        gfx_limb(el, wr, 0.035f, 0.028f, TEX_SKIN, skin);
+        fingers(wr, Vector3Normalize(F->f), F->r, 0.22f, 4, skin);
+    }
+}
+
 static void penitent(const Fig *f, const Frame *F, bool kneel) {
     Color robe = tint_or(f, (Color){ 30, 26, 28, 255 }), skin = { 150, 138, 136, 255 };
     float sway = sinf(f->t * 0.7f) * 0.02f, top = kneel ? 1.12f : 1.72f;
@@ -184,5 +206,6 @@ void figure_draw(const Fig *f) {
     case FIG_GARDENER: gardener(f, &F); break;
     case FIG_PRIEST:   priest(f, &F); break;
     case FIG_SLEEPER:  sleeper(f, &F); break;
+    case FIG_SEATED:   seated(f, &F); break;
     }
 }
