@@ -13,6 +13,12 @@ typedef enum {
     SFX_PRAYER,     // whispered words, played backwards
     SFX_CREAK,      // a floorboard taking weight
     SFX_RING,       // an old telephone ringing in the street
+    SFX_ROAR,       // a deep, torn roar, right in your face
+    SFX_CRY,        // a baby crying in another room
+    SFX_BANG,       // something hitting a door from the other side, hard
+    SFX_RUN,        // bare wet feet, running
+    SFX_SCREECH,    // metal dragged across metal
+    SFX_GIANT,      // a footstep that shakes the floor
     SFX_COUNT
 } Sfx;
 void audio_init(void);

@@ -285,6 +285,55 @@ static float s_ring(float t, float d) {   // two bursts of an old bell telephone
     return (sinf(t * TAU * 820) * 0.5f + sinf(t * TAU * 1240) * 0.3f + sinf(t * TAU * 1650) * 0.15f) * on * clap * 0.45f;
 }
 
+static float s_roar(float t, float d) {    // a throat far too big, saturated and torn
+    static float ph, ph2;
+    if (t == 0) { ph = ph2 = 0; }
+    float f = 62.0f - 22.0f * t / d + 6.0f * sinf(t * 31.0f);
+    ph += f / RATE; ph2 += f * 1.49f / RATE;
+    float saw = (fmodf(ph, 1.0f) * 2 - 1) + 0.6f * (fmodf(ph2, 1.0f) * 2 - 1) + frnd() * 0.9f;
+    float v = svf_bp(&sv_a, saw, 520.0f + 200.0f * sinf(t * 5.0f), 0.3f) * 2.5f + svf_lp(&sv_b, saw, 180.0f, 0.6f) * 1.5f;
+    v = tanhf(v * 2.5f);
+    float env = fminf(1.0f, t / 0.03f) * (1.0f - powf(t / d, 3.0f));
+    return v * env * 0.9f;
+}
+static float s_cry(float t, float d) {     // short, hitching sobs, then a long wail
+    (void)d;
+    static float ph;
+    if (t == 0) ph = 0;
+    float seg = fmodf(t, 0.9f), on = seg < 0.65f ? sinf(seg / 0.65f * 3.14159f) : 0.0f;
+    float f = 420.0f + 80.0f * sinf(seg * 6.0f) + 15.0f * sinf(t * 37.0f);
+    ph += f / RATE;
+    float src = fmodf(ph, 1.0f) * 2 - 1;
+    float v = svf_bp(&sv_a, src, 1100.0f + 400.0f * on, 0.25f) + 0.5f * svf_bp(&sv_b, src, 2600.0f, 0.3f);
+    return v * on * 0.35f;
+}
+static float s_bang(float t, float d) {    // three blows on a door, the last one hardest, and the frame rattling
+    (void)d;
+    float v = 0;
+    for (int k = 0; k < 3; k++) {
+        float tt = t - k * 0.32f;
+        if (tt < 0) continue;
+        float a = k == 2 ? 1.3f : 0.8f;
+        v += a * (sinf(tt * TAU * 48) * expf(-tt * 14) + frnd() * expf(-tt * 40) * 0.8f + sinf(tt * TAU * 230) * expf(-tt * 30) * 0.4f);
+    }
+    if (t > 0.64f) v += frnd() * 0.25f * expf(-(t - 0.64f) * 6) * (fmodf(t * 31, 1.0f) < 0.4f ? 1 : 0);
+    return tanhf(v * 1.2f) * 0.9f;
+}
+static float s_run(float t, float d) {     // bare feet slapping on something wet, fast
+    (void)d;
+    float st = fmodf(t, 0.17f);
+    return (svf_bp(&sv_a, frnd(), 900.0f, 0.4f) * expf(-st * 50) * 1.2f + sinf(st * TAU * 80) * expf(-st * 40) * 0.5f) * 0.6f;
+}
+static float s_screech(float t, float d) { // metal on metal
+    float f = 1800.0f + 600.0f * sinf(t * 3.0f) + 300.0f * sinf(t * 47.0f);
+    float v = sinf(t * TAU * f + 3.0f * sinf(t * TAU * f * 0.51f)) + svf_bp(&sv_a, frnd(), 3000.0f, 0.2f) * 0.6f;
+    return v * sinf(t / d * 3.14159f) * 0.3f;
+}
+static float s_giant(float t, float d) {   // something enormous putting its weight down
+    (void)d;
+    return tanhf((sinf(t * TAU * (28 - 10 * t)) * expf(-t * 4) * 1.6f + svf_lp(&sv_a, frnd(), 120.0f, 0.6f) * expf(-t * 7) * 4.0f) * 1.3f) * 0.95f;
+}
+
 static Sound synth(SynthFn fn, float dur) {
     int n = (int)(RATE * dur);
     short *data = malloc(n * sizeof(short));
@@ -317,6 +366,8 @@ void audio_init(void) {
         [SFX_BELL] = { s_bell, 6.0f },    [SFX_CHANT] = { s_chant, 4.0f },   [SFX_SCRAPE] = { s_scrape, 1.8f },
         [SFX_HUM] = { s_hum, 3.4f },      [SFX_CLICK] = { s_click, 0.7f },   [SFX_THUD] = { s_thud, 0.6f },
         [SFX_PRAYER] = { s_prayer, 2.6f }, [SFX_CREAK] = { s_creak, 0.8f },   [SFX_RING] = { s_ring, 1.1f },
+        [SFX_ROAR] = { s_roar, 1.3f },    [SFX_CRY] = { s_cry, 2.7f },       [SFX_BANG] = { s_bang, 1.3f },
+        [SFX_RUN] = { s_run, 1.4f },      [SFX_SCREECH] = { s_screech, 1.6f }, [SFX_GIANT] = { s_giant, 1.4f },
     };
     for (int i = 0; i < SFX_COUNT; i++) sfx[i] = synth(DEF[i].fn, DEF[i].dur);
 }
