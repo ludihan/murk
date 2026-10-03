@@ -169,6 +169,16 @@ static Color texel(TexId id, int x, int y) {
         if (stain > 0.55f) c = mix(c, (Color){ 30, 12, 10, 255 }, (stain - 0.55f) * 2.0f);
         return shade(c, 0.9f + 0.2f * grain);
     }
+    case TEX_POOL: {   // small square tiles, white gone grey, with dark grout, a few cracked and some missing
+        int tx = x / 16, ty = y / 16;
+        Color c = mix((Color){ 150, 166, 166, 255 }, (Color){ 196, 210, 206, 255 }, rnd(tx, ty, 61) * 0.6f + 0.4f * n);
+        if (rnd(tx, ty, 62) < 0.03f) c = (Color){ 40, 44, 42, 255 };                       // a tile gone
+        if ((x % 16) < 1 || (y % 16) < 1) c = (Color){ 50, 60, 58, 255 };
+        float g = fbm(u, v, 4, 63);
+        if (g > 0.6f) c = mix(c, (Color){ 70, 80, 60, 255 }, (g - 0.6f) * 2.0f);          // grime
+        if (fabsf(fbm(u, v, 6, 64) - 0.5f) < 0.005f) c = shade(c, 0.5f);                   // cracks
+        return shade(c, 0.92f + 0.16f * grain);
+    }
     case TEX_FACADE: { // a city wall: grimy stone, rows of dark windows
         Color c = mix((Color){ 50, 50, 54, 255 }, (Color){ 86, 84, 86, 255 }, n);
         c = shade(c, 1.0f - 0.4f * powf(vnoise(u * 16, v * 2, 16, 41), 3.0f));

@@ -13,6 +13,7 @@
 int g_launches, g_wakes, g_secret, g_wardLoop;
 
 // ---------------------------------------------------------------- helpers
+static const int DX[4] = { 0, 1, 0, -1 }, DY[4] = { -1, 0, 1, 0 };   // north east south west, on a grid
 static void add_box(Level *L, Vector3 c, Vector3 h, TexId tex, Color tint, float scale, int flags) {
     Box b = { c, h, tex, tint, scale, (uint8_t)flags };
     Boxes_push(&L->boxes, b);
@@ -266,7 +267,7 @@ static void build_hub(Level *L, int seed) {
         add_box(L, (Vector3){ 8.3f, 0.9f, -2.0f }, (Vector3){ 0.18f, 0.08f, 0.3f }, TEX_SKIN, tub, 1.0f, 0);
         add_box(L, (Vector3){ 8 + WT + 0.02f, 1.6f, -2.0f }, (Vector3){ 0.02f, 0.4f, 0.32f }, TEX_WATER, (Color){ 150, 170, 190, 255 }, 1.0f, F_NOCOLLIDE);
     }
-    add_door(L, (Vector3){ 12 - WT, 0, -3.1f }, (Vector3){ -1, 0, 0 }, (Color){ 120, 200, 120, 255 }, W_DRAINS, 0, "THE DRAINS");
+    add_door(L, (Vector3){ 12 - WT, 0, -3.1f }, (Vector3){ -1, 0, 0 }, (Color){ 120, 200, 120, 255 }, W_BATHS, 0, "THE BATHS");
 
     // ---- the linen cupboard: x 14..16, z 1.1..3.4
     slab(L, 14, 16, 1.1f, 3.4f, 0, 1, TEX_WOOD, WOODF, 2.0f);
@@ -458,190 +459,97 @@ static void build_shaft(Level *L, int seed) {
     L->spawnYaw = 90;
 }
 
-// ---------------------------------------------------------------- DRAINS: a maze with things in it
-static const int DX[4] = { 0, 1, 0, -1 }, DY[4] = { -1, 0, 1, 0 };
-
-static void build_drains(Level *L, int seed) {
-    L->ambient = 0.22f;
-    L->name = "THE DRAINS";
-    L->fog = (Color){ 6, 12, 8, 255 };
-    L->fogDensity = 0.115f;
-    L->light = 0.85f;
-    L->gradeLo = (Color){ 108, 134, 126, 255 }; L->gradeHi = (Color){ 140, 140, 116, 255 };
-    L->moteCol = (Color){ 120, 170, 120, 255 };
-    L->killY = -50;
+// ---------------------------------------------------------------- BATHS: the public baths, underground, long closed
+// tiled halls round a deep pool that nobody has drained in years. showers, a corridor of lockers, a slide that goes
+// down into the dark. turn three valves and the pool drains, and what lives in it climbs out (main)
+static void tiled_room(Level *L, float x0, float x1, float z0, float z1, float h, Color wall) {
+    slab(L, x0, x1, z0, z1, 0, 1, TEX_POOL, (Color){ 150, 160, 160, 255 }, 1.0f);
+    slab(L, x0, x1, z0, z1, h + 1, 1, TEX_POOL, scale_tint(wall, 0.6f), 2.0f);
+    (void)wall;
+}
+static void build_baths(Level *L, int seed) {
+    L->name = "THE BATHS";
+    L->ambient = 0.2f;
     SetRandomSeed(seed * 7919 + 13);
-    const int N = 9;
-    const float C = 6.0f, H = 4.0f;
-    L->mazeN = N; L->cell = C;
-    L->open = calloc(N * N, 1);
-    L->dist = calloc(N * N, sizeof(int));
-    L->distCell = -1;
-    // recursive backtracker
-    uint8_t *seen = calloc(N * N, 1);
-    IntV stack = { 0 };
-    IntV_push(&stack, 0); seen[0] = 1;
-    while (IntV_size(&stack) > 0) {
-        int cur = stack.data[IntV_size(&stack) - 1];
-        int cx = cur % N, cy = cur / N, opts[4], no = 0;
-        for (int d = 0; d < 4; d++) {
-            int nx = cx + DX[d], ny = cy + DY[d];
-            if (nx >= 0 && ny >= 0 && nx < N && ny < N && !seen[ny * N + nx]) opts[no++] = d;
-        }
-        if (!no) { IntV_pop(&stack); continue; }
-        int d = opts[GetRandomValue(0, no - 1)];
-        int nxt = (cy + DY[d]) * N + cx + DX[d];
-        L->open[cur] |= 1 << d;
-        L->open[nxt] |= 1 << ((d + 2) % 4);
-        seen[nxt] = 1;
-        IntV_push(&stack, nxt);
-    }
-    // a few extra loops so the watchers can pincer you
-    for (int i = 0; i < N * 2; i++) {
-        int cx = GetRandomValue(1, N - 2), cy = GetRandomValue(1, N - 2), d = GetRandomValue(0, 3);
-        L->open[cy * N + cx] |= 1 << d;
-        L->open[(cy + DY[d]) * N + cx + DX[d]] |= 1 << ((d + 2) % 4);
-    }
-    // BFS from the start for the farthest cell
-    int *far = calloc(N * N, sizeof(int));
-    for (int i = 0; i < N * N; i++) far[i] = -1;
-    IntV q = { 0 }; int head = 0;
-    IntV_push(&q, 0); far[0] = 0;
-    int best = 0;
-    while (head < IntV_size(&q)) {
-        int cur = q.data[head++];
-        if (far[cur] > far[best]) best = cur;
-        for (int d = 0; d < 4; d++) if (L->open[cur] & (1 << d)) {
-            int nx = cur % N + DX[d], ny = cur / N + DY[d], n = ny * N + nx;
-            if (far[n] < 0) { far[n] = far[cur] + 1; IntV_push(&q, n); }
-        }
-    }
-    float ox = -N * C / 2;
-    #define CELLC(i) ((Vector3){ ox + ((i) % N + 0.5f) * C, 0, ox + ((i) / N + 0.5f) * C })
-
-    // geometry. the maze is carved into four kinds of zone, each with its own walls, floor and ceiling height
-    static const float ZH[4] = { 4.0f, 3.0f, 5.6f, 2.6f };
-    static const TexId ZW[4] = { TEX_CONCRETE, TEX_TILE, TEX_RUST, TEX_FLESH };
-    static const TexId ZF[4] = { TEX_TILE, TEX_CONCRETE, TEX_WOOD, TEX_SLUDGE };
-    static const Color ZC[4] = { { 130, 150, 130, 255 }, { 150, 150, 125, 255 }, { 120, 110, 100, 255 }, { 170, 120, 120, 255 } };
-    #define ZONE(x, y) ((((x) / 3) * 2 + ((y) / 3) * 3 + seed) & 3)
-    float tot = N * C;
-    add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ tot / 2 + 1, 0.5f, tot / 2 + 1 }, TEX_CONCRETE, (Color){ 110, 120, 110, 255 }, 2.0f, 0);
-    float wt = 0.35f;
-    uint8_t *room = calloc(N * N, 1);
-    // rooms: knock out the inner walls of a few 2x2 blocks to get open halls
-    for (int r = 0; r < 3; r++) {
-        int rx = GetRandomValue(1, N - 3), ry = GetRandomValue(1, N - 3);
-        if (rx <= 1 && ry <= 1) continue;
-        for (int dy = 0; dy < 2; dy++) for (int dx = 0; dx < 2; dx++) {
-            int i = (ry + dy) * N + rx + dx;
-            room[i] = 1;
-            if (dx == 0) { L->open[i] |= 2; L->open[i + 1] |= 8; }
-            if (dy == 0) { L->open[i] |= 4; L->open[i + N] |= 1; }
-        }
-    }
-    for (int y = 0; y < N; y++) for (int x = 0; x < N; x++) {
-        int i = y * N + x, z = ZONE(x, y);
-        float hc = ZH[z];
-        Vector3 c = CELLC(i);
-        float hs = (y + 1 < N) ? fmaxf(hc, ZH[ZONE(x, y + 1)]) : hc, he = (x + 1 < N) ? fmaxf(hc, ZH[ZONE(x + 1, y)]) : hc;
-        // ceiling and per-zone floor skin
-        add_box(L, (Vector3){ c.x, hc + 0.5f, c.z }, (Vector3){ C / 2 + wt, 0.5f, C / 2 + wt }, z == 3 ? TEX_FLESH : TEX_CONCRETE, scale_tint(ZC[z], 0.75f), 3.0f, 0);
-        add_box(L, (Vector3){ c.x, 0.006f, c.z }, (Vector3){ C / 2, 0.006f, C / 2 }, ZF[z], ZC[z], 2.0f, F_NOCOLLIDE);
-        // south and east walls, plus north/west on the rim
-        if (!(L->open[i] & 4) || y == N - 1) add_box(L, (Vector3){ c.x, hs / 2, c.z + C / 2 }, (Vector3){ C / 2 + wt, hs / 2, wt }, ZW[z], ZC[z], 2.0f, 0);
-        if (!(L->open[i] & 2) || x == N - 1) add_box(L, (Vector3){ c.x + C / 2, he / 2, c.z }, (Vector3){ wt, he / 2, C / 2 + wt }, ZW[z], ZC[z], 2.0f, 0);
-        if (y == 0) add_box(L, (Vector3){ c.x, hc / 2, c.z - C / 2 }, (Vector3){ C / 2 + wt, hc / 2, wt }, ZW[z], ZC[z], 2.0f, 0);
-        if (x == 0) add_box(L, (Vector3){ c.x - C / 2, hc / 2, c.z }, (Vector3){ wt, hc / 2, C / 2 + wt }, ZW[z], ZC[z], 2.0f, 0);
-        // clutter
-        int r = GetRandomValue(0, 9);
-        if (i != 0 && i != best) {
-            if (room[i]) {
-                if (GetRandomValue(0, 2) == 0) add_box(L, (Vector3){ c.x + frand(-1.8f, 1.8f), hc / 2, c.z + frand(-1.8f, 1.8f) }, (Vector3){ 0.4f, hc / 2, 0.4f }, ZW[z], ZC[z], 1.5f, 0);
-                else if (GetRandomValue(0, 2) == 0) add_prop(L, (Vector3){ c.x + frand(-1.5f, 1.5f), 0.4f, c.z + frand(-1.5f, 1.5f) }, (Vector3){ 0.4f, 0.4f, 0.4f }, TEX_WOOD, (Color){ 120, 130, 110, 255 }, 200, 1);
-            } else if (r < 2) add_box(L, (Vector3){ c.x + frand(-1.5f, 1.5f), hc / 2, c.z + frand(-1.5f, 1.5f) }, (Vector3){ 0.35f, hc / 2, 0.35f }, TEX_RUST, (Color){ 120, 110, 100, 255 }, 1.5f, 0);
-            else if (r < 5) add_box(L, (Vector3){ c.x + frand(-1.2f, 1.2f), 0.012f, c.z + frand(-1.2f, 1.2f) }, (Vector3){ frand(0.8f, 2.2f), 0.01f, frand(0.8f, 2.2f) }, TEX_SLUDGE, (Color){ 100, 120, 100, 255 }, 3.0f, F_NOCOLLIDE);
-            else if (r < 7) add_prop(L, (Vector3){ c.x + frand(-1.5f, 1.5f), 0.4f, c.z + frand(-1.5f, 1.5f) }, (Vector3){ 0.4f, 0.4f, 0.4f }, TEX_WOOD, (Color){ 120, 130, 110, 255 }, 200, 1);
-        }
-        // sick coloured lamps in the ceiling
-        if (GetRandomValue(0, 4) == 0) {
-            static const Color LC[4] = { { 120, 255, 140, 255 }, { 255, 220, 120, 255 }, { 255, 90, 60, 255 }, { 255, 120, 200, 255 } };
-            add_box(L, (Vector3){ c.x + frand(-1.5f, 1.5f), hc - 0.04f, c.z + frand(-1.5f, 1.5f) }, (Vector3){ 0.5f, 0.04f, 0.18f }, TEX_CONCRETE, LC[z], 1.0f, F_EMIT | F_NOCOLLIDE);
-        }
-        // ceiling pipes
-        if (GetRandomValue(0, 3) == 0)
-            add_box(L, (Vector3){ c.x, hc - 0.3f, c.z }, (Vector3){ C / 2, 0.16f, 0.16f }, TEX_RUST, (Color){ 120, 120, 110, 255 }, 1.0f, F_NOCOLLIDE);
-    }
-    free(room);
-    {   // dead ends get a message
-        // the farthest dead end but one has a hatch in it, with a hospital's light coming round the edges
-        int hatch = -1;
-        for (int i = 1; i < N * N; i++) {
-            int o = L->open[i], cnt = (o & 1) + ((o >> 1) & 1) + ((o >> 2) & 1) + ((o >> 3) & 1);
-            if (cnt == 1 && i != best && far[i] >= 4 && (hatch < 0 || far[i] > far[hatch])) hatch = i;
-        }
-        if (hatch >= 0) {
-            int o = L->open[hatch], d = 0;
-            for (int k = 0; k < 4; k++) if (o & (1 << k)) d = (k + 2) % 4;   // the wall facing the way in
-            Vector3 c = CELLC(hatch), p = { c.x, 0, c.z }, n = { 0, 0, 0 };
-            if (d == 0) { p.z -= C / 2 - wt; n.z = 1; } else if (d == 1) { p.x += C / 2 - wt; n.x = -1; } else if (d == 2) { p.z += C / 2 - wt; n.z = -1; } else { p.x -= C / 2 - wt; n.x = 1; }
-            add_door(L, p, n, (Color){ 190, 220, 200, 255 }, W_WARD, 0, "THE WARD");
-        }
-        static const char *DEAD[] = { "HUSH", "STAY", "NEMA", "HE HEARS", "KNEEL", "NON SERVIAM" };
-        int placed = 0;
-        for (int i = 1; i < N * N && placed < 7; i++) {
-            int o = L->open[i], cnt = (o & 1) + ((o >> 1) & 1) + ((o >> 2) & 1) + ((o >> 3) & 1);
-            if (cnt != 1 || i == best || i == hatch) continue;
-            int d = -1;
-            for (int k = 0; k < 4; k++) if (!(o & (1 << k))) { d = k; if (GetRandomValue(0, 1)) break; }
-            Vector3 c = CELLC(i);
-            const char *txt = DEAD[GetRandomValue(0, 5)];
-            Vector3 wp = c; wp.y = 1.7f;
-            static const int ax[4] = { 2, 0, 2, 0 }, dr[4] = { 1, -1, -1, 1 };
-            if (d == 0) wp.z -= C / 2 - wt; else if (d == 1) wp.x += C / 2 - wt; else if (d == 2) wp.z += C / 2 - wt; else wp.x -= C / 2 - wt;
-            add_decal(L, txt, wp, ax[d], dr[d], 0.4f, BLOOD);
-            placed++;
-        }
-    }
-    L->spawn = CELLC(0); L->spawn.y = 0.05f;
-    { Vector3 np = CELLC(0); add_note(L, (Vector3){ np.x - 1.6f, 0.02f, np.z + 1.2f }, NOTE_CANDLES); }
-    L->spawnYaw = 90;
-    Vector3 pc = CELLC(best); pc.y = 1.1f;
-    Pickup pk = { pc, FX_LAMP, false, true };   // behind a grate until the candles are lit
+    L->fog = (Color){ 6, 14, 16, 255 };
+    L->fogDensity = 0.07f;
+    L->light = 0.9f;
+    L->killY = -50;
+    L->gradeLo = (Color){ 112, 132, 136, 255 }; L->gradeHi = (Color){ 136, 142, 132, 255 };
+    L->moteCol = (Color){ 150, 180, 180, 255 };
+    const Color TW = { 170, 190, 190, 255 }, AQUA = { 90, 200, 210, 255 };
+    // ---- the hall and its pool: the walkway round the edge, and the pool four metres deep
+    const float HX = 12, HH = 9, PH = 6, D = 4;
+    slab(L, -HX, HX, -HX, -PH, 0, 1, TEX_POOL, TW, 1.0f); slab(L, -HX, HX, PH, HX, 0, 1, TEX_POOL, TW, 1.0f);
+    slab(L, -HX, -PH, -PH, PH, 0, 1, TEX_POOL, TW, 1.0f); slab(L, PH, HX, -PH, PH, 0, 1, TEX_POOL, TW, 1.0f);
+    slab(L, -PH, PH, -PH, PH, -D, 1, TEX_POOL, (Color){ 120, 150, 150, 255 }, 1.0f);
+    wall_x(L, -PH - WT, -PH, PH, -D, 0, TEX_POOL, TW); wall_x(L, PH + WT, -PH, PH, -D, 0, TEX_POOL, TW);
+    wall_z(L, -PH - WT, -PH, PH, -D, 0, TEX_POOL, TW); wall_z(L, PH + WT, -PH, PH, -D, 0, TEX_POOL, TW);
+    for (int i = -5; i <= 5; i += 2) add_box(L, (Vector3){ (float)i, -D + 0.01f, 0 }, (Vector3){ 0.08f, 0.006f, PH - 0.4f }, TEX_CONCRETE, (Color){ 20, 40, 60, 255 }, 1.0f, F_NOCOLLIDE);   // lane lines
+    add_box(L, (Vector3){ PH - 0.2f, -D / 2, -2 }, (Vector3){ 0.12f, D / 2 + 0.6f, 0.5f }, TEX_RUST, (Color){ 200, 200, 190, 255 }, 1.0f, F_GRIP);   // the ladder
+    slab(L, -HX, HX, -HX, HX, HH + 1, 1, TEX_POOL, scale_tint(TW, 0.6f), 2.0f);
+    wall_x_door(L, -HX, -HX, HX, 0, HH, -1.5f, 1.5f, 3.0f, TEX_POOL, TW);
+    wall_x_door(L, HX, -HX, HX, 0, HH, -1.5f, 1.5f, 3.0f, TEX_POOL, TW);
+    wall_z_door(L, -HX, -HX, HX, 0, HH, -1.5f, 1.5f, 3.0f, TEX_POOL, TW);
+    wall_z_door(L, HX, -HX, HX, 0, HH, -1.5f, 1.5f, 3.0f, TEX_POOL, TW);
+    for (int i = 0; i < 4; i++) add_box(L, (Vector3){ (i & 1) ? 9.5f : -9.5f, HH / 2, (i & 2) ? 9.5f : -9.5f }, (Vector3){ 0.6f, HH / 2, 0.6f }, TEX_POOL, TW, 1.0f, 0);
+    for (int i = 0; i < 6; i++) add_box(L, (Vector3){ -7.5f + i * 3.0f, HH - 0.05f, (i % 2) ? -8.5f : 8.5f }, (Vector3){ 0.5f, 0.03f, 0.5f }, TEX_CONCRETE, AQUA, 1.0f, F_EMIT | F_NOCOLLIDE);
+    L->water = true; L->waterY = -0.25f; L->waterHalf = PH; L->waterC = (Vector3){ 0, 0, 0 };
+    Pickup pk = { { 0, -D + 1.1f, 0 }, FX_LAMP, false, true };   // at the bottom, under the water
     Pickups_push(&L->pickups, pk);
-    add_note(L, (Vector3){ pc.x + 1.3f, 0.02f, pc.z - 1.1f }, NOTE_DAY9);
-    {   // three black candles, as far apart as the dead ends allow
-        int ends[81], ne = 0;
-        for (int i = 1; i < N * N; i++) {
-            int o = L->open[i], cnt = (o & 1) + ((o >> 1) & 1) + ((o >> 2) & 1) + ((o >> 3) & 1);
-            if (i != best && far[i] >= 3 && (cnt == 1 || GetRandomValue(0, 5) == 0)) ends[ne++] = i;
-        }
-        int chosen[3], nc = 0;
-        for (int tries = 0; tries < 400 && nc < 3 && ne > 0; tries++) {
-            int c = ends[GetRandomValue(0, ne - 1)], ok = 1;
-            for (int k = 0; k < nc; k++) { int dx = c % N - chosen[k] % N, dy = c / N - chosen[k] / N; if (dx * dx + dy * dy < (tries < 200 ? 12 : 4)) ok = 0; }
-            if (ok) chosen[nc++] = c;
-        }
-        for (int k = 0; k < nc; k++) {
-            Vector3 cc = CELLC(chosen[k]);
-            Use u = { { cc.x + frand(-0.8f, 0.8f), 0, cc.z + frand(-0.8f, 0.8f) }, USE_CANDLE, k, false };
-            Uses_push(&L->uses, u);
-            add_sigil(L, (Vector3){ u.pos.x, 0.008f, u.pos.z }, 0.8f, CHALK, 90 + k);
-        }
+    add_decal(L, "NO DIVING", (Vector3){ 0, 2.4f, -HX + WT }, 2, 1, 0.22f, (Color){ 40, 60, 70, 255 });
+    add_decal(L, "HE IS AT THE BOTTOM", (Vector3){ -HX + WT, 2.0f, -6 }, 0, 1, 0.16f, BLOOD);
+    // ---- the way in: a long tiled passage with the floor under a few centimetres of water
+    slab(L, -1.5f, 1.5f, HX, 28, 0, 1, TEX_POOL, TW, 1.0f);
+    slab(L, -1.5f, 1.5f, HX, 28, 3.2f + 1, 1, TEX_POOL, scale_tint(TW, 0.6f), 2.0f);
+    wall_x(L, -1.5f - WT, HX, 28, 0, 3.2f, TEX_POOL, TW); wall_x(L, 1.5f + WT, HX, 28, 0, 3.2f, TEX_POOL, TW); wall_z(L, 28 + WT, -1.6f, 1.6f, 0, 3.2f, TEX_POOL, TW);
+    add_box(L, (Vector3){ 0, 0.08f, 20 }, (Vector3){ 1.5f, 0.004f, 8 }, TEX_WATER, (Color){ 40, 70, 80, 255 }, 1.0f, F_NOCOLLIDE);
+    for (int i = 0; i < 3; i++) add_box(L, (Vector3){ 0, 3.15f, 15 + i * 5.0f }, (Vector3){ 0.4f, 0.03f, 0.12f }, TEX_CONCRETE, AQUA, 1.0f, F_EMIT | F_NOCOLLIDE);
+    L->spawn = (Vector3){ 0, 0.05f, 26 }; L->spawnYaw = 0;
+    add_note(L, (Vector3){ 1.0f, 0.02f, 24.5f }, NOTE_CANDLES);
+    // ---- north: the showers. stalls, curtains, and someone standing behind one of them
+    tiled_room(L, -6, 6, -26, -HX, 3.4f, TW);
+    wall_x(L, -6 - WT, -26, -HX, 0, 3.4f, TEX_POOL, TW); wall_x(L, 6 + WT, -26, -HX, 0, 3.4f, TEX_POOL, TW); wall_z(L, -26 - WT, -6.1f, 6.1f, 0, 3.4f, TEX_POOL, TW);
+    for (int s = -1; s <= 1; s += 2) for (int i = 0; i < 4; i++) {
+        float z = -15 - i * 2.6f, x = s * 4.6f;
+        add_box(L, (Vector3){ s * 3.3f, 1.1f, z - 1.3f }, (Vector3){ 1.3f, 1.1f, 0.05f }, TEX_POOL, TW, 1.0f, 0);   // partitions
+        add_box(L, (Vector3){ s * 3.3f, 1.2f, z }, (Vector3){ 0.02f, 1.0f, 1.1f }, TEX_CLOTH, (Color){ 150, 170, 160, 255 }, 1.0f, F_NOCOLLIDE);   // the curtain
+        add_box(L, (Vector3){ x + s * 1.1f, 2.4f, z }, (Vector3){ 0.08f, 0.05f, 0.08f }, TEX_RUST, (Color){ 160, 160, 150, 255 }, 1.0f, F_NOCOLLIDE);
+        if (i == 2 && s == 1) add_effigy(L, FIG_PENITENT, (Vector3){ x, 0, z }, -1.5708f, 0.6f);   // behind this curtain
     }
-    // lamp glow marker so it's findable in the dark: a tall dim beam
-    add_box(L, (Vector3){ pc.x, H / 2, pc.z }, (Vector3){ 0.03f, H / 2, 0.03f }, TEX_CONCRETE, (Color){ 255, 230, 120, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
-    // the blind ones: one, and a second if you keep coming back. they start far off, wandering
-    int placed = 0, want = seed >= 6 ? 2 : 1;
-    for (int tries = 0; tries < 200 && placed < want; tries++) {
-        int i = GetRandomValue(0, N * N - 1);
-        if (far[i] < 6) continue;
-        Watcher w = { .pos = CELLC(i), .goal = CELLC(i), .phase = frand(0, 6) };
-        Watchers_push(&L->watchers, w);
-        placed++;
+    add_box(L, (Vector3){ 0, 3.35f, -19 }, (Vector3){ 0.3f, 0.03f, 0.3f }, TEX_CONCRETE, AQUA, 1.0f, F_EMIT | F_NOCOLLIDE);
+    Use v1 = { { 0, 1.2f, -25.6f }, USE_VALVE, 0, false }; Uses_push(&L->uses, v1);
+    // ---- east: the locker room, a long corridor of them
+    tiled_room(L, HX, 32, -3, 3, 3.0f, TW);
+    wall_z(L, -3 - WT, HX, 32, 0, 3.0f, TEX_POOL, TW); wall_z(L, 3 + WT, HX, 32, 0, 3.0f, TEX_POOL, TW); wall_x(L, 32 + WT, -3.1f, 3.1f, 0, 3.0f, TEX_POOL, TW);
+    for (int s = -1; s <= 1; s += 2) for (int i = 0; i < 16; i++) {
+        float x = 13.4f + i * 1.15f;
+        Color lc = scale_tint((Color){ 90, 110, 120, 255 }, frand(0.7f, 1.0f));
+        add_box(L, (Vector3){ x, 1.1f, s * 2.6f }, (Vector3){ 0.55f, 1.1f, 0.4f }, TEX_RUST, lc, 1.0f, 0);
+        add_box(L, (Vector3){ x, 1.6f, s * 2.19f }, (Vector3){ 0.3f, 0.12f, 0.01f }, TEX_CONCRETE, (Color){ 10, 10, 12, 255 }, 1.0f, F_NOCOLLIDE);   // vents
+        if (i == 9 && s < 0) add_box(L, (Vector3){ x + 0.4f, 1.1f, -1.9f }, (Vector3){ 0.03f, 1.05f, 0.5f }, TEX_RUST, lc, 1.0f, F_NOCOLLIDE);   // one door hanging open
     }
-    free(far); free(seen); IntV_drop(&q); IntV_drop(&stack);
-    #undef CELLC
+    add_box(L, (Vector3){ 22, 0.4f, 0 }, (Vector3){ 6, 0.06f, 0.35f }, TEX_WOOD, (Color){ 120, 100, 80, 255 }, 1.0f, 0);   // a bench
+    add_box(L, (Vector3){ 22, 2.95f, 0 }, (Vector3){ 0.5f, 0.03f, 0.2f }, TEX_CONCRETE, AQUA, 1.0f, F_EMIT | F_NOCOLLIDE);
+    Use v2 = { { 31.6f, 1.2f, 0 }, USE_VALVE, 1, false }; Uses_push(&L->uses, v2);
+    // ---- west: the slide hall. stairs up to a platform, and a tube from it going down into the dark
+    tiled_room(L, -30, -HX, -9, 9, 14, TW);
+    wall_z(L, -9 - WT, -30, -HX, 0, 14, TEX_POOL, TW); wall_z(L, 9 + WT, -30, -HX, 0, 14, TEX_POOL, TW); wall_x(L, -30 - WT, -9.1f, 9.1f, 0, 14, TEX_POOL, TW);
+    for (int k = 0; k < 10; k++) add_box(L, (Vector3){ -16 - k * 0.8f, 0.25f + k * 0.5f, -6.5f }, (Vector3){ 0.4f, 0.25f + k * 0.5f, 1.2f }, TEX_POOL, TW, 1.0f, 0);
+    add_box(L, (Vector3){ -26.5f, 2.6f, -5.5f }, (Vector3){ 3.0f, 2.6f, 2.2f }, TEX_POOL, TW, 1.0f, 0);   // the platform, top at 5.2
+    add_box(L, (Vector3){ -28.6f, 7.0f, -5.5f }, (Vector3){ 1.2f, 1.6f, 1.2f }, TEX_CONCRETE, (Color){ 200, 80, 60, 255 }, 1.0f, F_NOCOLLIDE);   // the mouth of the tube
+    add_box(L, (Vector3){ -28.6f, 6.6f, -4.28f }, (Vector3){ 0.9f, 1.1f, 0.02f }, TEX_CONCRETE, (Color){ 2, 2, 2, 255 }, 1.0f, F_NOCOLLIDE);
+    add_portal(L, (Vector3){ -28.6f, 5.2f, -4.0f }, W_WARD, 0, (Color){ 200, 220, 210, 255 }, "THE SLIDE");
+    L->portals.data[L->portals.size - 1].radius = 0.8f;
+    for (int k = 0; k < 8; k++) {   // the tube itself, coiling down out of sight
+        float a = k * 0.7f;
+        add_box(L, (Vector3){ -22 + sinf(a) * 3, 11 - k * 1.2f, cosf(a) * 3 }, (Vector3){ 0.8f, 0.8f, 0.8f }, TEX_CONCRETE, (Color){ 180, 70, 50, 255 }, 1.0f, F_NOCOLLIDE);
+    }
+    add_box(L, (Vector3){ -21, 0.1f, 3 }, (Vector3){ 3.5f, 0.004f, 3.5f }, TEX_WATER, (Color){ 40, 70, 80, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ -21, 13.9f, 0 }, (Vector3){ 0.5f, 0.03f, 0.5f }, TEX_CONCRETE, AQUA, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_decal(L, "DOWN THE SLIDE", (Vector3){ -30 + WT, 6.8f, -2 }, 0, 1, 0.16f, BLOOD);
+    Use v3 = { { -24.2f, 6.2f, -7.4f }, USE_VALVE, 2, false }; Uses_push(&L->uses, v3);
+    add_note(L, (Vector3){ -24.5f, 5.22f, -4.6f }, NOTE_DAY9);
 }
 
 // ---------------------------------------------------------------- VOID: platforms in nothing
@@ -1367,7 +1275,7 @@ void level_build(Level *L, WorldId id, int seed) {
     switch (id) {
     case W_HUB:    build_hub(L, seed); break;
     case W_SHAFT:  build_shaft(L, seed); break;
-    case W_DRAINS: build_drains(L, seed); break;
+    case W_BATHS:  build_baths(L, seed); break;
     case W_VOID:   build_void(L, seed); break;
     case W_NURSERY: build_nursery(L, seed); break;
     case W_CHAPEL: build_chapel(L, seed); break;
