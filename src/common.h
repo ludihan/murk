@@ -11,7 +11,7 @@ typedef enum {
     TEX_CONCRETE, TEX_RUST, TEX_TILE, TEX_FLESH, TEX_SLUDGE, TEX_WOOD, TEX_STATIC, TEX_GRASS, TEX_MOSAIC, TEX_EYES, TEX_WATER, TEX_SKIN, TEX_CLOTH, TEX_COUNT
 } TexId;
 
-enum { F_GRIP = 1, F_EMIT = 2, F_NOCOLLIDE = 4, F_DECAL = 8 };
+enum { F_GRIP = 1, F_EMIT = 2, F_NOCOLLIDE = 4, F_DECAL = 8, F_SCREEN = 16 };   // F_SCREEN: a television picture, drawn glowing
 
 typedef struct Box {
     Vector3 c, h;       // center, half extents
@@ -32,7 +32,7 @@ typedef struct Watcher { Vector3 pos, goal; float phase, stride, timer, sense; i
 typedef struct Mote    { Vector3 pos, vel; float life; } Mote;
 typedef struct Bloom   { Vector3 pos; Color col; float size, yaw; } Bloom;   // a flower that watches you
 typedef struct Prop    { b3BodyId body; Vector3 h; TexId tex; Color tint; } Prop;
-typedef enum { USE_NOTE, USE_CANDLE, USE_LILY } UseKind;
+typedef enum { USE_NOTE, USE_CANDLE, USE_LILY, USE_LINK } UseKind;   // USE_LINK: touch it and you are somewhere else
 typedef struct Use     { Vector3 pos; int kind, arg; bool done; } Use;   // something you can press E on
 typedef struct Effigy  { int kind; Vector3 pos; float yaw, tilt, look; bool seen; } Effigy;   // a figure that stays where it was put (mostly)
 

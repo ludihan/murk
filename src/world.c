@@ -783,8 +783,12 @@ static void build_void(Level *L, int seed) {
         if (i % 2 == 0)
             add_prop(L, (Vector3){ p.x + frand(-6, 6), p.y + frand(1, 6), p.z + frand(-6, 6) }, (Vector3){ frand(0.3f, 0.9f), frand(0.3f, 0.9f), frand(0.3f, 0.9f) },
                      TEX_FLESH, (Color){ 170, 140, 170, 255 }, 40, 0.0f);
-        if (i == 12) {
-            add_box(L, (Vector3){ p.x - dz * 3.5f, p.y + 2.0f, p.z + dx * 3.5f }, (Vector3){ 1.0f, 2.0f, 0.1f }, TEX_CONCRETE, (Color){ 40, 36, 44, 255 }, 2.0f, F_NOCOLLIDE);
+        if (i == 12) {   // a door standing on its own at the edge, with grey light round it
+            float px = -dz, pz = dx, r = fminf(phx, phz) - 0.15f;
+            Vector3 side = fabsf(px) > fabsf(pz) ? (Vector3){ px > 0 ? 1.0f : -1.0f, 0, 0 } : (Vector3){ 0, 0, pz > 0 ? 1.0f : -1.0f };
+            Vector3 dp = { p.x + side.x * r, p.y, p.z + side.z * r };
+            add_box(L, (Vector3){ dp.x + side.x * 0.1f, p.y + 1.25f, dp.z + side.z * 0.1f }, fabsf(side.x) > 0.5f ? (Vector3){ 0.1f, 1.25f, 0.8f } : (Vector3){ 0.8f, 1.25f, 0.1f }, TEX_CONCRETE, (Color){ 40, 36, 44, 255 }, 2.0f, F_NOCOLLIDE);
+            add_door(L, dp, (Vector3){ -side.x, 0, -side.z }, (Color){ 170, 170, 170, 255 }, W_STATIC, 0, "THE STATIC SEA");
         }
     }
     for (int i = 0; i < L->props.size; i++) {
@@ -999,6 +1003,63 @@ static void build_ward(Level *L, int seed) {
     L->spawn = (Vector3){ 0, 0.05f, 6.0f }; L->spawnYaw = 0;
 }
 
+// ---------------------------------------------------------------- STATIC: the static sea
+// a plain of television snow under no sky at all, that goes on forever because it repeats. televisions stand about
+// on it, all tuned to the same nothing. touch a screen and you are somewhere else. the grey man walks here (main)
+static void add_tv(Level *L, Vector3 p, int face, float s) {
+    static const Vector3 N[4] = { { 0, 0, -1 }, { 1, 0, 0 }, { 0, 0, 1 }, { -1, 0, 0 } };
+    Vector3 n = N[face & 3];
+    bool xn = fabsf(n.x) > 0.5f;
+    Vector3 c = { p.x, p.y + 0.42f * s, p.z };
+    add_box(L, c, (Vector3){ 0.52f * s, 0.42f * s, 0.48f * s }, TEX_CONCRETE, (Color){ 46, 42, 40, 255 }, 1.0f, F_NOCOLLIDE);
+    Vector3 sc = { c.x + n.x * 0.49f * s, c.y + 0.02f * s, c.z + n.z * 0.49f * s };
+    add_box(L, sc, xn ? (Vector3){ 0.01f, 0.3f * s, 0.38f * s } : (Vector3){ 0.38f * s, 0.3f * s, 0.01f }, TEX_STATIC, (Color){ 200, 205, 210, 255 }, 0.7f * s, F_NOCOLLIDE | F_SCREEN);
+    Use u = { { sc.x + n.x * 0.3f, sc.y, sc.z + n.z * 0.3f }, USE_LINK, 0, false };
+    Uses_push(&L->uses, u);
+}
+static void build_static(Level *L, int seed) {
+    L->name = "THE STATIC SEA";
+    SetRandomSeed(seed * 3301 + 29);
+    L->fog = (Color){ 6, 6, 7, 255 };
+    L->fogDensity = 0.055f;
+    L->light = 0.9f;
+    L->killY = -50;
+    L->wrap = 120;
+    L->gradeLo = (Color){ 128, 128, 132, 255 }; L->gradeHi = (Color){ 128, 128, 126, 255 };
+    L->moteCol = (Color){ 120, 120, 120, 255 };
+    add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ 100, 0.5f, 100 }, TEX_STATIC, (Color){ 70, 70, 72, 255 }, 4.0f, 0);
+    // televisions: alone, in twos and threes, stacked
+    for (int i = 0, tries = 0; i < 26 && tries < 400; tries++) {
+        Vector3 p = { frand(-58, 58), 0, frand(-58, 58) };
+        if (fabsf(p.x) < 4 && fabsf(p.z) < 4) continue;
+        int kind = GetRandomValue(0, 4);
+        add_tv(L, p, GetRandomValue(0, 3), frand(0.8f, 1.4f));
+        if (kind == 1) add_tv(L, (Vector3){ p.x, 0.85f, p.z }, GetRandomValue(0, 3), 0.9f);
+        if (kind == 2) { add_tv(L, (Vector3){ p.x + 1.3f, 0, p.z + 0.2f }, GetRandomValue(0, 3), 1.0f); add_tv(L, (Vector3){ p.x - 1.2f, 0, p.z - 0.3f }, GetRandomValue(0, 3), 0.9f); }
+        i++;
+    }
+    // poles carrying wires to nowhere
+    for (int i = 0; i < 10; i++) {
+        float x = -55 + i * 12.0f, z = 18.0f + sinf(i * 0.7f) * 3.0f;
+        add_box(L, (Vector3){ x, 4.5f, z }, (Vector3){ 0.12f, 4.5f, 0.12f }, TEX_WOOD, (Color){ 60, 56, 52, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ x, 8.4f, z }, (Vector3){ 0.9f, 0.06f, 0.08f }, TEX_WOOD, (Color){ 60, 56, 52, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ x + 6, 8.35f, z }, (Vector3){ 6, 0.01f, 0.01f }, TEX_CONCRETE, (Color){ 20, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
+    }
+    {   // one street lamp, and someone standing under it
+        Vector3 lp = { frand(-30, 30), 0, frand(-40, -15) };
+        add_box(L, (Vector3){ lp.x, 2.2f, lp.z }, (Vector3){ 0.06f, 2.2f, 0.06f }, TEX_RUST, (Color){ 60, 60, 60, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ lp.x, 4.45f, lp.z + 0.3f }, (Vector3){ 0.14f, 0.06f, 0.2f }, TEX_CONCRETE, (Color){ 230, 220, 190, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+        add_box(L, (Vector3){ lp.x, 0.01f, lp.z + 0.4f }, (Vector3){ 1.4f, 0.004f, 1.4f }, TEX_CONCRETE, (Color){ 60, 58, 50, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+        add_effigy(L, FIG_PENITENT, (Vector3){ lp.x + 0.3f, 0, lp.z + 0.6f }, frand(0, 6.28f), 0.2f);
+    }
+    // a door frame standing in the snow, with nothing on either side of it
+    add_box(L, (Vector3){ 9, 1.2f, -9 }, (Vector3){ 0.08f, 1.2f, 0.08f }, TEX_WOOD, (Color){ 120, 110, 100, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ 10.4f, 1.2f, -9 }, (Vector3){ 0.08f, 1.2f, 0.08f }, TEX_WOOD, (Color){ 120, 110, 100, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ 9.7f, 2.4f, -9 }, (Vector3){ 0.78f, 0.08f, 0.08f }, TEX_WOOD, (Color){ 120, 110, 100, 255 }, 1.0f, F_NOCOLLIDE);
+    L->spawn = (Vector3){ 0, 0.05f, 0 }; L->spawnYaw = 0;
+    add_note(L, (Vector3){ 1.2f, 0.01f, -1.6f }, NOTE_STATIC);
+}
+
 // ---------------------------------------------------------------- CHAPEL: the lower church
 // a nave full of people standing in their pews. when the bell has rung three times they kneel, and the one at
 // the altar counts them. the veil is on the altar
@@ -1097,6 +1158,7 @@ void level_build(Level *L, WorldId id, int seed) {
     case W_GARDEN: build_garden(L, seed); break;
     case W_CHAPEL: build_chapel(L, seed); break;
     case W_WARD:   build_ward(L, seed); break;
+    case W_STATIC: build_static(L, seed); break;
     default:       build_end(L); break;
     }
     // ash motes

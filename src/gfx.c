@@ -335,13 +335,14 @@ void gfx_shutdown(void) {
 
 void gfx_update_static(float time, bool face) {
     (void)time;
-    static Color px[64 * 64];
-    for (int i = 0; i < 64 * 64; i++) { uint8_t g = GetRandomValue(30, 255); px[i] = (Color){ g, g, g, 255 }; }
+    static Color px[TS * TS];
+    for (int i = 0; i < TS * TS; i++) { uint8_t g = GetRandomValue(30, 255); px[i] = (Color){ g, g, g, 255 }; }
     if (face) {   // something is looking out of the television
-        for (int y = 0; y < 64; y++) for (int x = 0; x < 64; x++) {
-            bool eye = (y >= 20 && y < 30) && ((x >= 14 && x < 24) || (x >= 40 && x < 50));
-            bool mouth = (y >= 42 && y < 52) && (x >= 22 && x < 42) && ((x + y) % 7 != 0);
-            if (eye || mouth) px[y * 64 + x] = (Color){ 4, 4, 4, 255 };
+        for (int y = 0; y < TS; y++) for (int x = 0; x < TS; x++) {
+            int u = x / 2, v = y / 2;
+            bool eye = (v >= 20 && v < 30) && ((u >= 14 && u < 24) || (u >= 40 && u < 50));
+            bool mouth = (v >= 42 && v < 52) && (u >= 22 && u < 42) && ((u + v) % 7 != 0);
+            if (eye || mouth) px[y * TS + x] = (Color){ 4, 4, 4, 255 };
         }
     }
     UpdateTexture(tex[TEX_STATIC], px);
