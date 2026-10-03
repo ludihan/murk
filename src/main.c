@@ -151,12 +151,12 @@ static void director(float dt) {
     int kind = GetRandomValue(0, 2);
     if (kind == 0 || (L.id != W_GARDEN && L.id != W_VOID)) {
         say(WHISPERS[L.id][GetRandomValue(0, 3)], 4.0f);
-        audio_play_ex(SFX_KNOCK, 0.25f, frand_(0.5f, 0.8f)); glitch = 0.45f;
+        audio_play_ex(SFX_KNOCK, 0.25f, frand_(0.5f, 0.8f));
     } else if (L.id == W_GARDEN) {
-        eyesOpenT = 5.0f; audio_play(SFX_STINGER); glitch = 0.6f;
+        eyesOpenT = 5.0f; audio_play(SFX_STINGER);
         say("every flower opens its eyes.", 4.0f);
     } else {
-        eyeBoost = 5.0f; audio_play(SFX_STINGER); glitch = 0.7f; madness = fminf(1.0f, madness + 0.3f);
+        eyeBoost = 5.0f; audio_play(SFX_STINGER); madness = fminf(1.0f, madness + 0.3f);
         say("the eye opens all the way.", 4.0f);
     }
 }
@@ -193,7 +193,7 @@ static void scare_update(float dt) {
                 float len = Vector3Length(d);
                 if (len > 2.6f) { float nl = fmaxf(2.4f, len * 0.55f); w->pos = (Vector3){ P.pos.x - d.x / len * nl, 0, P.pos.z - d.z / len * nl }; }
             }
-            audio_play(SFX_STINGER); glitch = 0.7f; haunt_title();
+            audio_play(SFX_STINGER); haunt_title();
             // and the game turns your head to look at it
             float bd = 1e9f; Vector3 bp = P.pos;
             for (int i = 0; i < L.watchers.size; i++) { float d = Vector3Distance(L.watchers.data[i].pos, P.pos); if (d < bd) { bd = d; bp = L.watchers.data[i].pos; } }
@@ -204,7 +204,7 @@ static void scare_update(float dt) {
         if (nextBlackout <= 0) {
             blackout = frand_(0.9f, 2.0f);
             nextBlackout = fmaxf(7.0f, 26.0f - dreams * 1.2f) * frand_(0.6f, 1.4f);
-            audio_play(SFX_KNOCK); glitch = 0.6f;
+            audio_play(SFX_KNOCK);
         }
     }
     // ---- hub visitors and gardeners creep whenever you aren't looking
@@ -213,7 +213,7 @@ static void scare_update(float dt) {
         for (int i = 0; i < L.watchers.size; i++) {
             Watcher *w = &L.watchers.data[i];
             bool seen = blackout <= 0 && level_seen(&L, eye, fwd, w->pos);
-            if (seen && !w->seen) { audio_play(SFX_STINGER); glitch = 0.8f; }
+            if (seen && !w->seen) { audio_play(SFX_STINGER); }
             w->seen = seen;
             w->phase += dt;
             Vector3 d = { P.pos.x - w->pos.x, 0, P.pos.z - w->pos.z };
@@ -223,7 +223,7 @@ static void scare_update(float dt) {
             if (!seen && len > 0.01f) w->pos = Vector3Add(w->pos, Vector3Scale(d, (blackout > 0 ? sp * 3.3f : sp) * dt / len));
             if (len < 1.1f && L.id == W_GARDEN) { gardenCaught = true; say("it only wanted to hold you.", 4); }
             else if (len < 1.1f) {
-                audio_play(SFX_SCREAM); glitch = 1; flash = 1;
+                audio_play(SFX_SCREAM); flash = 1;
                 hub_reposition(w); blackout = 1.4f; madness = 1;
                 say("it was behind you the whole time.", 4);
             }
@@ -583,9 +583,9 @@ static void frame(void) {
         float time = (float)clock;
         bool frozen = false;
         if (state == S_PLAY && freezeT > 0) {
-            freezeT -= frameDt; frozen = true; frameDt = 0; glitch = 0.9f;
+            freezeT -= frameDt; frozen = true; frameDt = 0; glitch = 0.35f;
             audio_set(1, 0, 0, 0.0f);
-            if (freezeT <= 0) { audio_play(SFX_KNOCK); glitch = 1; }
+            if (freezeT <= 0) { audio_play(SFX_KNOCK); glitch = 0.5f; }
         }
         if (titleT > 0) { titleT -= frameDt; if (titleT <= 0) SetWindowTitle("MURK"); }
 
@@ -650,7 +650,7 @@ static void frame(void) {
                         say(b, 10);
                         audio_play(SFX_PICKUP);
                         if (pk->fx == FX_LAMP) lampOn = 1;
-                        flash = 0.0f; glitch = 0.3f;
+                        flash = 0.0f;
                     }
                 }
                 // doors
@@ -674,12 +674,12 @@ static void frame(void) {
                 Vector3 fwd = player_forward(&P);
                 if (level_watchers(&L, player_eye(&P), fwd, P.pos, frameDt, blackout > 0)) {
                     dead = true; say("it was standing right there.", 4);
-                    audio_play(SFX_SCREAM); glitch = 1; haunt_title();
+                    audio_play(SFX_SCREAM); haunt_title();
                 }
-                if (L.sawWatcher) { L.sawWatcher = false; audio_play(SFX_STINGER); glitch = 0.8f; madness = fminf(1, madness + 0.3f); }
-                if (P.slipped) { P.slipped = false; audio_play(SFX_KNOCK); glitch = 0.5f; }
+                if (L.sawWatcher) { L.sawWatcher = false; audio_play(SFX_STINGER); madness = fminf(1, madness + 0.3f); }
+                if (P.slipped) { P.slipped = false; audio_play(SFX_KNOCK); }
                 scare_update(frameDt);
-                if (gardenCaught) { gardenCaught = false; dead = true; audio_play(SFX_SCREAM); glitch = 1; }
+                if (gardenCaught) { gardenCaught = false; dead = true; audio_play(SFX_SCREAM); }
                 if (dead) go(W_HUB, true);
             }
 
@@ -723,7 +723,7 @@ static void frame(void) {
         if (nameT > 0) nameT -= frameDt;
         if (msgT > 0) msgT -= frameDt;
         if (flash > 0) flash = fmaxf(0, flash - frameDt * 1.2f);
-        if (glitch > 0) glitch = fmaxf(0, glitch - frameDt * 1.6f);
+        if (glitch > 0) glitch = fmaxf(0, glitch - frameDt * 2.5f);
         if (levelLoaded && L.id == W_HUB) gfx_update_static(time, dreams >= 3 && fmodf(time, 19.0f) < 0.3f);
 
         // ---- render
