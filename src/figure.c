@@ -104,7 +104,7 @@ static void penitent(const Fig *f, const Frame *F, bool kneel) {
     // where the face should be there is only a hole
     gfx_ellipsoid(add3(hc, Vector3Scale(hf, 0.13f), Vector3Scale(hu, -0.03f)), Vector3Scale(hr, 0.13f), Vector3Scale(hu, 0.16f), Vector3Scale(hf, 0.11f), TEX_CONCRETE, (Color){ 5, 4, 4, 255 });
     if (Vector3Distance(hc, f->lookAt) < 5.0f) {   // close enough, and there is a face in there after all
-        Vector3 fc = add3(hc, Vector3Scale(hf, 0.17f), Vector3Scale(hu, -0.04f));
+        Vector3 fc = add3(hc, Vector3Scale(hf, 0.215f), Vector3Scale(hu, -0.04f));
         gfx_ellipsoid(fc, Vector3Scale(hr, 0.085f), Vector3Scale(hu, 0.14f), Vector3Scale(hf, 0.05f), TEX_SKIN, (Color){ 214, 208, 200, 255 });
         for (int s = -1; s <= 1; s += 2)
             gfx_ellipsoid(add3(fc, Vector3Scale(hf, 0.035f), Vector3Add(Vector3Scale(hr, s * 0.035f), Vector3Scale(hu, 0.035f))), Vector3Scale(hr, 0.022f), Vector3Scale(hu, 0.028f), Vector3Scale(hf, 0.02f), TEX_CONCRETE, (Color){ 3, 2, 2, 255 });

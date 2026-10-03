@@ -89,6 +89,15 @@ static struct { bool on; float t; Vector3 pos; float stride; } grey;
 
 
 static void use_thing(Use *u);
+// when one of them gets you: it comes at your face, there is a roar, then black and nothing, then you wake
+static struct { bool on, quiet; float t; FigKind kind; Color tint; float scale; char line[96]; } catchS;
+static void caught(FigKind k, Color tint, float scale, const char *line, bool quiet) {
+    if (catchS.on) return;
+    catchS.on = true; catchS.t = 0; catchS.kind = k; catchS.tint = tint; catchS.scale = scale; catchS.quiet = quiet;
+    snprintf(catchS.line, sizeof catchS.line, "%s", line);
+    reading = -1;
+    if (!quiet) audio_play_ex(SFX_ROAR, 1.0f, 0.9f + 0.2f * (GetRandomValue(0, 100) / 100.0f));
+}
 
 static const char *FX_NAME[FX_COUNT] = { "LAMP", "GLOVES", "BOOTS", "FEATHER", "VEIL" };
 static const char *FX_DESC[FX_COUNT] = {
@@ -355,7 +364,7 @@ static void garden_update(float dt, Vector3 eye) {
         float d = Vector3Distance((Vector3){ w->pos.x, 0, w->pos.z }, (Vector3){ P.pos.x, 0, P.pos.z });
         if (d < nearest) nearest = d;
         if (d < 3.2f && (P.noise > 0.15f || P.crouch < 0.5f)) { w->state = 2; w->goal = (Vector3){ P.pos.x, 0, P.pos.z }; w->timer = 3; }   // close enough to feel you
-        if (d < 1.1f) { gardenCaught = true; say("it only wanted to hold you.", 4); }
+        if (d < 1.1f) gardenCaught = true;
         Vector3 to = Vector3Subtract(w->goal, w->pos); to.y = 0;
         float len = Vector3Length(to), sp = w->state == 0 ? 0.7f : w->state == 1 ? 1.8f + 0.1f * dn : 2.5f + 0.1f * dn;
         if (len < 0.5f) {
@@ -796,6 +805,23 @@ static void draw_scene(Camera3D cam, float time) {
         Fig f = { FIG_PENITENT, ghost.pos, ghost.yaw, ghost.t * 3, eye, ghost.noticed ? 1.0f : 0.0f, 0.0f, time, { 0, 0, 1 }, (Color){ 18, 16, 18, 255 }, 0 };
         figure_draw(&f);
     }
+    if (catchS.on) {   // it comes straight at your face
+        static const float HY[] = { [FIG_PENITENT] = 2.02f, [FIG_KNEELER] = 1.7f, [FIG_CRAWLER] = 0.5f, [FIG_CLIMBER] = 0.5f, [FIG_GARDENER] = 3.4f, [FIG_PRIEST] = 2.25f,
+                                    [FIG_SLEEPER] = 0.6f, [FIG_SEATED] = 1.66f, [FIG_COCOON] = 0.0f, [FIG_TALL] = 2.36f };
+        static const float HZ[] = { [FIG_PENITENT] = 0.15f, [FIG_CRAWLER] = 0.66f, [FIG_GARDENER] = 0.1f, [FIG_PRIEST] = 0.1f, [FIG_SEATED] = 0.13f, [FIG_TALL] = 0.03f };
+        float s = catchS.scale > 0 ? catchS.scale : 1.0f, t = catchS.t;
+        float k = t / 0.28f; k = k > 1 ? 1 : k * k * (3 - 2 * k);
+        static const float END[] = { [FIG_PENITENT] = 0.5f, [FIG_CRAWLER] = 0.45f, [FIG_GARDENER] = 0.7f, [FIG_PRIEST] = 1.0f, [FIG_TALL] = 0.6f, [FIG_SEATED] = 0.5f };
+        float end = END[catchS.kind] > 0 ? END[catchS.kind] : 0.55f;
+        float dist = end + 2.9f * (1.0f - k);
+        Vector3 f = player_forward(&P); f.y = 0; f = Vector3Normalize(f);
+        Vector3 r = { -f.z, 0, f.x };
+        float shake = sinf(t * 71.0f) * 0.025f * k;
+        Vector3 pos = { eye.x + f.x * (dist + HZ[catchS.kind] * s) + r.x * shake, eye.y - HY[catchS.kind] * s + 0.05f, eye.z + f.z * (dist + HZ[catchS.kind] * s) + r.z * shake };
+        Fig fg = { catchS.kind, pos, atan2f(eye.x - pos.x, -(eye.z - pos.z)), t * 8.0f, eye, 1.0f, 0.25f + sinf(t * 23.0f) * 0.15f * k, t * 3.0f, { 0, 0, 1 }, catchS.tint, catchS.scale };
+        gfx_set_light(1.0f, 0, 0.3f, 6, 0);   // you see it clearly, whatever the dark
+        figure_draw(&fg);
+    }
     // lurkers: someone standing very still at the edge of the fog
     for (int i = 0; i < 3; i++) {
         const Lurker *k = &lurk[i];
@@ -1205,7 +1231,7 @@ static void frame(void) {
             acc += frameDt;
             while (acc >= DT) {
                 acc -= DT;
-                if (!tr.on && dinner.sitT <= 0) {
+                if (!tr.on && dinner.sitT <= 0 && !catchS.on) {
                     Input in = input_read();
                     if (bot) bot_input(&in, &P, &L, (float)clock);
                     player_update(&P, &L, &in, DT);
@@ -1220,7 +1246,13 @@ static void frame(void) {
                 if (stepDist > 2.0f) { stepDist = 0; audio_play_ex(SFX_STEP, 0.15f + 0.4f * P.noise, 0.85f + 0.2f * (GetRandomValue(0, 100) / 100.0f)); }
             }
 
-            if (!tr.on) {
+            if (catchS.on) {   // it has you
+                catchS.t += frameDt;
+                P.pitch *= 1.0f - fminf(1.0f, frameDt * 10.0f);
+                madness = 1;
+                if (catchS.t > 2.1f) { catchS.on = false; go(W_HUB, true); say(catchS.line, 4); }
+            }
+            if (!tr.on && !catchS.on) {
                 // things you can use: whichever one you are looking at, close enough to touch
                 Use *near = NULL;
                 {
@@ -1282,7 +1314,7 @@ static void frame(void) {
                 if (L.sludge && P.pos.y + 0.6f < L.sludgeY) { dead = true; say("it takes you.", 4); }
                 Vector3 fwd = player_forward(&P);
                 if (level_watchers(&L, player_eye(&P), fwd, P.pos, frameDt, P.noise)) {
-                    dead = true; say("it heard you.", 4);
+                    caught(FIG_CRAWLER, (Color){ 0 }, 0, "it heard you.", false);
                     audio_play_ex(SFX_CLICK, 0.9f, 0.8f); haunt_title();
                 }
                 if (L.sawWatcher) { L.sawWatcher = false; audio_play_ex(SFX_SWELL, 0.35f, 0.9f); madness = fminf(1, madness + 0.2f); }
@@ -1301,14 +1333,14 @@ static void frame(void) {
                     }
                 }
                 if (P.slipped) { P.slipped = false; audio_play(SFX_KNOCK); }
-                if (city_update(frameDt, player_eye(&P), fwd)) { dead = true; say("he was always that tall.", 4); audio_play_ex(SFX_BREATH, 0.8f, 0.5f); }
-                if (dinner_update(frameDt, player_eye(&P), fwd)) { dead = true; say("it is rude to leave the table.", 4); audio_play_ex(SFX_BREATH, 0.7f, 0.8f); }
-                if (grey_update(frameDt)) { dead = true; say("you forget something.", 5); audio_play_ex(SFX_SWELL, 0.6f, 0.6f); }
-                if (ward_update(frameDt, player_eye(&P))) { dead = true; say("it walked where you walked.", 4); audio_play_ex(SFX_BREATH, 0.7f, 0.8f); }
-                if (update_mass(frameDt, player_eye(&P))) { dead = true; say("he counted one too many.", 4); audio_play_ex(SFX_BREATH, 0.7f, 0.7f); }
-                if (update_climber(player_eye(&P), fwd)) { dead = true; say("it had your hands.", 4); audio_play_ex(SFX_BREATH, 0.7f, 0.8f); }
+                if (city_update(frameDt, player_eye(&P), fwd)) caught(FIG_TALL, (Color){ 0 }, 2.7f, "he was always that tall.", false);
+                if (dinner_update(frameDt, player_eye(&P), fwd)) caught(FIG_GARDENER, (Color){ 70, 30, 30, 255 }, 0, "it is rude to leave the table.", false);
+                if (grey_update(frameDt)) caught(FIG_PENITENT, (Color){ 104, 104, 104, 255 }, 0, "you forget something.", true);
+                if (ward_update(frameDt, player_eye(&P))) caught(FIG_PENITENT, (Color){ 20, 18, 18, 255 }, 0, "it walked where you walked.", false);
+                if (update_mass(frameDt, player_eye(&P))) caught(FIG_PRIEST, (Color){ 0 }, 0, "he counted one too many.", false);
+                if (update_climber(player_eye(&P), fwd)) caught(FIG_CRAWLER, (Color){ 0 }, 0, "it had your hands.", false);
                 scare_update(frameDt);
-                if (gardenCaught) { gardenCaught = false; dead = true; audio_play(SFX_BREATH); }
+                if (gardenCaught) { gardenCaught = false; caught(FIG_GARDENER, (Color){ 0 }, 0, "it only wanted to hold you.", false); }
                 if (dead) go(W_HUB, true);
             }
 
@@ -1344,7 +1376,9 @@ static void frame(void) {
             float whisper = L.nearest < 18 ? 1.0f - L.nearest / 18.0f : 0.0f;
             if (L.id == W_STATIC) whisper = fmaxf(whisper, 0.35f);   // the hiss of the screens
             if (home) whisper = 0;
-            if (!frozen) audio_set(tone, tension, whisper, tr.on ? 0.3f : L.id == W_STATIC ? 0.25f : home ? 0.45f : 0.9f);
+            bool hush = catchS.on && catchS.t > 1.0f;   // and then nothing at all
+            if (hush) { audio_music(0, 0); whisper = 0; }
+            if (!frozen) audio_set(tone, tension, whisper, hush ? 0.0f : tr.on ? 0.3f : L.id == W_STATIC ? 0.25f : home ? 0.45f : 0.9f);
             {   // the mass behind the walls gets louder the deeper you go; something breathes when one of them is close
                 float choir = L.id == W_HUB ? 0.0f : (L.id == W_END || L.id == W_CHAPEL) ? 1.0f : L.id == W_STATIC ? 0.0f : 0.35f;
                 float breath = 0, bpan = 0, bd = 1e9f;
@@ -1370,6 +1404,7 @@ static void frame(void) {
         float fade = 0;
         if (tr.on) fade = tr.t < 0.6f ? tr.t / 0.6f : fmaxf(0, 1.0f - (tr.t - 0.6f) / 0.7f);
         if (state == S_ENDING) fade = fminf(1.0f, endT / 3.0f) * 0.92f;
+        if (catchS.on && catchS.t > 0.95f) fade = 1;
 
         BeginTextureMode(gfx_rt);
         if (state == S_TITLE || !levelLoaded) {
