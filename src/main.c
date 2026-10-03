@@ -66,6 +66,7 @@ static const char *NOTES[NOTE_COUNT] = {
     [NOTE_SLEEPER] = "You keep coming down here. You keep looking for the way out.\nThere is no way out for you. You are what he is dreaming, and we need him to keep dreaming.\nGo up and look at the bed.",
     [NOTE_WARD] = "ROOM 6.\nPatient has not woken in eleven years. Vital signs unremarkable.\nMother visits Sundays and will not leave when asked. She says he is dreaming of a house.\nShe says she can hear it through the wall.",
     [NOTE_STATIC] = "If you see the grey man, walk away from him. Don't run, there is no need.\nHe doesn't hurt anyone. He only wants to stand where you are standing.\nIf he gets there, you will forget something you went a long way to find.",
+    [NOTE_WOMB] = "He is not asleep in the house. He was never in the house.\nHe is down here, where it is warm, and the house is what he dreams so that he will not be afraid.\nIf you go on, do not wake him. If you wake him, there will be nothing for you to go back to.",
     [NOTE_BELL] = "When the bell tolls, kneel with the others.\nThe priest counts the heads.\nHe must not count one that is standing.",
 };
 static int reading = -1;   // the note on screen, or -1
@@ -165,6 +166,7 @@ static void load_world(WorldId id, bool wake) {
     if (id == W_SHAFT) say("hold LMB on the rusty plates. W climbs, A/D shuffle, SPACE lunges. don't let go.", 9);
     if (id == W_DRAINS) say("something down here is listening.", 7);
     if (id == W_STATIC) say("nothing is on.", 5);
+    if (id == W_WOMB) say("it is warm here. something is breathing all around you.", 6);
     if (id == W_DINNER) say("dinner is served. there is a place for you.", 6);
     if (id == W_WARD) say("the lights hum. the corridor goes on ahead of you.", 6);
     if (id == W_VOID) say("there is nothing underneath.", 6);
@@ -622,6 +624,12 @@ static Color scale_col(Color c, float k) {
 static void draw_scene(Camera3D cam, float time) {
     float dens = L.fogDensity * (lampOn > 0.5f ? 0.55f : 1.0f);
     float light = L.light * (L.id == W_HUB ? 1.0f : flicker(time, 0.15f)) * (lampOn > 0.5f ? 1.2f : 1.0f);
+    float beat = 0;
+    if (L.id == W_WOMB && L.heart.y > -50) {   // the walls swell with the heartbeat
+        float hb = fmodf(time * 1.25f, 1.0f);
+        beat = expf(-hb * 9.0f) + 0.6f * expf(-fabsf(hb - 0.24f) * 18.0f);
+        light *= 0.8f + 0.3f * beat;
+    }
     if (blackout > 0) { light *= 0.04f; dens *= 1.8f; }
     gfx_begin_scene(cam, L.fog, dens, light, time);
     gfx_sky(&L.sky, time, P.pos);
@@ -645,8 +653,11 @@ static void draw_scene(Camera3D cam, float time) {
     for (int i = 0; i < L.watchers.size; i++) {
         const Watcher *w = &L.watchers.data[i];
         if (Vector3Distance(eye, w->pos) > cull + 2) continue;
-        Fig f = { L.id == W_DRAINS ? FIG_CRAWLER : L.creepers ? FIG_GARDENER : FIG_PENITENT, w->pos,
+        Fig f = { (L.id == W_DRAINS || L.id == W_WOMB) ? FIG_CRAWLER : L.creepers ? FIG_GARDENER : FIG_PENITENT, w->pos,
                   atan2f(P.pos.x - w->pos.x, -(P.pos.z - w->pos.z)), w->stride, eye, 0.7f, sinf(i * 1.7f) * 0.35f, w->phase, { 0, 0, 1 }, { 0 } };
+        if (w->state < 0) {   // asleep on the ceiling, spread flat
+            f.kind = FIG_CLIMBER; f.pos.y = 3.12f; f.wallN = (Vector3){ 0, -1, 0 }; f.yaw = w->phase; f.stride = 0;
+        }
         figure_draw(&f);
     }
     for (int i = 0; i < L.uses.size; i++) {
@@ -731,6 +742,15 @@ static void draw_scene(Camera3D cam, float time) {
             gfx_box((Vector3){ pk->pos.x + sinf(a) * 0.55f, pk->pos.y - 0.1f, pk->pos.z + cosf(a) * 0.55f }, (Vector3){ 0.025f, 1.2f, 0.025f }, TEX_RUST, (Color){ 120, 100, 90, 255 }, 1.0f);
         }
         gfx_box((Vector3){ pk->pos.x, pk->pos.y + 1.1f, pk->pos.z }, (Vector3){ 0.6f, 0.03f, 0.6f }, TEX_RUST, (Color){ 120, 100, 90, 255 }, 1.0f);
+    }
+    if (L.id == W_WOMB && L.heart.y > -50) {   // a heart the size of a room
+        float s = 1.0f + 0.07f * beat;
+        gfx_ellipsoid(L.heart, (Vector3){ 1.1f * s, 0, 0.2f }, (Vector3){ 0.1f, 1.4f * s, 0 }, (Vector3){ 0, 0.1f, 0.9f * s }, TEX_FLESH, (Color){ 200, 90, 96, 255 });
+        for (int k = 0; k < 5; k++) {
+            float a = k * 1.2566f;
+            Vector3 o = { L.heart.x + sinf(a) * 0.7f, L.heart.y + 1.0f, L.heart.z + cosf(a) * 0.5f };
+            gfx_limb(o, (Vector3){ o.x + sinf(a) * 0.6f, 3.2f, o.z + cosf(a) * 0.6f }, 0.12f * s, 0.18f, TEX_FLESH, (Color){ 150, 60, 80, 255 });
+        }
     }
     if (L.sludge) gfx_slab(L.sludgeY, 6.0f, TEX_SLUDGE, (Color){ 140, 160, 90, 255 }, time * 12.0f);
     if (L.water) gfx_slab(L.waterY, L.waterHalf, TEX_WATER, (Color){ 50, 56, 64, 255 }, time * 3.0f);
@@ -981,7 +1001,7 @@ static const char *END_LINES_KNOWN[] = {
 
 // touch the wrong thing and you are somewhere else: any dream but this one, the shallow ones or the deep
 static void link_random(void) {
-    static const WorldId DEST[] = { W_SHAFT, W_DRAINS, W_VOID, W_GARDEN, W_CHAPEL, W_WARD, W_STATIC, W_DINNER };
+    static const WorldId DEST[] = { W_SHAFT, W_DRAINS, W_VOID, W_GARDEN, W_CHAPEL, W_WARD, W_STATIC, W_DINNER, W_WOMB };
     int n = (int)(sizeof DEST / sizeof *DEST);
     WorldId to;
     do to = DEST[GetRandomValue(0, n - 1)]; while (to == L.id);
@@ -992,6 +1012,13 @@ static void link_random(void) {
 
 static void use_thing(Use *u) {
     if (u->kind == USE_LINK) { link_random(); return; }
+    if (u->kind == USE_FACE) {   // his face is your face. the heart stops
+        u->done = true; reading = NOTE_SLEEPER;
+        if (!g_secret) { g_secret = 1; save_memory(); }
+        L.heart.y = -100;
+        audio_play_ex(SFX_SWELL, 0.7f, 0.6f);
+        return;
+    }
     if (u->kind == USE_SIT) {   // you sit down in the place that was kept for you
         dinner.sitT = 0.001f; dinner.seat = u->pos;
         P.pos = (Vector3){ u->pos.x, 0.0f, u->pos.z }; P.vel = (Vector3){ 0 }; P.yaw = 270; P.pitch = -8; P.crouch = 0.55f;
@@ -1125,7 +1152,7 @@ static void frame(void) {
                         if (dot > best) { best = dot; near = u; }
                     }
                 }
-                static const char *HINT[] = { [USE_NOTE] = "E  read", [USE_CANDLE] = "E  light it", [USE_LILY] = "E  pick it", [USE_LINK] = "E  touch the screen", [USE_SIT] = "E  sit down" };
+                static const char *HINT[] = { [USE_NOTE] = "E  read", [USE_CANDLE] = "E  light it", [USE_LILY] = "E  pick it", [USE_LINK] = "E  touch the screen", [USE_SIT] = "E  sit down", [USE_FACE] = "E  touch his face" };
                 useHint = near ? HINT[near->kind] : NULL;
                 if (reading >= 0 && (IsKeyPressed(KEY_E) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || P.speedMeter > 4.5f)) reading = -1;
                 else if (near && IsKeyPressed(KEY_E)) {
@@ -1175,10 +1202,11 @@ static void frame(void) {
                     audio_play_ex(SFX_CLICK, 0.9f, 0.8f); haunt_title();
                 }
                 if (L.sawWatcher) { L.sawWatcher = false; audio_play_ex(SFX_SWELL, 0.35f, 0.9f); madness = fminf(1, madness + 0.2f); }
-                if (L.id == W_DRAINS) {   // you hear them before you see them: wet clicking, faster when they have heard you
+                if (L.id == W_DRAINS || L.id == W_WOMB) {   // you hear them before you see them: wet clicking, faster when they have heard you
                     static float clickT[4];
                     for (int i = 0; i < L.watchers.size && i < 4; i++) {
                         Watcher *w = &L.watchers.data[i];
+                        if (w->state < 0) continue;
                         clickT[i] -= frameDt;
                         if (clickT[i] <= 0) {
                             clickT[i] = w->state == 2 ? frand_(0.5f, 0.9f) : w->state == 1 ? frand_(1.0f, 1.8f) : frand_(2.0f, 4.0f);
@@ -1221,10 +1249,11 @@ static void frame(void) {
             if (m > 1) m = 1;
             madness += (m - madness) * fminf(1, frameDt * 3);
             tension = madness;
-            float tone = L.id == W_HUB ? 1.0f : L.id == W_SHAFT ? 0.75f : L.id == W_DRAINS ? 0.9f : L.id == W_VOID ? 1.4f : L.id == W_GARDEN ? 1.15f : L.id == W_CHAPEL ? 0.8f : L.id == W_WARD ? 1.25f : L.id == W_STATIC ? 0.6f : L.id == W_DINNER ? 0.85f : L.id == W_END ? 2.0f : 1.0f;
+            float tone = L.id == W_HUB ? 1.0f : L.id == W_SHAFT ? 0.75f : L.id == W_DRAINS ? 0.9f : L.id == W_VOID ? 1.4f : L.id == W_GARDEN ? 1.15f : L.id == W_CHAPEL ? 0.8f : L.id == W_WARD ? 1.25f : L.id == W_STATIC ? 0.6f : L.id == W_DINNER ? 0.85f : L.id == W_WOMB ? 0.55f : L.id == W_END ? 2.0f : 1.0f;
             float mus = L.id == W_DINNER ? 0.6f : L.id == W_GARDEN ? 0.8f : L.id == W_VOID ? 0.5f : L.id == W_END ? 0.8f : L.id == W_HUB ? 0.4f : 0.0f;
             bool home = L.id == W_HUB;   // the house: a music box in tune, a low warm hum, nothing else
             if (home) tension = madness = 0;
+            if (L.id == W_WOMB) tension = L.heart.y > -50 ? fmaxf(tension, 0.65f) : 0.0f;   // the heart is everywhere down here, until it stops
             audio_music(frozen ? 0.0f : mus, home ? 0.0f : fminf(1.0f, madness * 0.9f + (blackout > 0 ? 0.4f : 0.0f)));
             float whisper = L.nearest < 18 ? 1.0f - L.nearest / 18.0f : 0.0f;
             if (L.id == W_STATIC) whisper = fmaxf(whisper, 0.35f);   // the hiss of the screens

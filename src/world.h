@@ -55,6 +55,7 @@ typedef struct Level {
     bool sawWatcher;        // set when a watcher first comes into view (main consumes it)
     float nearest;          // distance to the closest watcher
     Vector3 bed;            // ending trigger
+    Vector3 heart;          // the womb: where the heart is
     Vector3 wakePos; float wakeYaw;   // where you come to after waking (the hub's bed)
     Vector3 spots[40]; int nspots;    // the house: places a visitor can stand without being seen arriving
     float t;
@@ -64,7 +65,7 @@ extern int g_launches, g_wakes;   // persisted between runs: the game remembers 
 extern int g_secret;
 extern int g_wardLoop;            // how many times you have walked the ward corridor this visit              // you knelt in the circle and were told who is asleep
 // the pages left lying around. 0 .. NOTE_COUNT-1
-enum { NOTE_VIGIL, NOTE_DAY9, NOTE_DOORS, NOTE_GARDEN, NOTE_DRAINS, NOTE_CLIMB, NOTE_EYE, NOTE_FLOWERS, NOTE_CANDLES, NOTE_FAMILY, NOTE_AWAKE, NOTE_BELL, NOTE_SLEEPER, NOTE_WARD, NOTE_STATIC, NOTE_COUNT };
+enum { NOTE_VIGIL, NOTE_DAY9, NOTE_DOORS, NOTE_GARDEN, NOTE_DRAINS, NOTE_CLIMB, NOTE_EYE, NOTE_FLOWERS, NOTE_CANDLES, NOTE_FAMILY, NOTE_AWAKE, NOTE_BELL, NOTE_SLEEPER, NOTE_WARD, NOTE_STATIC, NOTE_WOMB, NOTE_COUNT };
 void level_build(Level *L, WorldId id, int seed);
 void level_free(Level *L);
 void level_step(Level *L, float dt, Vector3 player);

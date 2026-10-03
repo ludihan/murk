@@ -1087,6 +1087,99 @@ static void build_dinner(Level *L, int seed) {
     L->spawn = (Vector3){ 3.5f, 0.05f, -Wr / 2 + 1.6f + empty * 3.2f + 6 }; L->spawnYaw = 270;
 }
 
+// ---------------------------------------------------------------- WOMB: underneath everything
+// warm red tunnels that pulse. bodies hang wrapped from the ceiling, and pale things cling up there too, asleep until
+// they hear you. at the bottom is a heart, and him
+static void build_womb(Level *L, int seed) {
+    L->name = "BELOW";
+    SetRandomSeed(seed * 9973 + 3);
+    L->fog = (Color){ 26, 4, 6, 255 };
+    L->fogDensity = 0.1f;
+    L->light = 0.9f;
+    L->killY = -50;
+    L->gradeLo = (Color){ 136, 112, 116, 255 }; L->gradeHi = (Color){ 168, 118, 108, 255 };
+    L->moteCol = (Color){ 160, 60, 60, 255 };
+    const int N = 7;
+    const float C = 5.0f, H = 3.2f, wt = 0.4f;
+    L->mazeN = N; L->cell = C;
+    L->open = calloc(N * N, 1);
+    L->dist = calloc(N * N, sizeof(int));
+    uint8_t seen[49] = { 0 };
+    int stack[49], sp = 0;
+    stack[sp++] = 0; seen[0] = 1;
+    while (sp) {
+        int cur = stack[sp - 1], cx = cur % N, cy = cur / N, opts[4], no = 0;
+        for (int d = 0; d < 4; d++) { int nx = cx + DX[d], ny = cy + DY[d]; if (nx >= 0 && ny >= 0 && nx < N && ny < N && !seen[ny * N + nx]) opts[no++] = d; }
+        if (!no) { sp--; continue; }
+        int d = opts[GetRandomValue(0, no - 1)], nxt = (cy + DY[d]) * N + cx + DX[d];
+        L->open[cur] |= 1 << d; L->open[nxt] |= 1 << ((d + 2) % 4);
+        seen[nxt] = 1; stack[sp++] = nxt;
+    }
+    for (int i = 0; i < N; i++) {   // a few loops, so you can be cut off and go round
+        int cx = GetRandomValue(1, N - 2), cy = GetRandomValue(1, N - 2), d = GetRandomValue(0, 3);
+        L->open[cy * N + cx] |= 1 << d; L->open[(cy + DY[d]) * N + cx + DX[d]] |= 1 << ((d + 2) % 4);
+    }
+    int far[49], q[49], head = 0, tail = 0, best = 0;
+    for (int i = 0; i < N * N; i++) far[i] = -1;
+    q[tail++] = 0; far[0] = 0;
+    while (head < tail) {
+        int cur = q[head++];
+        if (far[cur] > far[best]) best = cur;
+        for (int d = 0; d < 4; d++) if (L->open[cur] & (1 << d)) { int n = (cur / N + DY[d]) * N + cur % N + DX[d]; if (far[n] < 0) { far[n] = far[cur] + 1; q[tail++] = n; } }
+    }
+    float ox = -N * C / 2;
+    #define CC(i) ((Vector3){ ox + ((i) % N + 0.5f) * C, 0, ox + ((i) / N + 0.5f) * C })
+    const Color FL = { 170, 90, 96, 255 }, BONE = { 200, 180, 150, 255 };
+    add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ N * C / 2 + 1, 0.5f, N * C / 2 + 1 }, TEX_SLUDGE, (Color){ 120, 40, 40, 255 }, 2.0f, 0);
+    add_box(L, (Vector3){ 0, H + 0.5f, 0 }, (Vector3){ N * C / 2 + 1, 0.5f, N * C / 2 + 1 }, TEX_FLESH, FL, 2.0f, 0);
+    for (int y = 0; y < N; y++) for (int x = 0; x < N; x++) {
+        int i = y * N + x;
+        Vector3 c = CC(i);
+        if (!(L->open[i] & 4) || y == N - 1) add_box(L, (Vector3){ c.x, H / 2, c.z + C / 2 }, (Vector3){ C / 2 + wt, H / 2, wt }, TEX_FLESH, FL, 2.0f, 0);
+        if (!(L->open[i] & 2) || x == N - 1) add_box(L, (Vector3){ c.x + C / 2, H / 2, c.z }, (Vector3){ wt, H / 2, C / 2 + wt }, TEX_FLESH, FL, 2.0f, 0);
+        if (y == 0) add_box(L, (Vector3){ c.x, H / 2, c.z - C / 2 }, (Vector3){ C / 2 + wt, H / 2, wt }, TEX_FLESH, FL, 2.0f, 0);
+        if (x == 0) add_box(L, (Vector3){ c.x - C / 2, H / 2, c.z }, (Vector3){ wt, H / 2, C / 2 + wt }, TEX_FLESH, FL, 2.0f, 0);
+        // ribs arching over the passages
+        bool ns = (L->open[i] & 1) || (L->open[i] & 4);
+        for (int k = -1; k <= 1; k += 2) {
+            Vector3 rc = { c.x + (ns ? 0 : k * 1.4f), H - 0.12f, c.z + (ns ? k * 1.4f : 0) };
+            add_box(L, rc, ns ? (Vector3){ C / 2, 0.08f, 0.1f } : (Vector3){ 0.1f, 0.08f, C / 2 }, TEX_SKIN, BONE, 1.0f, F_NOCOLLIDE);
+        }
+        // a dim red glow in some of the walls, like light through skin
+        if (GetRandomValue(0, 2) == 0) add_box(L, (Vector3){ c.x + frand(-1.5f, 1.5f), H - 0.05f, c.z + frand(-1.5f, 1.5f) }, (Vector3){ 0.4f, 0.03f, 0.4f }, TEX_CONCRETE, (Color){ 150, 30, 30, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+        if (i != 0 && i != best && GetRandomValue(0, 2) == 0) add_effigy(L, FIG_COCOON, (Vector3){ c.x + frand(-1.2f, 1.2f), H, c.z + frand(-1.2f, 1.2f) }, frand(0, 6.28f), 0);
+        if (i != 0 && GetRandomValue(0, 3) == 0) add_box(L, (Vector3){ c.x + frand(-1.5f, 1.5f), 0.01f, c.z + frand(-1.5f, 1.5f) }, (Vector3){ frand(0.5f, 1.4f), 0.006f, frand(0.5f, 1.4f) }, TEX_FLESH, (Color){ 110, 20, 24, 255 }, 1.0f, F_NOCOLLIDE);
+    }
+    // the bottom: a heart the size of a room, a bed of something soft, and him
+    Vector3 bc = CC(best);
+    L->heart = (Vector3){ bc.x, 1.8f, bc.z - 1.2f };
+    add_box(L, (Vector3){ bc.x, 0.3f, bc.z + 0.8f }, (Vector3){ 0.9f, 0.3f, 1.2f }, TEX_FLESH, (Color){ 190, 120, 120, 255 }, 1.0f, 0);
+    add_effigy(L, FIG_SLEEPER, (Vector3){ bc.x, 0.62f, bc.z + 0.8f }, 0, 0);
+    Use face = { { bc.x, 0.9f, bc.z + 1.5f }, USE_FACE, 0, false };
+    Uses_push(&L->uses, face);
+    {   // and a way back up to the house, in the wall of the same room
+        int o = L->open[best], d = 0;
+        for (int k = 0; k < 4; k++) if (!(o & (1 << k))) { d = k; break; }
+        Vector3 p = { bc.x, 0, bc.z }, n = { 0, 0, 0 };
+        if (d == 0) { p.z -= C / 2 - wt; n.z = 1; } else if (d == 1) { p.x += C / 2 - wt; n.x = -1; } else if (d == 2) { p.z += C / 2 - wt; n.z = -1; } else { p.x -= C / 2 - wt; n.x = 1; }
+        add_door(L, p, n, (Color){ 255, 214, 150, 255 }, W_HUB, 0, "HOME");
+    }
+    // the things asleep on the ceiling
+    int placed = 0;
+    for (int tries = 0; tries < 300 && placed < 5; tries++) {
+        int i = GetRandomValue(0, N * N - 1);
+        if (far[i] < 2 || i == best) continue;
+        Vector3 c = CC(i);
+        Watcher w = { .pos = { c.x + frand(-1, 1), 0, c.z + frand(-1, 1) }, .phase = frand(0, 6), .state = -1 };
+        w.goal = w.pos;
+        Watchers_push(&L->watchers, w);
+        placed++;
+    }
+    L->spawn = CC(0); L->spawn.y = 0.05f; L->spawnYaw = 90;
+    add_note(L, (Vector3){ L->spawn.x + 1.2f, 0.02f, L->spawn.z - 1.0f }, NOTE_WOMB);
+    #undef CC
+}
+
 // ---------------------------------------------------------------- CHAPEL: the lower church
 // a nave full of people standing in their pews. when the bell has rung three times they kneel, and the one at
 // the altar counts them. the veil is on the altar
@@ -1139,6 +1232,7 @@ static void build_chapel(Level *L, int seed) {
     L->spawn = (Vector3){ 0, 0.05f, 4.0f }; L->spawnYaw = 0;
     add_note(L, (Vector3){ 1.3f, 0.01f, 3.4f }, NOTE_BELL);
     add_note(L, (Vector3){ -4.6f, 0.5f, -8.9f }, NOTE_VIGIL);   // left on a pew
+    add_door(L, (Vector3){ 4.2f, 0.4f, Z0 + WT }, (Vector3){ 0, 0, 1 }, (Color){ 200, 40, 40, 255 }, W_WOMB, 0, "BELOW");   // behind the altar, a low door
 }
 
 // ---------------------------------------------------------------- END: the way out
@@ -1188,6 +1282,7 @@ void level_build(Level *L, WorldId id, int seed) {
     case W_WARD:   build_ward(L, seed); break;
     case W_STATIC: build_static(L, seed); break;
     case W_DINNER: build_dinner(L, seed); break;
+    case W_WOMB:   build_womb(L, seed); break;
     default:       build_end(L); break;
     }
     // ash motes
@@ -1282,6 +1377,10 @@ bool level_watchers(Level *L, Vector3 eye, Vector3 fwd, Vector3 feet, float dt, 
         w->phase += dt;
         float dist = Vector3Distance((Vector3){ w->pos.x, 0, w->pos.z }, (Vector3){ feet.x, 0, feet.z });
         if (dist < L->nearest) L->nearest = dist;
+        if (w->state < 0) {   // asleep on the ceiling. it only wakes for a sound close underneath it
+            if (noise > 0.05f && dist < noise * 7.0f) { w->state = 2; w->goal = feet; w->timer = 4; L->sawWatcher = true; }
+            continue;
+        }
         if (dist < 0.85f) return true;
         bool seen = level_seen(L, eye, fwd, w->pos);
         if (seen && !w->seen && dist < 22) L->sawWatcher = true;

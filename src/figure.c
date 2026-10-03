@@ -56,6 +56,21 @@ static void seated(const Fig *f, const Frame *F) {
     }
 }
 
+static void cocoon(const Fig *f, const Frame *F) {
+    Color wrap = tint_or(f, (Color){ 170, 150, 140, 255 });
+    float sway = sinf(f->t * 0.7f) * 0.12f, twist = sinf(f->t * 0.43f) * 0.3f;
+    Vector3 top = f->pos, c = W(F, sway, -1.4f, 0);
+    gfx_limb(top, W(F, sway * 0.5f, -0.5f, 0), 0.015f, 0.015f, TEX_SKIN, (Color){ 80, 30, 30, 255 });
+    Vector3 ax = Vector3Scale(F->r, cosf(twist) * 0.32f), az = Vector3Scale(F->f, 0.3f);
+    ax = Vector3Add(ax, Vector3Scale(F->f, sinf(twist) * 0.32f));
+    gfx_ellipsoid(c, ax, (Vector3){ 0, 0.9f, 0 }, az, TEX_SKIN, wrap);
+    // a face pushing out through the wrapping, mouth open
+    Vector3 fc = Vector3Add(W(F, sway, -1.05f, 0), Vector3Scale(Vector3Normalize(Vector3CrossProduct((Vector3){ 0, 1, 0 }, ax)), 0.27f));
+    gfx_ellipsoid(fc, Vector3Scale(F->r, 0.12f), (Vector3){ 0, 0.15f, 0 }, Vector3Scale(F->f, 0.08f), TEX_SKIN, wrap);
+    Vector3 mo = Vector3Add(fc, Vector3Scale(Vector3Normalize(Vector3Subtract(fc, c)), 0.06f));
+    gfx_ellipsoid((Vector3){ mo.x, mo.y - 0.05f, mo.z }, Vector3Scale(F->r, 0.04f), (Vector3){ 0, 0.07f, 0 }, Vector3Scale(F->f, 0.03f), TEX_CONCRETE, (Color){ 6, 2, 2, 255 });
+}
+
 static void penitent(const Fig *f, const Frame *F, bool kneel) {
     Color robe = tint_or(f, (Color){ 30, 26, 28, 255 }), skin = { 150, 138, 136, 255 };
     float sway = sinf(f->t * 0.7f) * 0.02f, top = kneel ? 1.12f : 1.72f;
@@ -191,8 +206,8 @@ void figure_draw(const Fig *f) {
     Frame F;
     F.o = f->pos;
     if (f->kind == FIG_CLIMBER) {
-        F.u = Vector3Scale(Vector3Normalize(f->wallN), 0.45f);   // pressed flat to the wall
-        F.f = (Vector3){ 0, 1, 0 };
+        F.u = Vector3Scale(Vector3Normalize(f->wallN), 0.45f);   // pressed flat to the wall (or the ceiling)
+        F.f = fabsf(f->wallN.y) > 0.9f ? (Vector3){ sinf(f->yaw), 0, -cosf(f->yaw) } : (Vector3){ 0, 1, 0 };
         F.r = Vector3Normalize(Vector3CrossProduct(F.f, f->wallN));
     } else {
         F.f = (Vector3){ sinf(f->yaw), 0, -cosf(f->yaw) };
@@ -207,5 +222,6 @@ void figure_draw(const Fig *f) {
     case FIG_PRIEST:   priest(f, &F); break;
     case FIG_SLEEPER:  sleeper(f, &F); break;
     case FIG_SEATED:   seated(f, &F); break;
+    case FIG_COCOON:   cocoon(f, &F); break;
     }
 }
