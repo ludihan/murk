@@ -41,6 +41,7 @@ typedef struct Level {
     bool sludge;            // rising sludge hazard
     float sludgeY, sludgeSpeed;
     bool sludgeArmed;
+    float shaftW;           // half width of the shaft
 
     // drains maze
     int mazeN;

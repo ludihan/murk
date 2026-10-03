@@ -402,6 +402,7 @@ static void build_shaft(Level *L, int seed) {
     L->sludgeY = -3;
     L->sludgeSpeed = frand(0.30f, 0.42f);
     const float W = g_W = frand(5.0f, 7.2f);
+    L->shaftW = W;
     const int LEVELS = GetRandomValue(9, 13);
     float yk[24];
     yk[0] = 0;

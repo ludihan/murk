@@ -67,6 +67,8 @@ static const char *NOTES[NOTE_COUNT] = {
 };
 static int reading = -1;   // the note on screen, or -1
 static const char *useHint;
+// the shaft: something on the wall below you that climbs when you climb, and only while you aren't looking at it
+static struct { bool on, seen; float y, lastPY, scrapeT; Vector3 pos, n; } climber;
 static void use_thing(Use *u);
 
 static const char *FX_NAME[FX_COUNT] = { "LAMP", "GLOVES", "BOOTS", "FEATHER" };
@@ -119,6 +121,7 @@ static void load_world(WorldId id, bool wake) {
         level_free(&L);
     }
     recN = 0; recT = 0;
+    memset(&climber, 0, sizeof climber);
     ghost.on = ghostN[id] > 40 && dreams >= 2 && GetRandomValue(0, 2) > 0; ghost.noticed = false; ghost.t = -frand_(4, 9);
     level_build(&L, id, ++dreams);
     levelLoaded = true;
@@ -259,6 +262,39 @@ static void hub_visitors(float dt, Vector3 eye, Vector3 fwd) {
         if (d < nearest) nearest = d;
     }
     L.nearest = nearest;
+}
+
+static bool update_climber(Vector3 eye, Vector3 fwd) {
+    if (L.id != W_SHAFT) return false;
+    if (!climber.on) {
+        if (!L.sludgeArmed) { climber.lastPY = P.pos.y; return false; }
+        climber.on = true; climber.y = P.pos.y - 11.0f; climber.lastPY = P.pos.y;
+        play_behind(SFX_SCRAPE, 0.5f, 0.8f);
+        say("something has started up the wall after you.", 4);
+    }
+    // it stays on whichever wall you are nearest, under you
+    float W = L.shaftW - 0.06f;
+    bool onX = fabsf(P.pos.x) > fabsf(P.pos.z);
+    climber.n = onX ? (Vector3){ P.pos.x > 0 ? -1.0f : 1.0f, 0, 0 } : (Vector3){ 0, 0, P.pos.z > 0 ? -1.0f : 1.0f };
+    Vector3 p = onX ? (Vector3){ P.pos.x > 0 ? W : -W, climber.y, Clamp(P.pos.z, -W + 0.6f, W - 0.6f) }
+                    : (Vector3){ Clamp(P.pos.x, -W + 0.6f, W - 0.6f), climber.y, P.pos.z > 0 ? W : -W };
+    Vector3 to = Vector3Subtract(Vector3Add(p, Vector3Scale(climber.n, 0.4f)), eye);
+    float d = Vector3Length(to);
+    climber.seen = d > 0.01f && Vector3DotProduct(Vector3Scale(to, 1.0f / d), fwd) > 0.55f && d < 30 && ray_clear(eye, Vector3Add(p, Vector3Scale(climber.n, 0.5f)));
+    float rise = P.pos.y - climber.lastPY;
+    climber.lastPY = P.pos.y;
+    if (!climber.seen) {
+        float before = climber.y;
+        if (rise > 0) climber.y += rise * 1.35f;                 // your hands, a little quicker than yours
+        climber.y = fmaxf(climber.y, P.pos.y - 15.0f);            // it never falls far behind
+        climber.y = fmaxf(climber.y, L.sludgeY + 0.4f);
+        float moved = climber.y - before;
+        climber.scrapeT -= moved;
+        if (climber.scrapeT <= 0) { climber.scrapeT = 1.6f; play_from(GetRandomValue(0, 2) ? SFX_CLICK : SFX_SCRAPE, p, 0.7f, frand_(0.8f, 1.0f)); }
+    }
+    p.y = climber.y;
+    climber.pos = p;
+    return Vector3Distance(Vector3Add(p, (Vector3){ 0, 0.8f, 0 }), (Vector3){ P.pos.x, P.pos.y + 0.6f, P.pos.z }) < 1.4f;
 }
 
 static void scare_update(float dt) {
@@ -452,6 +488,10 @@ static void draw_scene(Camera3D cam, float time) {
         const Effigy *e = &L.effigies.data[i];
         if (Vector3Distance(eye, e->pos) > cull + 2) continue;
         Fig f = { (FigKind)e->kind, e->pos, e->yaw, 0, eye, e->look * 0.9f, e->tilt, time + i, { 0, 0, 1 }, { 0 } };
+        figure_draw(&f);
+    }
+    if (climber.on) {
+        Fig f = { FIG_CLIMBER, climber.pos, 0, climber.y * 3.0f, eye, 0.8f, 0.6f, time, climber.n, { 0 } };
         figure_draw(&f);
     }
     if (ghost.on && ghost.t >= 0) {
@@ -885,6 +925,7 @@ static void frame(void) {
                     }
                 }
                 if (P.slipped) { P.slipped = false; audio_play(SFX_KNOCK); }
+                if (update_climber(player_eye(&P), fwd)) { dead = true; say("it had your hands.", 4); audio_play_ex(SFX_BREATH, 0.7f, 0.8f); }
                 scare_update(frameDt);
                 if (gardenCaught) { gardenCaught = false; dead = true; audio_play(SFX_BREATH); }
                 if (dead) go(W_HUB, true);
@@ -915,6 +956,7 @@ static void frame(void) {
                 float d = Vector3Distance(L.watchers.data[i].pos, P.pos);
                 if (d < 14) m += (14 - d) / 14.0f * 0.5f;
             }
+            if (climber.on) { float d = Vector3Distance(climber.pos, P.pos); if (d < 12) m += (12 - d) / 12.0f * 0.6f; }
             if (m > 1) m = 1;
             madness += (m - madness) * fminf(1, frameDt * 3);
             tension = madness;
@@ -930,6 +972,7 @@ static void frame(void) {
                     float d = Vector3Distance(L.watchers.data[i].pos, P.pos);
                     if (d < bd) { bd = d; bpan = pan_of(L.watchers.data[i].pos); }
                 }
+                if (climber.on) { float d = Vector3Distance(climber.pos, P.pos); if (d < bd) { bd = d; bpan = pan_of(climber.pos); } }
                 if (bd < 7) breath = 1.0f - bd / 7.0f;
                 audio_atmos(frozen ? 0.0f : choir, breath, bpan);
             }
