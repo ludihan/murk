@@ -812,7 +812,7 @@ static void build_garden(Level *L, int seed) {
     add_box(L, (Vector3){ E + 1, 3, 0 }, (Vector3){ 1, 3, E + 2 }, TEX_GRASS, (Color){ 40, 80, 70, 255 }, 3.0f, 0);
     L->water = true; L->waterY = -0.8f; L->waterHalf = P; L->waterC = (Vector3){ 0, 0, 0 };
     // an island in the pond with a lone lantern, and two planks to reach it
-    add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ 3.2f, 0.5f, 3.2f }, TEX_MOSAIC, (Color){ 150, 130, 160, 255 }, 1.5f, 0);
+    add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ 3.2f, 0.5f, 3.2f }, TEX_MOSAIC, (Color){ 80, 70, 76, 255 }, 1.5f, 0);
     add_box(L, (Vector3){ 0, -0.15f, (P + 3.2f) / 2 }, (Vector3){ 1.0f, 0.15f, (P - 3.2f) / 2 + 0.2f }, TEX_WOOD, (Color){ 150, 130, 160, 255 }, 1.0f, 0);
     add_box(L, (Vector3){ 0, -0.15f, -(P + 3.2f) / 2 }, (Vector3){ 1.0f, 0.15f, (P - 3.2f) / 2 + 0.2f }, TEX_WOOD, (Color){ 150, 130, 160, 255 }, 1.0f, 0);
     add_box(L, (Vector3){ 0, 1.2f, 0 }, (Vector3){ 0.07f, 1.2f, 0.07f }, TEX_RUST, (Color){ 60, 50, 60, 255 }, 1.0f, 0);
@@ -834,7 +834,16 @@ static void build_garden(Level *L, int seed) {
         add_candle(L, (Vector3){ pc.x, top + 3.4f, pc.z }, 0.25f, true);
     }
     add_box(L, (Vector3){ 0, top + 0.3f, MZ }, (Vector3){ 0.7f, 0.3f, 0.7f }, TEX_FLESH, (Color){ 220, 190, 200, 255 }, 1.0f, 0);
-    Pickup pk = { { 0, top + 1.8f, MZ }, FX_FEATHER, false, false };
+    Pickup pk = { { 0, top + 1.8f, MZ }, FX_FEATHER, false, true };   // caged until the lilies are picked
+    for (int k = 0, tries = 0; k < 3 && tries < 300; tries++) {   // three white lilies, far apart, out among the watching flowers
+        float a = k * 2.0944f + frand(-0.5f, 0.5f), r = frand(22, 40);
+        Vector3 lp = { sinf(a) * r, 0, cosf(a) * r * 0.9f };
+        if (fabsf(lp.x) < P + 3 && fabsf(lp.z) < P + 3) continue;
+        if (lp.z > 34 || fabsf(lp.x) > E - 4 || fabsf(lp.z) > E - 4) continue;
+        Use u = { lp, USE_LILY, k, false };
+        Uses_push(&L->uses, u);
+        k++;
+    }
     Pickups_push(&L->pickups, pk);
     add_box(L, (Vector3){ 0, 25, MZ }, (Vector3){ 0.05f, 25, 0.05f }, TEX_CONCRETE, (Color){ 200, 170, 140, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
     add_sigil(L, (Vector3){ 0, top, MZ }, 2.0f, CHALK, 41);
@@ -881,7 +890,7 @@ static void build_garden(Level *L, int seed) {
     for (int i = 0; i < n; i++) {
         float x = frand(-E + 6, E - 6), z = frand(-E + 6, 10);
         if (fabsf(x) < P + 2 && fabsf(z) < P + 2) { x = (x < 0 ? -1 : 1) * (P + 4); }
-        Watcher w = { .pos = { x, 0, z }, .phase = frand(0, 6) };
+        Watcher w = { .pos = { x, 0, z }, .goal = { x, 0, z }, .phase = frand(0, 6) };
         Watchers_push(&L->watchers, w);
     }
 }

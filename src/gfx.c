@@ -113,11 +113,11 @@ static Color texel(TexId id, int x, int y) {
         return shade(c, 0.9f + 0.2f * grain);
     }
     case TEX_GRASS: {
-        Color c = mix((Color){10, 38, 36, 255}, (Color){34, 96, 78, 255}, n);
+        Color c = mix((Color){22, 26, 20, 255}, (Color){62, 72, 52, 255}, n);   // long grass gone to seed, grey in the moonlight
         float blade = vnoise(u * 48, v * 6, 48, 91);
         c = shade(c, 0.7f + 0.7f * blade);
-        if (grain > 0.992f) c = mix(c, (Color){255, 170, 220, 255}, 0.9f);       // pollen / tiny flowers
-        else if (grain < 0.004f) c = mix(c, (Color){150, 240, 255, 255}, 0.9f);
+        if (grain > 0.994f) c = mix(c, (Color){170, 160, 140, 255}, 0.7f);       // seed heads
+        else if (grain < 0.003f) c = mix(c, (Color){90, 20, 20, 255}, 0.8f);
         return shade(c, 0.9f + 0.2f * grain);
     }
     case TEX_MOSAIC: {
