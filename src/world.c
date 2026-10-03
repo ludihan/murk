@@ -13,7 +13,6 @@
 int g_launches, g_wakes, g_secret, g_wardLoop;
 
 // ---------------------------------------------------------------- helpers
-static const int DX[4] = { 0, 1, 0, -1 }, DY[4] = { -1, 0, 1, 0 };   // north east south west, on a grid
 static void add_box(Level *L, Vector3 c, Vector3 h, TexId tex, Color tint, float scale, int flags) {
     Box b = { c, h, tex, tint, scale, (uint8_t)flags };
     Boxes_push(&L->boxes, b);
@@ -994,98 +993,73 @@ static void build_dinner(Level *L, int seed) {
     L->spawn = (Vector3){ 3.5f, 0.05f, -Wr / 2 + 1.6f + empty * 3.2f + 6 }; L->spawnYaw = 270;
 }
 
-// ---------------------------------------------------------------- WOMB: underneath everything
-// warm red tunnels that pulse. bodies hang wrapped from the ceiling, and pale things cling up there too, asleep until
-// they hear you. at the bottom is a heart, and him
+// ---------------------------------------------------------------- BELOW: underneath everything
+// one way down, west and deeper: a ribbed passage, a chamber of wrapped bodies hanging, a long tunnel (something comes
+// out of one of the bodies and you run), a hall of arms, a passage of mouths, and at the bottom the heart, and him
+static void flesh_tunnel(Level *L, float x0, float x1, float y0, float y1, float z, float w, float h) {   // runs along x, stepping down from y0 (east end, x1) to y1 (west end, x0)
+    const Color FL = { 170, 90, 96, 255 }, BONE = { 200, 180, 150, 255 };
+    int steps = (int)fmaxf(1, fabsf(y0 - y1) / 0.15f);
+    float len = x1 - x0, sl = len / steps;
+    for (int k = 0; k < steps; k++) {
+        float y = y0 - (y0 - y1) * (k + 1) / steps;
+        add_box(L, (Vector3){ x1 - sl * (k + 0.5f), y - 0.5f, z }, (Vector3){ sl / 2, 0.5f, w / 2 + 0.3f }, TEX_SLUDGE, (Color){ 120, 40, 40, 255 }, 2.0f, 0);
+    }
+    float top = fmaxf(y0, y1) + h, bot = fminf(y0, y1) - 0.2f;
+    add_box(L, (Vector3){ (x0 + x1) / 2, top + 0.5f, z }, (Vector3){ len / 2, 0.5f, w / 2 + 0.6f }, TEX_FLESH, FL, 2.0f, 0);
+    add_box(L, (Vector3){ (x0 + x1) / 2, (top + bot) / 2, z - w / 2 - 0.3f }, (Vector3){ len / 2, (top - bot) / 2, 0.3f }, TEX_FLESH, FL, 2.0f, 0);
+    add_box(L, (Vector3){ (x0 + x1) / 2, (top + bot) / 2, z + w / 2 + 0.3f }, (Vector3){ len / 2, (top - bot) / 2, 0.3f }, TEX_FLESH, FL, 2.0f, 0);
+    for (float x = x1 - 1.0f; x > x0; x -= 1.6f) {   // ribs
+        float fy = y0 - (y0 - y1) * (x1 - x) / len;
+        add_box(L, (Vector3){ x, fy + h - 0.15f, z }, (Vector3){ 0.1f, 0.1f, w / 2 }, TEX_SKIN, BONE, 1.0f, F_NOCOLLIDE);
+        for (int s = -1; s <= 1; s += 2) add_box(L, (Vector3){ x, fy + h / 2, z + s * (w / 2 - 0.05f) }, (Vector3){ 0.1f, h / 2, 0.06f }, TEX_SKIN, BONE, 1.0f, F_NOCOLLIDE);
+    }
+}
+static void flesh_room(Level *L, float x0, float x1, float z0, float z1, float y, float h, float doorE, float doorW) {   // doorways in the east and west walls at z = door (NAN for none)
+    const Color FL = { 170, 90, 96, 255 };
+    add_box(L, (Vector3){ (x0 + x1) / 2, y - 0.5f, (z0 + z1) / 2 }, (Vector3){ (x1 - x0) / 2 + 0.6f, 0.5f, (z1 - z0) / 2 + 0.6f }, TEX_SLUDGE, (Color){ 120, 40, 40, 255 }, 2.0f, 0);
+    add_box(L, (Vector3){ (x0 + x1) / 2, y + h + 0.5f, (z0 + z1) / 2 }, (Vector3){ (x1 - x0) / 2 + 0.6f, 0.5f, (z1 - z0) / 2 + 0.6f }, TEX_FLESH, FL, 3.0f, 0);
+    wall_z(L, z0 - WT, x0 - 0.3f, x1 + 0.3f, y, y + h, TEX_FLESH, FL);
+    wall_z(L, z1 + WT, x0 - 0.3f, x1 + 0.3f, y, y + h, TEX_FLESH, FL);
+    if (isnan(doorE)) wall_x(L, x1 + WT, z0, z1, y, y + h, TEX_FLESH, FL); else wall_x_door(L, x1 + WT, z0, z1, y, y + h, doorE - 1.5f, doorE + 1.5f, y + 3.2f, TEX_FLESH, FL);
+    if (isnan(doorW)) wall_x(L, x0 - WT, z0, z1, y, y + h, TEX_FLESH, FL); else wall_x_door(L, x0 - WT, z0, z1, y, y + h, doorW - 1.5f, doorW + 1.5f, y + 3.2f, TEX_FLESH, FL);
+}
 static void build_womb(Level *L, int seed) {
-    L->ambient = 0.25f;
     L->name = "BELOW";
+    L->ambient = 0.22f;
     SetRandomSeed(seed * 9973 + 3);
     L->fog = (Color){ 26, 4, 6, 255 };
-    L->fogDensity = 0.1f;
+    L->fogDensity = 0.07f;
     L->light = 0.9f;
     L->killY = -50;
     L->gradeLo = (Color){ 136, 112, 116, 255 }; L->gradeHi = (Color){ 168, 118, 108, 255 };
     L->moteCol = (Color){ 160, 60, 60, 255 };
-    const int N = 7;
-    const float C = 5.0f, H = 3.2f, wt = 0.4f;
-    L->mazeN = N; L->cell = C;
-    L->open = calloc(N * N, 1);
-    L->dist = calloc(N * N, sizeof(int));
-    uint8_t seen[49] = { 0 };
-    int stack[49], sp = 0;
-    stack[sp++] = 0; seen[0] = 1;
-    while (sp) {
-        int cur = stack[sp - 1], cx = cur % N, cy = cur / N, opts[4], no = 0;
-        for (int d = 0; d < 4; d++) { int nx = cx + DX[d], ny = cy + DY[d]; if (nx >= 0 && ny >= 0 && nx < N && ny < N && !seen[ny * N + nx]) opts[no++] = d; }
-        if (!no) { sp--; continue; }
-        int d = opts[GetRandomValue(0, no - 1)], nxt = (cy + DY[d]) * N + cx + DX[d];
-        L->open[cur] |= 1 << d; L->open[nxt] |= 1 << ((d + 2) % 4);
-        seen[nxt] = 1; stack[sp++] = nxt;
-    }
-    for (int i = 0; i < N; i++) {   // a few loops, so you can be cut off and go round
-        int cx = GetRandomValue(1, N - 2), cy = GetRandomValue(1, N - 2), d = GetRandomValue(0, 3);
-        L->open[cy * N + cx] |= 1 << d; L->open[(cy + DY[d]) * N + cx + DX[d]] |= 1 << ((d + 2) % 4);
-    }
-    int far[49], q[49], head = 0, tail = 0, best = 0;
-    for (int i = 0; i < N * N; i++) far[i] = -1;
-    q[tail++] = 0; far[0] = 0;
-    while (head < tail) {
-        int cur = q[head++];
-        if (far[cur] > far[best]) best = cur;
-        for (int d = 0; d < 4; d++) if (L->open[cur] & (1 << d)) { int n = (cur / N + DY[d]) * N + cur % N + DX[d]; if (far[n] < 0) { far[n] = far[cur] + 1; q[tail++] = n; } }
-    }
-    float ox = -N * C / 2;
-    #define CC(i) ((Vector3){ ox + ((i) % N + 0.5f) * C, 0, ox + ((i) / N + 0.5f) * C })
-    const Color FL = { 170, 90, 96, 255 }, BONE = { 200, 180, 150, 255 };
-    add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ N * C / 2 + 1, 0.5f, N * C / 2 + 1 }, TEX_SLUDGE, (Color){ 120, 40, 40, 255 }, 2.0f, 0);
-    add_box(L, (Vector3){ 0, H + 0.5f, 0 }, (Vector3){ N * C / 2 + 1, 0.5f, N * C / 2 + 1 }, TEX_FLESH, FL, 2.0f, 0);
-    for (int y = 0; y < N; y++) for (int x = 0; x < N; x++) {
-        int i = y * N + x;
-        Vector3 c = CC(i);
-        if (!(L->open[i] & 4) || y == N - 1) add_box(L, (Vector3){ c.x, H / 2, c.z + C / 2 }, (Vector3){ C / 2 + wt, H / 2, wt }, TEX_FLESH, FL, 2.0f, 0);
-        if (!(L->open[i] & 2) || x == N - 1) add_box(L, (Vector3){ c.x + C / 2, H / 2, c.z }, (Vector3){ wt, H / 2, C / 2 + wt }, TEX_FLESH, FL, 2.0f, 0);
-        if (y == 0) add_box(L, (Vector3){ c.x, H / 2, c.z - C / 2 }, (Vector3){ C / 2 + wt, H / 2, wt }, TEX_FLESH, FL, 2.0f, 0);
-        if (x == 0) add_box(L, (Vector3){ c.x - C / 2, H / 2, c.z }, (Vector3){ wt, H / 2, C / 2 + wt }, TEX_FLESH, FL, 2.0f, 0);
-        // ribs arching over the passages
-        bool ns = (L->open[i] & 1) || (L->open[i] & 4);
-        for (int k = -1; k <= 1; k += 2) {
-            Vector3 rc = { c.x + (ns ? 0 : k * 1.4f), H - 0.12f, c.z + (ns ? k * 1.4f : 0) };
-            add_box(L, rc, ns ? (Vector3){ C / 2, 0.08f, 0.1f } : (Vector3){ 0.1f, 0.08f, C / 2 }, TEX_SKIN, BONE, 1.0f, F_NOCOLLIDE);
-        }
-        // a dim red glow in some of the walls, like light through skin
-        if (GetRandomValue(0, 2) == 0) add_box(L, (Vector3){ c.x + frand(-1.5f, 1.5f), H - 0.05f, c.z + frand(-1.5f, 1.5f) }, (Vector3){ 0.4f, 0.03f, 0.4f }, TEX_CONCRETE, (Color){ 150, 30, 30, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
-        if (i != 0 && i != best && GetRandomValue(0, 2) == 0) add_effigy(L, FIG_COCOON, (Vector3){ c.x + frand(-1.2f, 1.2f), H, c.z + frand(-1.2f, 1.2f) }, frand(0, 6.28f), 0);
-        if (i != 0 && GetRandomValue(0, 3) == 0) add_box(L, (Vector3){ c.x + frand(-1.5f, 1.5f), 0.01f, c.z + frand(-1.5f, 1.5f) }, (Vector3){ frand(0.5f, 1.4f), 0.006f, frand(0.5f, 1.4f) }, TEX_FLESH, (Color){ 110, 20, 24, 255 }, 1.0f, F_NOCOLLIDE);
-    }
-    // the bottom: a heart the size of a room, a bed of something soft, and him
-    Vector3 bc = CC(best);
-    L->heart = (Vector3){ bc.x, 1.8f, bc.z - 1.2f };
-    add_box(L, (Vector3){ bc.x, 0.3f, bc.z + 0.8f }, (Vector3){ 0.9f, 0.3f, 1.2f }, TEX_FLESH, (Color){ 190, 120, 120, 255 }, 1.0f, 0);
-    add_effigy(L, FIG_SLEEPER, (Vector3){ bc.x, 0.62f, bc.z + 0.8f }, 0, 0);
-    Use face = { { bc.x, 0.9f, bc.z + 1.5f }, USE_FACE, 0, false };
+    const float Z = -29;
+    // the way in: a long ribbed throat going down, the far end of it closed behind you
+    flesh_tunnel(L, 9, 30, 0, -2, Z, 3, 3.2f);
+    add_box(L, (Vector3){ 30.4f, 1.2f, Z }, (Vector3){ 0.3f, 2.5f, 1.8f }, TEX_FLESH, (Color){ 150, 70, 76, 255 }, 2.0f, 0);
+    // the chamber of the hung: tall, and full of them
+    flesh_room(L, -9, 9, Z - 9, Z + 9, -2, 9, Z, Z);
+    for (int i = 0; i < 14; i++) add_effigy(L, FIG_COCOON, (Vector3){ frand(-7.5f, 7.5f), 7, Z + frand(-7.5f, 7.5f) }, frand(0, 6.28f), 0);
+    for (int i = 0; i < 6; i++) add_box(L, (Vector3){ frand(-7, 7), 6.9f, Z + frand(-7, 7) }, (Vector3){ 0.35f, 0.03f, 0.35f }, TEX_CONCRETE, (Color){ 150, 30, 30, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    // the long tunnel west, where you will be running
+    flesh_tunnel(L, -40, -9, -2, -4, Z, 3, 3.4f);
+    // the hall of arms
+    flesh_room(L, -60, -40, Z - 4, Z + 4, -4, 5, Z, Z);
+    for (int i = 0; i < 4; i++) add_box(L, (Vector3){ -43 - i * 5.0f, 0.95f, Z }, (Vector3){ 0.3f, 0.03f, 0.3f }, TEX_CONCRETE, (Color){ 150, 30, 30, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_decal(L, "DON'T STAND STILL", (Vector3){ -40 - WT - 0.02f, -1.4f, Z + 3 }, 0, -1, 0.14f, BLOOD);
+    // the passage of mouths
+    flesh_tunnel(L, -78, -60, -4, -6, Z, 3, 3.2f);
+    // the bottom: the heart, the bed, him, and a door home in the far wall
+    flesh_room(L, -98, -78, Z - 10, Z + 10, -6, 10, Z, NAN);
+    L->heart = (Vector3){ -92, -4.2f, Z - 4 };
+    add_box(L, (Vector3){ -88, -5.7f, Z + 3 }, (Vector3){ 1.2f, 0.3f, 1.6f }, TEX_FLESH, (Color){ 190, 120, 120, 255 }, 1.0f, 0);
+    add_effigy(L, FIG_SLEEPER, (Vector3){ -88, -5.38f, Z + 3 }, 3.14159f, 0);
+    Use face = { { -88, -5.1f, Z + 1.9f }, USE_FACE, 0, false };
     Uses_push(&L->uses, face);
-    {   // and a way back up to the house, in the wall of the same room
-        int o = L->open[best], d = 0;
-        for (int k = 0; k < 4; k++) if (!(o & (1 << k))) { d = k; break; }
-        Vector3 p = { bc.x, 0, bc.z }, n = { 0, 0, 0 };
-        if (d == 0) { p.z -= C / 2 - wt; n.z = 1; } else if (d == 1) { p.x += C / 2 - wt; n.x = -1; } else if (d == 2) { p.z += C / 2 - wt; n.z = -1; } else { p.x -= C / 2 - wt; n.x = 1; }
-        add_door(L, p, n, (Color){ 255, 214, 150, 255 }, W_HUB, 0, "HOME");
-    }
-    // the things asleep on the ceiling
-    int placed = 0;
-    for (int tries = 0; tries < 300 && placed < 5; tries++) {
-        int i = GetRandomValue(0, N * N - 1);
-        if (far[i] < 2 || i == best) continue;
-        Vector3 c = CC(i);
-        Watcher w = { .pos = { c.x + frand(-1, 1), 0, c.z + frand(-1, 1) }, .phase = frand(0, 6), .state = -1 };
-        w.goal = w.pos;
-        Watchers_push(&L->watchers, w);
-        placed++;
-    }
-    L->spawn = CC(0); L->spawn.y = 0.05f; L->spawnYaw = 90;
-    add_note(L, (Vector3){ L->spawn.x + 1.2f, 0.02f, L->spawn.z - 1.0f }, NOTE_WOMB);
-    #undef CC
+    add_door(L, (Vector3){ -98 + WT, -6, Z + 6 }, (Vector3){ 1, 0, 0 }, (Color){ 255, 214, 150, 255 }, W_HUB, 0, "HOME");
+    L->spawn = (Vector3){ 28, 0.05f, Z }; L->spawnYaw = 270;
+    add_note(L, (Vector3){ 26.6f, 0.02f, Z + 0.8f }, NOTE_WOMB);
+    add_note(L, (Vector3){ -84, -5.98f, Z - 2 }, NOTE_AWAKE);
 }
 
 // ---------------------------------------------------------------- CITY: the empty city
@@ -1300,7 +1274,6 @@ void level_free(Level *L) {
     if (b3World_IsValid(L->phys)) b3DestroyWorld(L->phys);
     Boxes_drop(&L->boxes); Pickups_drop(&L->pickups); Portals_drop(&L->portals);
     Watchers_drop(&L->watchers); Motes_drop(&L->motes); Blooms_drop(&L->blooms); Props_drop(&L->props); Effigies_drop(&L->effigies); Uses_drop(&L->uses);
-    free(L->open); free(L->dist);
     memset(L, 0, sizeof *L);
 }
 
@@ -1324,14 +1297,6 @@ void level_step(Level *L, float dt, Vector3 player) {
 }
 
 // ---------------------------------------------------------------- watchers
-static int cell_of(const Level *L, Vector3 p) {
-    float ox = -L->mazeN * L->cell / 2;
-    int x = (int)floorf((p.x - ox) / L->cell), y = (int)floorf((p.z - ox) / L->cell);
-    x = x < 0 ? 0 : x >= L->mazeN ? L->mazeN - 1 : x;
-    y = y < 0 ? 0 : y >= L->mazeN ? L->mazeN - 1 : y;
-    return y * L->mazeN + x;
-}
-
 bool level_seen(Level *L, Vector3 eye, Vector3 fwd, Vector3 pos) {
     Vector3 chest = { pos.x, pos.y + 1.6f, pos.z };
     Vector3 to = Vector3Subtract(chest, eye);
@@ -1340,71 +1305,4 @@ bool level_seen(Level *L, Vector3 eye, Vector3 fwd, Vector3 pos) {
     if (Vector3DotProduct(Vector3Scale(to, 1.0f / dist), fwd) < 0.45f) return false;
     b3RayResult r = b3World_CastRayClosest(L->phys, b3v(eye), b3v(to), b3DefaultQueryFilter());
     return !r.hit || r.fraction > 0.97f;
-}
-
-static Vector3 cell_center(const Level *L, int c) {
-    float ox = -L->mazeN * L->cell / 2;
-    return (Vector3){ ox + (c % L->mazeN + 0.5f) * L->cell, 0, ox + (c / L->mazeN + 0.5f) * L->cell };
-}
-// the neighbour of `from` that is one step closer to `to` through the maze
-static int next_toward(const Level *L, int from, int to) {
-    int n = L->mazeN, d[256], q[256], head = 0, tail = 0;
-    if (from == to || n * n > 256) return to;
-    for (int i = 0; i < n * n; i++) d[i] = -1;
-    q[tail++] = to; d[to] = 0;
-    while (head < tail) {
-        int cur = q[head++];
-        for (int k = 0; k < 4; k++) if (L->open[cur] & (1 << k)) {
-            int nn = (cur / n + DY[k]) * n + cur % n + DX[k];
-            if (d[nn] < 0) { d[nn] = d[cur] + 1; q[tail++] = nn; }
-        }
-    }
-    int best = to, bd = 1 << 30;
-    for (int k = 0; k < 4; k++) if (L->open[from] & (1 << k)) {
-        int nn = (from / n + DY[k]) * n + from % n + DX[k];
-        if (d[nn] >= 0 && d[nn] < bd) { bd = d[nn]; best = nn; }
-    }
-    return best;
-}
-
-// state 0: wandering. 1: going to where it heard something. 2: it heard you close, and it is coming fast.
-// when it gets there it stands still and listens. if you are kneeling and still, there is nothing to hear.
-bool level_watchers(Level *L, Vector3 eye, Vector3 fwd, Vector3 feet, float dt, float noise) {
-    L->nearest = 99;
-    if (!L->open) return false;
-    float hear = noise * 17.0f;
-    int dn = L->dreamNo > 8 ? 8 : L->dreamNo;
-    for (int i = 0; i < L->watchers.size; i++) {
-        Watcher *w = &L->watchers.data[i];
-        w->phase += dt;
-        float dist = Vector3Distance((Vector3){ w->pos.x, 0, w->pos.z }, (Vector3){ feet.x, 0, feet.z });
-        if (dist < L->nearest) L->nearest = dist;
-        if (w->state < 0) {   // asleep on the ceiling. it only wakes for a sound close underneath it
-            if (noise > 0.05f && dist < noise * 7.0f) { w->state = 2; w->goal = feet; w->timer = 4; L->sawWatcher = true; }
-            continue;
-        }
-        if (dist < 0.85f) return true;
-        bool seen = level_seen(L, eye, fwd, w->pos);
-        if (seen && !w->seen && dist < 22) L->sawWatcher = true;
-        w->seen = seen;
-        if (L->t < 18 && w->state == 0) continue;   // it hasn't woken yet
-        if (noise > 0.05f && dist < hear) { w->goal = feet; w->state = dist < 8 ? 2 : 1; w->timer = 3.5f + (dist < 8 ? 2.0f : 0.0f); }
-        // right next to you it can hear your heart, if it waits long enough
-        if (dist < 1.9f) { w->sense += dt; if (w->sense > 1.8f) { w->goal = feet; w->state = 2; w->timer = 3; } }
-        else w->sense = fmaxf(0, w->sense - dt);
-        int wc = cell_of(L, w->pos), gc = cell_of(L, w->goal);
-        Vector3 target = wc == gc ? w->goal : cell_center(L, next_toward(L, wc, gc));
-        Vector3 dir = Vector3Subtract(target, w->pos); dir.y = 0;
-        float dl = Vector3Length(dir);
-        float speed = (w->state == 0 ? 1.2f : w->state == 1 ? 2.3f : 3.2f) + 0.08f * dn;
-        if (wc == gc && dl < 0.35f) {   // arrived: listen, then wander off somewhere
-            if (w->state > 0) { w->timer -= dt; if (w->timer <= 0) w->state = 0; }
-            if (w->state == 0) w->goal = cell_center(L, GetRandomValue(0, L->mazeN * L->mazeN - 1));
-        } else if (dl > 0.01f) {
-            float step = fminf(dl, speed * dt);
-            w->pos = Vector3Add(w->pos, Vector3Scale(dir, step / dl));
-            w->stride += step * 4.5f;
-        }
-    }
-    return false;
 }

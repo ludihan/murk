@@ -78,7 +78,9 @@ static struct { bool bang, cried, ran; float s, shown, stepT, strobeT, stare; } 
 // the nursery's mother: outside, coming in, looking, leaving, or coming for you
 static struct { int state; float t, stepT, seeT, lostT, shake, pause, cryT; Vector3 pos, face, target; int wp; bool cried, heard; } giant;
 // the baths: what lives in the pool. asleep under the water (0), draining (1), climbing out (2), hunting by ear (3)
-static struct { int state, node; float t, clickT, timer; Vector3 pos, goal; bool lockerBang, ran; } swim;   // the ward's radio, and how far along the thing that follows you is
+static struct { int state, node; float t, clickT, timer; Vector3 pos, goal; bool lockerBang, ran; } swim;
+// below: the body that drops, the thing that comes out of it and runs you down the tunnel, the arms, the mouths
+static struct { int state, drop; float t, runT, stillT, mouthT; Vector3 pos; } below;   // the ward's radio, and how far along the thing that follows you is
 static struct { int phase; float t, noticed, lift; bool warned; } gaze;
 // the lower church: three tolls, then everyone kneels and he counts them
 static struct { int phase, tolls; float t, tollT, stare; bool warned; } mass;
@@ -170,6 +172,7 @@ static void load_world(WorldId id, bool wake) {
     memset(&dinner, 0, sizeof dinner);
     memset(&giant, 0, sizeof giant); giant.t = frand_(26, 36);
     memset(&swim, 0, sizeof swim); swim.pos = (Vector3){ 0, -4, 0 };
+    memset(&below, 0, sizeof below); below.drop = -1;
     memset(&tallm, 0, sizeof tallm); tallm.t = frand_(50, 80); tallm.dist = 46; ringT = frand_(20, 40);
     ghost.on = id != W_HUB && ghostN[id] > 40 && dreams >= 3 && GetRandomValue(0, 3) == 0; ghost.noticed = false; ghost.t = -frand_(30, 60);
     level_build(&L, id, ++dreams);
@@ -564,6 +567,76 @@ static bool baths_update(float dt, Vector3 eye) {
     return false;
 }
 
+static float below_floor(float x) { return x >= -9 ? -2.0f : x >= -40 ? -2.0f - 2.0f * (-9 - x) / 31.0f : -4.0f; }
+static Vector3 arm_tip(int i, float t) {   // the arms in the hall: where each hand is reaching to
+    float x = -42.5f - (i / 2) * 2.25f, side = (i & 1) ? 1.0f : -1.0f, y = -2.6f + ((i / 2) % 2) * 0.6f;
+    Vector3 sh = { x, y, -29 + side * 3.95f };
+    Vector3 chest = { P.pos.x, P.pos.y + 1.1f, P.pos.z };
+    float d = Vector3Distance(sh, chest), want = Clamp(1.6f - (d - 1.5f) * 0.6f, 0.5f, 2.4f);
+    Vector3 dir = Vector3Normalize(Vector3Lerp((Vector3){ 0, 0.1f, -side }, Vector3Normalize(Vector3Subtract(chest, sh)), d < 5 ? 0.85f : 0.2f));
+    float tw = sinf(t * 9.0f + i * 2.1f) * 0.08f;
+    return Vector3Add(sh, Vector3Scale(dir, want + tw));
+}
+static bool below_update(float dt) {
+    if (L.id != W_WOMB) return false;
+    const float Z = -29;
+    if (below.state == 0 && P.pos.x < -2 && P.pos.x > -9) {   // one of them comes down behind you
+        float bd = 1e9f;
+        for (int i = 0; i < L.effigies.size; i++) {
+            Effigy *e = &L.effigies.data[i];
+            if (e->kind != FIG_COCOON) continue;
+            float d = fabsf(e->pos.x - 4.0f) + fabsf(e->pos.z - Z);
+            if (d < bd) { bd = d; below.drop = i; }
+        }
+        below.state = 1; below.t = 0;
+        if (below.drop >= 0) play_from(SFX_CREAK, L.effigies.data[below.drop].pos, 1.0f, 0.5f);
+    }
+    if (below.state == 1) {
+        below.t += dt;
+        if (below.drop >= 0) {
+            Effigy *e = &L.effigies.data[below.drop];
+            if (e->pos.y > -0.6f) { e->pos.y -= dt * 14.0f; if (e->pos.y <= -0.6f) { play_from(SFX_GIANT, e->pos, 0.7f, 1.4f); } }
+        }
+        if (below.t > 1.6f) {   // and it gets out
+            Vector3 c = below.drop >= 0 ? L.effigies.data[below.drop].pos : (Vector3){ 4, 0, Z };
+            below.pos = (Vector3){ c.x, -2, c.z };
+            if (below.drop >= 0) L.effigies.data[below.drop].pos.y = -100;
+            below.state = 2; play_from(SFX_ROAR, below.pos, 0.9f, 1.1f); madness = 1;
+        }
+        return false;
+    }
+    if (below.state == 2) {   // it runs you down
+        Vector3 d = { P.pos.x - below.pos.x, 0, P.pos.z - below.pos.z };
+        float len = Vector3Length(d);
+        if (len < 1.0f) return true;
+        if (P.pos.x < -41.5f) {   // it will not come into the hall of arms
+            below.state = 3; play_from(SFX_SCREECH, below.pos, 0.8f, 0.5f);
+            return false;
+        }
+        float step = fminf(len, 5.3f * dt);
+        below.pos.x += d.x / len * step; below.pos.z += d.z / len * step;
+        if (below.pos.x < -9) below.pos.z += (Z - below.pos.z) * fminf(1, dt * 4);
+        below.pos.y = below_floor(below.pos.x);
+        below.runT -= dt;
+        if (below.runT <= 0) { below.runT = 1.3f; play_from(SFX_RUN, below.pos, 0.9f, 1.1f); }
+        return false;
+    }
+    // the hall of arms: walk through. if you stop near them, they take hold
+    if (P.pos.x < -40 && P.pos.x > -60) {
+        bool near = false;
+        Vector3 chest = { P.pos.x, P.pos.y + 1.1f, P.pos.z };
+        for (int i = 0; i < 16; i++) if (Vector3Distance(arm_tip(i, L.t), chest) < 1.0f) near = true;
+        below.stillT = (near && P.speedMeter < 0.6f) ? below.stillT + dt : fmaxf(0, below.stillT - dt);
+        if (below.stillT > 1.1f) return true;
+    }
+    // the passage of mouths: they speak as you pass
+    if (P.pos.x < -60 && P.pos.x > -78) {
+        below.mouthT -= dt;
+        if (below.mouthT <= 0) { below.mouthT = frand_(1.5f, 3.0f); play_from(SFX_PRAYER, (Vector3){ P.pos.x - 1.5f, P.pos.y + 1.4f, Z + (GetRandomValue(0, 1) ? 1.5f : -1.5f) }, 0.6f, frand_(0.7f, 1.0f)); }
+    }
+    return false;
+}
+
 static bool giant_walk(Vector3 to, float speed, float dt) {
     Vector3 d = Vector3Subtract(to, giant.pos); d.y = 0;
     float len = Vector3Length(d);
@@ -926,6 +999,33 @@ static void draw_scene(Camera3D cam, float time) {
         Vector3 hp = wp(dinner.host, eye); hp.y = 0;
         Fig f = { FIG_GARDENER, hp, atan2f(eye.x - hp.x, -(eye.z - hp.z)), dinner.hostStride, eye, 1.0f, 0.2f, time, { 0, 0, 1 }, (Color){ 70, 30, 30, 255 }, 0 };
         figure_draw(&f);
+    }
+    if (L.id == W_WOMB) {
+        if (below.state == 2) {
+            Fig f = { FIG_CRAWLER, below.pos, atan2f(P.pos.x - below.pos.x, -(P.pos.z - below.pos.z)), time * 9.0f, eye, 0.9f, 0.2f, time, { 0, 0, 1 }, { 0 }, 0 };
+            figure_draw(&f);
+        }
+        if (Vector3Distance(eye, (Vector3){ -50, -3, -29 }) < 30) for (int i = 0; i < 16; i++) {   // arms out of the walls, reaching
+            float x = -42.5f - (i / 2) * 2.25f, side = (i & 1) ? 1.0f : -1.0f, y = -2.6f + ((i / 2) % 2) * 0.6f;
+            Vector3 sh = { x, y, -29 + side * 3.95f }, tip = arm_tip(i, time);
+            Vector3 el = Vector3Add(Vector3Lerp(sh, tip, 0.5f), (Vector3){ 0, 0.25f, 0 });
+            Color sk = { 196, 170, 166, 255 };
+            gfx_limb(sh, el, 0.07f, 0.055f, TEX_SKIN, sk);
+            gfx_limb(el, tip, 0.055f, 0.04f, TEX_SKIN, sk);
+            Vector3 fd = Vector3Normalize(Vector3Subtract(tip, el)), sd = Vector3Normalize(Vector3CrossProduct(fd, (Vector3){ 0, 1, 0 }));
+            for (int k = 0; k < 4; k++) {
+                float o = (k - 1.5f) * 0.035f;
+                gfx_limb(Vector3Add(tip, Vector3Scale(sd, o)), Vector3Add(tip, Vector3Add(Vector3Scale(fd, 0.2f), Vector3Scale(sd, o * 2.2f))), 0.014f, 0.006f, TEX_SKIN, sk);
+            }
+        }
+        if (Vector3Distance(eye, (Vector3){ -69, -5, -29 }) < 25) for (int i = 0; i < 12; i++) {   // faces in the walls, mouths working
+            float x = -61.5f - (i / 2) * 2.9f, side = (i & 1) ? 1.0f : -1.0f, fy = below_floor(x) - (x < -60 ? 2.0f * (-60 - x) / 18.0f : 0) + 1.5f;
+            Vector3 fc = { x, fy, -29 + side * 1.48f }, n = { 0, 0, -side };
+            float open = 0.5f + 0.5f * sinf(time * 2.2f + i * 1.7f);
+            gfx_ellipsoid(fc, (Vector3){ 0.22f, 0, 0 }, (Vector3){ 0, 0.3f, 0 }, Vector3Scale(n, 0.12f), TEX_SKIN, (Color){ 200, 176, 170, 255 });
+            for (int s = -1; s <= 1; s += 2) gfx_ellipsoid(Vector3Add(fc, (Vector3){ s * 0.08f, 0.09f, n.z * 0.1f }), (Vector3){ 0.035f, 0, 0 }, (Vector3){ 0, 0.025f, 0 }, Vector3Scale(n, 0.03f), TEX_CONCRETE, (Color){ 3, 2, 2, 255 });
+            gfx_ellipsoid(Vector3Add(fc, (Vector3){ 0, -0.12f, n.z * 0.1f }), (Vector3){ 0.06f, 0, 0 }, (Vector3){ 0, 0.03f + 0.09f * open, 0 }, Vector3Scale(n, 0.03f), TEX_CONCRETE, (Color){ 3, 2, 2, 255 });
+        }
     }
     if (L.id == W_BATHS && swim.state >= 2) {
         Fig f = { FIG_CRAWLER, swim.pos, atan2f(P.pos.x - swim.pos.x, -(P.pos.z - swim.pos.z)), swim.t * 4 + Vector3Length(swim.pos) * 4, eye, 0.6f, 0.3f, time, { 0, 0, 1 }, (Color){ 190, 196, 190, 255 }, 0 };
@@ -1425,26 +1525,8 @@ static void frame(void) {
                 if (P.pos.y < L.killY) { dead = true; say("you fall for a long time.", 4); }
                 if (L.sludge && P.pos.y + 0.6f < L.sludgeY) { dead = true; say("it takes you.", 4); }
                 Vector3 fwd = player_forward(&P);
-                if (level_watchers(&L, player_eye(&P), fwd, P.pos, frameDt, P.noise)) {
-                    caught(FIG_CRAWLER, (Color){ 0 }, 0, "it heard you.", false);
-                    audio_play_ex(SFX_CLICK, 0.9f, 0.8f); haunt_title();
-                }
-                if (L.sawWatcher) { L.sawWatcher = false; audio_play_ex(SFX_SWELL, 0.35f, 0.9f); madness = fminf(1, madness + 0.2f); }
-                if (L.id == W_BATHS || L.id == W_WOMB) {   // you hear them before you see them: wet clicking, faster when they have heard you
-                    static float clickT[4];
-                    for (int i = 0; i < L.watchers.size && i < 4; i++) {
-                        Watcher *w = &L.watchers.data[i];
-                        if (w->state < 0) continue;
-                        clickT[i] -= frameDt;
-                        if (clickT[i] <= 0) {
-                            clickT[i] = w->state == 2 ? frand_(0.5f, 0.9f) : w->state == 1 ? frand_(1.2f, 2.0f) : frand_(6.0f, 12.0f);
-                            if (L.t < 20) continue;   // at first there is nothing to hear at all
-                            play_from(SFX_CLICK, w->pos, 0.9f, frand_(0.8f, 1.05f));
-                            if (w->state > 0 && GetRandomValue(0, 2) == 0) play_from(SFX_THUD, w->pos, 0.4f, frand_(0.9f, 1.1f));
-                        }
-                    }
-                }
                 if (P.slipped) { P.slipped = false; audio_play(SFX_KNOCK); }
+                if (below_update(frameDt)) caught(FIG_CRAWLER, below.state == 2 ? (Color){ 0 } : (Color){ 190, 110, 110, 255 }, 0, below.state == 2 ? "it was faster than you." : "they wanted to keep you.", false);
                 if (baths_update(frameDt, player_eye(&P))) caught(FIG_CRAWLER, (Color){ 0 }, 0, swim.state == 0 ? "something under the water had you." : "it heard you on the tiles.", false);
                 if (nursery_update(frameDt, player_eye(&P))) caught(FIG_MOTHER, (Color){ 0 }, 8.0f, "she found you.", false);
                 if (city_update(frameDt, player_eye(&P), fwd)) caught(FIG_TALL, (Color){ 0 }, 2.7f, "he was always that tall.", false);
