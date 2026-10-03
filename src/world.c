@@ -829,7 +829,10 @@ static void ward_copy(Level *L, float ox, float oz, int k, bool first) {
     else wall_x(L, WX(-1.2f), WZ(-16.4f), WZ(8), 0, H, TEX_TILE, wall);
     wall_x(L, WX(1.2f), WZ(-14), WZ(8), 0, H, TEX_TILE, wall);
     wall_z(L, WZ(-14), WX(1.2f), WX(9.3f), 0, H, TEX_TILE, wall);
-    wall_z(L, WZ(-16.4f), WX(-1.2f), WX(6.8f), 0, H, TEX_TILE, wall);
+    if (k >= 1 && first) {   // from the second lap, a lift door in the dogleg, going down to the mortuary
+        wall_z_door(L, WZ(-16.4f), WX(-1.2f), WX(6.8f), 0, H, WX(3.4f), WX(4.6f), 2.25f, TEX_TILE, wall);
+        add_door(L, (Vector3){ WX(4), 0, WZ(-16.4f) + WT }, (Vector3){ 0, 0, 1 }, (Color){ 170, 200, 230, 255 }, W_MORGUE, 0, "MORTUARY");
+    } else wall_z(L, WZ(-16.4f), WX(-1.2f), WX(6.8f), 0, H, TEX_TILE, wall);
     wall_x(L, WX(6.8f), WZ(-28), WZ(-16.4f), 0, H, TEX_TILE, wall);
     if (k >= 4 && first) wall_x_door(L, WX(9.2f), WZ(-28), WZ(-14), 0, H, WZ(-25.6f), WZ(-24.4f), 2.25f, TEX_TILE, wall);
     else wall_x(L, WX(9.2f), WZ(-28), WZ(-14), 0, H, TEX_TILE, wall);
@@ -1171,6 +1174,50 @@ static void build_city(Level *L, int seed) {
     add_note(L, (Vector3){ 1.0f, 0.02f, 2.6f }, NOTE_CITY);
 }
 
+// ---------------------------------------------------------------- MORGUE: down the lift from the ward
+// cold steel and tile. drawers in the walls that open by themselves, tables with sheeted bodies that are sitting
+// up when you look round, and one that gets down when the lights fail (main)
+static void build_morgue(Level *L, int seed) {
+    L->name = "THE MORTUARY";
+    L->ambient = 0.18f;
+    SetRandomSeed(seed * 1499 + 7);
+    L->fog = (Color){ 6, 10, 14, 255 };
+    L->fogDensity = 0.08f;
+    L->light = 0.9f;
+    L->killY = -50;
+    L->gradeLo = (Color){ 120, 130, 146, 255 }; L->gradeHi = (Color){ 132, 138, 140, 255 };
+    L->moteCol = (Color){ 160, 170, 190, 255 };
+    const float H = 4.0f;
+    const Color STEEL = { 150, 160, 170, 255 }, TW = { 150, 170, 176, 255 };
+    slab(L, -8, 8, -21, 5, 0, 1, TEX_POOL, TW, 1.0f);
+    slab(L, -8, 8, -21, 5, H + 1, 1, TEX_POOL, scale_tint(TW, 0.5f), 2.0f);
+    wall_z(L, 5 + WT, -8.1f, 8.1f, 0, H, TEX_POOL, TW);
+    wall_z(L, -21 - WT, -8.1f, 8.1f, 0, H, TEX_POOL, TW);
+    for (int s = -1; s <= 1; s += 2) {   // the walls are all drawers
+        wall_x(L, s * (8 + WT), -21, 5, 0, H, TEX_POOL, TW);
+        for (int r = 0; r < 3; r++) for (float z = -20.2f; z < 4.5f; z += 1.0f) {
+            add_box(L, (Vector3){ s * 7.95f, 0.6f + r * 0.9f, z }, (Vector3){ 0.05f, 0.4f, 0.45f }, TEX_CONCRETE, STEEL, 1.0f, F_NOCOLLIDE);
+            add_box(L, (Vector3){ s * 7.88f, 0.6f + r * 0.9f, z }, (Vector3){ 0.02f, 0.04f, 0.18f }, TEX_CONCRETE, (Color){ 90, 90, 96, 255 }, 1.0f, F_NOCOLLIDE);
+        }
+    }
+    // tables, two rows of them, with somebody on each under a sheet
+    for (int k = 0; k < 10; k++) {
+        float x = (k & 1) ? 3.0f : -3.0f, z = -18.0f + (k / 2) * 4.0f;
+        add_box(L, (Vector3){ x, 0.9f, z }, (Vector3){ 0.55f, 0.04f, 1.1f }, TEX_CONCRETE, STEEL, 1.0f, 0);
+        add_box(L, (Vector3){ x, 0.45f, z }, (Vector3){ 0.08f, 0.45f, 0.08f }, TEX_CONCRETE, STEEL, 1.0f, 0);
+        add_effigy(L, FIG_SLEEPER, (Vector3){ x, 0.94f, z }, 0, 0);
+        add_box(L, (Vector3){ x, H - 0.04f, z }, (Vector3){ 0.5f, 0.02f, 0.12f }, TEX_CONCRETE, (Color){ 170, 190, 210, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    }
+    add_decal(L, "DRAWER 6 - DO NOT OPEN", (Vector3){ -8 + WT + 0.02f, 3.2f, -6 }, 0, 1, 0.12f, SOOT);
+    // a drain in the floor at the far end, and water running into it from somewhere
+    add_box(L, (Vector3){ 0, 0.01f, -19.5f }, (Vector3){ 0.6f, 0.006f, 0.6f }, TEX_RUST, (Color){ 30, 30, 34, 255 }, 1.0f, F_NOCOLLIDE);
+    add_portal(L, (Vector3){ 0, 0, -19.5f }, W_BATHS, 0, (Color){ 120, 180, 190, 255 }, "THE DRAIN");
+    L->portals.data[L->portals.size - 1].radius = 0.6f;
+    add_door(L, (Vector3){ 0, 0, 5 - WT }, (Vector3){ 0, 0, -1 }, (Color){ 190, 220, 200, 255 }, W_WARD, 0, "THE LIFT");
+    L->spawn = (Vector3){ 0, 0.05f, 3.0f }; L->spawnYaw = 0;
+    add_note(L, (Vector3){ 1.0f, 0.02f, 1.8f }, NOTE_MORGUE);
+}
+
 // ---------------------------------------------------------------- CHAPEL: the lower church
 // a nave full of people standing in their pews. when the bell has rung three times they kneel, and the one at
 // the altar counts them. the veil is on the altar
@@ -1278,6 +1325,7 @@ void level_build(Level *L, WorldId id, int seed) {
     case W_DINNER: build_dinner(L, seed); break;
     case W_WOMB:   build_womb(L, seed); break;
     case W_CITY:   build_city(L, seed); break;
+    case W_MORGUE: build_morgue(L, seed); break;
     default:       build_end(L); break;
     }
     // ash motes

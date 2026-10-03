@@ -67,6 +67,7 @@ static const char *NOTES[NOTE_COUNT] = {
     [NOTE_STATIC] = "If you see the grey man, walk away from him. Don't run, there is no need.\nHe doesn't hurt anyone. He only wants to stand where you are standing.\nIf he gets there, you will forget something you went a long way to find.",
     [NOTE_WOMB] = "He is not asleep in the house. He was never in the house.\nHe is down here, where it is warm, and the house is what he dreams so that he will not be afraid.\nIf you go on, do not wake him. If you wake him, there will be nothing for you to go back to.",
     [NOTE_CITY] = "Nobody lives here any more. They leave the lights on anyway.\nIf you see the tall one at the end of a street, don't walk toward him, and don't stare.\nHe is never there when you look again. He is only nearer.",
+    [NOTE_MORGUE] = "Drawer 6. Male, young. No identification. Found asleep and could not be woken.\nHe was brought down here by mistake and the mistake was not corrected.\nSome nights the staff hear him turning over.",
     [NOTE_BELL] = "When the bell tolls, kneel with the others.\nThe priest counts the heads.\nHe must not count one that is standing.",
 };
 static int reading = -1;   // the note on screen, or -1
@@ -79,6 +80,8 @@ static struct { bool bang, cried, ran; float s, shown, stepT, strobeT, stare; } 
 static struct { int state; float t, stepT, seeT, lostT, shake, pause, cryT; Vector3 pos, face, target; int wp; bool cried, heard; } giant;
 // the baths: what lives in the pool. asleep under the water (0), draining (1), climbing out (2), hunting by ear (3)
 static struct { int state, node; float t, clickT, timer; Vector3 pos, goal; bool lockerBang, ran; } swim;
+// the mortuary: drawers that open as you pass, the ones that sit up, and the one that gets down in the dark
+static struct { float strobeT, stepT, shown_t; bool open[6], walking; Vector3 walker, shown; int from; } morg;
 // below: the body that drops, the thing that comes out of it and runs you down the tunnel, the arms, the mouths
 static struct { int state, drop; float t, runT, stillT, mouthT; Vector3 pos; } below;   // the ward's radio, and how far along the thing that follows you is
 static struct { int phase; float t, noticed, lift; bool warned; } gaze;
@@ -173,6 +176,7 @@ static void load_world(WorldId id, bool wake) {
     memset(&giant, 0, sizeof giant); giant.t = frand_(26, 36);
     memset(&swim, 0, sizeof swim); swim.pos = (Vector3){ 0, -4, 0 };
     memset(&below, 0, sizeof below); below.drop = -1;
+    memset(&morg, 0, sizeof morg); morg.from = -1;
     memset(&tallm, 0, sizeof tallm); tallm.t = frand_(50, 80); tallm.dist = 46; ringT = frand_(20, 40);
     ghost.on = id != W_HUB && ghostN[id] > 40 && dreams >= 3 && GetRandomValue(0, 3) == 0; ghost.noticed = false; ghost.t = -frand_(30, 60);
     level_build(&L, id, ++dreams);
@@ -191,6 +195,7 @@ static void load_world(WorldId id, bool wake) {
     if (id == W_SHAFT) say("hold LMB on the rusty plates. W climbs, A/D shuffle, SPACE lunges. don't let go.", 9);
     if (id == W_BATHS) say("the baths have been closed a long time. the water is very still.", 7);
     if (id == W_STATIC) say("nothing is on.", 5);
+    if (id == W_MORGUE) say("it is very cold. everyone here has a tag on one toe.", 6);
     if (id == W_CITY) say("it is raining. every light is on, and nobody is home.", 6);
     if (id == W_WOMB) say("it is warm here. something is breathing all around you.", 6);
     if (id == W_DINNER) say("dinner is served. there is a place for you.", 6);
@@ -249,6 +254,7 @@ static const char *WHISPERS[W_COUNT][4] = {
     { "they have been waiting for you to sit down.", "nobody has touched their food.", "the candles never burn down.", "it is rude to leave the table." },
     { "it is warm here.", "something is breathing all around you.", "this is where he is.", "you were born somewhere like this." },
     { "every window is somebody's.", "the rain doesn't touch you.", "don't look down the long streets.", "he is taller every time." },
+    { "it is so cold in here.", "they are all wearing tags.", "one of the drawers is open.", "someone is breathing under a sheet." },
     { "stay.", "stay.", "stay.", "stay." },
 };
 // something happens every half minute or so, so no dream ever just sits there
@@ -567,6 +573,46 @@ static bool baths_update(float dt, Vector3 eye) {
     return false;
 }
 
+static const Vector3 DRAWER[6] = { { -7.6f, 1.5f, 2 }, { 7.6f, 0.6f, -2 }, { -7.6f, 2.4f, -6 }, { 7.6f, 1.5f, -10 }, { -7.6f, 0.6f, -14 }, { 7.6f, 1.5f, -18 } };
+static bool morgue_update(float dt, Vector3 eye, Vector3 fwd) {
+    if (L.id != W_MORGUE) return false;
+    for (int i = 0; i < 6; i++) if (!morg.open[i] && fabsf(P.pos.z - DRAWER[i].z) < 2.0f && L.t > 6) {   // a drawer slides out on its own as you come level with it
+        morg.open[i] = true; play_from(SFX_SCREECH, DRAWER[i], 0.35f, 1.4f);
+    }
+    // while you aren't looking, they sit up, one by one, and face you
+    for (int i = 0; i < L.effigies.size; i++) {
+        Effigy *e = &L.effigies.data[i];
+        if (e->kind != FIG_SLEEPER || e->seen || i == morg.from) continue;
+        if (GetRandomValue(0, 100000) < (int)(dt * 100000 * fminf(0.05f, L.t * 0.0012f))) {
+            e->kind = FIG_SEATED; e->pos.y = 0.49f; e->yaw = atan2f(P.pos.x - e->pos.x, -(P.pos.z - e->pos.z)); e->look = 1;
+            play_from(SFX_CREAK, e->pos, 0.5f, 0.6f);
+        }
+    }
+    // past halfway, the lights start to fail, and one of them is off its table and coming, only in the dark
+    if (P.pos.z < -4 || morg.walking) {
+        morg.strobeT -= dt;
+        if (morg.strobeT <= 0) { morg.strobeT = frand_(2.5f, 4.5f); blackout = frand_(0.6f, 1.1f); }
+        if (!morg.walking) {
+            float bd = -1;
+            for (int i = 0; i < L.effigies.size; i++) { Effigy *e = &L.effigies.data[i]; float d = Vector3Distance(e->pos, P.pos); if (d > bd && !e->seen) { bd = d; morg.from = i; } }
+            if (morg.from >= 0) {
+                Effigy *e = &L.effigies.data[morg.from];
+                morg.walker = (Vector3){ e->pos.x + (e->pos.x > 0 ? -0.9f : 0.9f), 0, e->pos.z };
+                e->pos.y = -100; morg.walking = true; morg.shown = morg.walker;
+            }
+        }
+        if (morg.walking) {
+            bool seen = blackout <= 0 && level_seen(&L, eye, fwd, morg.walker);
+            Vector3 d = { P.pos.x - morg.walker.x, 0, P.pos.z - morg.walker.z };
+            float len = Vector3Length(d);
+            if (!seen && len > 0.01f) morg.walker = Vector3Add(morg.walker, Vector3Scale(d, fminf(len, (blackout > 0 ? 4.5f : 0.9f) * dt) / len));
+            morg.stepT -= dt;
+            if (morg.stepT <= 0) { morg.stepT = 0.2f; morg.shown = morg.walker; }
+            if (len < 0.9f) return true;
+        }
+    }
+    return false;
+}
 static float below_floor(float x) { return x >= -9 ? -2.0f : x >= -40 ? -2.0f - 2.0f * (-9 - x) / 31.0f : -4.0f; }
 static Vector3 arm_tip(int i, float t) {   // the arms in the hall: where each hand is reaching to
     float x = -42.5f - (i / 2) * 2.25f, side = (i & 1) ? 1.0f : -1.0f, y = -2.6f + ((i / 2) % 2) * 0.6f;
@@ -985,6 +1031,7 @@ static void draw_scene(Camera3D cam, float time) {
         if (Vector3Distance(eye, ep) > cull + 2) continue;
         Fig f = { (FigKind)e->kind, ep, e->yaw, 0, eye, e->look * 0.9f, e->tilt, time + i, { 0, 0, 1 }, { 0 }, e->scale };
         if (f.kind == FIG_HAND) f.pos.y += sinf(time * 0.13f + i) * 2.0f + (gaze.phase == 2 ? gaze.noticed * 3.0f : 0);   // and higher, the more the eye has noticed
+        if (L.id == W_MORGUE) f.tint = (Color){ 206, 210, 212, 255 };    // under sheets
         if (L.id == W_CHAPEL) {   // the congregation stands, and kneels on the third bell; the priest only looks up to count
             bool taken = veil_taken();
             if (f.kind != FIG_PRIEST) { f.kind = mass.phase == 2 ? FIG_KNEELER : FIG_PENITENT; f.look = (taken || mass.phase == 2) ? 1.0f : e->look * 0.5f; }
@@ -1002,6 +1049,18 @@ static void draw_scene(Camera3D cam, float time) {
         Vector3 hp = wp(dinner.host, eye); hp.y = 0;
         Fig f = { FIG_GARDENER, hp, atan2f(eye.x - hp.x, -(eye.z - hp.z)), dinner.hostStride, eye, 1.0f, 0.2f, time, { 0, 0, 1 }, (Color){ 70, 30, 30, 255 }, 0 };
         figure_draw(&f);
+    }
+    if (L.id == W_MORGUE) {
+        for (int i = 0; i < 6; i++) if (morg.open[i]) {   // drawers out, and a hand hanging over the edge of one
+            Vector3 c = DRAWER[i]; float s = c.x > 0 ? -1.0f : 1.0f;
+            gfx_box((Vector3){ c.x + s * 0.9f, c.y, c.z }, (Vector3){ 0.9f, 0.35f, 0.42f }, TEX_CONCRETE, (Color){ 140, 150, 160, 255 }, 1.0f);
+            gfx_ellipsoid((Vector3){ c.x + s * 1.0f, c.y + 0.38f, c.z }, (Vector3){ 0.7f, 0, 0 }, (Vector3){ 0, 0.1f, 0 }, (Vector3){ 0, 0, 0.3f }, TEX_CLOTH, (Color){ 200, 204, 206, 255 });
+            if (i % 2 == 0) gfx_limb((Vector3){ c.x + s * 1.5f, c.y + 0.35f, c.z + 0.3f }, (Vector3){ c.x + s * 1.55f, c.y - 0.25f, c.z + 0.45f }, 0.035f, 0.025f, TEX_SKIN, (Color){ 150, 160, 170, 255 });
+        }
+        if (morg.walking) {
+            Fig f = { FIG_SHEET, morg.shown, atan2f(P.pos.x - morg.shown.x, -(P.pos.z - morg.shown.z)), 0, eye, 0.8f, 0.2f, floorf(time * 5) / 5, { 0, 0, 1 }, { 0 }, 0 };
+            figure_draw(&f);
+        }
     }
     if (L.id == W_WOMB) {
         if (below.state == 2) {
@@ -1076,11 +1135,11 @@ static void draw_scene(Camera3D cam, float time) {
     }
     if (catchS.on) {   // it comes straight at your face
         static const float HY[FIG_COUNT] = { [FIG_PENITENT] = 2.02f, [FIG_KNEELER] = 1.7f, [FIG_CRAWLER] = 0.5f, [FIG_CLIMBER] = 0.5f, [FIG_GARDENER] = 3.4f, [FIG_PRIEST] = 2.25f,
-                                    [FIG_SLEEPER] = 0.6f, [FIG_SEATED] = 1.66f, [FIG_COCOON] = 0.0f, [FIG_TALL] = 2.36f, [FIG_MOTHER] = 1.8f, [FIG_HAND] = 2.55f };
+                                    [FIG_SLEEPER] = 0.6f, [FIG_SEATED] = 1.66f, [FIG_COCOON] = 0.0f, [FIG_TALL] = 2.36f, [FIG_MOTHER] = 1.8f, [FIG_HAND] = 2.55f, [FIG_SHEET] = 1.78f };
         static const float HZ[FIG_COUNT] = { [FIG_PENITENT] = 0.15f, [FIG_CRAWLER] = 0.66f, [FIG_GARDENER] = 0.1f, [FIG_PRIEST] = 0.1f, [FIG_SEATED] = 0.13f, [FIG_TALL] = 0.03f, [FIG_MOTHER] = 0.07f };
         float s = catchS.scale > 0 ? catchS.scale : 1.0f, t = catchS.t;
         float k = t / 0.28f; k = k > 1 ? 1 : k * k * (3 - 2 * k);
-        static const float END[FIG_COUNT] = { [FIG_PENITENT] = 0.5f, [FIG_CRAWLER] = 0.45f, [FIG_GARDENER] = 0.7f, [FIG_PRIEST] = 1.0f, [FIG_TALL] = 0.6f, [FIG_SEATED] = 0.5f, [FIG_MOTHER] = 0.6f, [FIG_HAND] = 1.6f };
+        static const float END[FIG_COUNT] = { [FIG_PENITENT] = 0.5f, [FIG_CRAWLER] = 0.45f, [FIG_GARDENER] = 0.7f, [FIG_PRIEST] = 1.0f, [FIG_TALL] = 0.6f, [FIG_SEATED] = 0.5f, [FIG_MOTHER] = 0.6f, [FIG_HAND] = 1.6f, [FIG_SHEET] = 0.5f };
         float end = END[catchS.kind] > 0 ? END[catchS.kind] : 0.55f;
         float dist = end + 2.9f * (1.0f - k);
         Vector3 f = player_forward(&P); f.y = 0; f = Vector3Normalize(f);
@@ -1124,6 +1183,7 @@ static void draw_scene(Camera3D cam, float time) {
         const Box *b = &L.boxes.data[i];
         if (!(b->flags & F_EMIT)) continue;
         float k = (L.id == W_BATHS && b->h.y < 0.2f) ? flicker(time + i, 0.4f) : 1.0f;
+        if (blackout > 0 && L.id == W_MORGUE) k = 0.04f;
         gfx_glow(wp(b->c, eye), b->h, scale_col(b->tint, k));
     }
     for (int i = 0; i < L.pickups.size; i++) {
@@ -1158,6 +1218,7 @@ static void draw_scene(Camera3D cam, float time) {
         Box wb = *b; wb.c = wp(b->c, eye);
         if (dist_to_box(eye, &wb) > cull) continue;
         float k = (L.id == W_BATHS && b->h.y < 0.2f) ? flicker(time + i, 0.4f) : 1.0f;
+        if (blackout > 0 && L.id == W_MORGUE) k = 0;
         Vector3 ho = Vector3Add(wb.c, Vector3Scale(Vector3Normalize(Vector3Subtract(eye, wb.c)), 0.45f));   // pull it off the wall it hangs on
         if (mx < 0.06f) gfx_halo(ho, 0.45f, b->tint, 0.28f * k);   // a candle flame: a small warm smudge, not a bloom
         else gfx_halo(ho, 0.9f + mx * 2.6f, b->tint, 0.55f * k);
@@ -1339,7 +1400,7 @@ static const char *END_LINES_KNOWN[] = {
 
 // touch the wrong thing and you are somewhere else: any dream but this one, the shallow ones or the deep
 static void link_random(void) {
-    static const WorldId DEST[] = { W_SHAFT, W_BATHS, W_VOID, W_NURSERY, W_CHAPEL, W_WARD, W_STATIC, W_DINNER, W_WOMB, W_CITY };
+    static const WorldId DEST[] = { W_SHAFT, W_BATHS, W_VOID, W_NURSERY, W_CHAPEL, W_WARD, W_STATIC, W_DINNER, W_WOMB, W_CITY, W_MORGUE };
     int n = (int)(sizeof DEST / sizeof *DEST);
     WorldId to;
     do to = DEST[GetRandomValue(0, n - 1)]; while (to == L.id);
@@ -1531,6 +1592,7 @@ static void frame(void) {
                 if (L.sludge && P.pos.y + 0.6f < L.sludgeY) { dead = true; say("it takes you.", 4); }
                 Vector3 fwd = player_forward(&P);
                 if (P.slipped) { P.slipped = false; audio_play(SFX_KNOCK); }
+                if (morgue_update(frameDt, player_eye(&P), fwd)) caught(FIG_SHEET, (Color){ 0 }, 0, "it got down in the dark.", false);
                 if (below_update(frameDt)) caught(FIG_CRAWLER, below.state == 2 ? (Color){ 0 } : (Color){ 190, 110, 110, 255 }, 0, below.state == 2 ? "it was faster than you." : "they wanted to keep you.", false);
                 if (baths_update(frameDt, player_eye(&P))) caught(FIG_CRAWLER, (Color){ 0 }, 0, swim.state == 0 ? "something under the water had you." : "it heard you on the tiles.", false);
                 if (nursery_update(frameDt, player_eye(&P))) caught(FIG_MOTHER, (Color){ 0 }, 8.0f, "she found you.", false);
@@ -1566,7 +1628,7 @@ static void frame(void) {
             if (m > 1) m = 1;
             madness += (m - madness) * fminf(1, frameDt * 3);
             tension = madness;
-            float tone = L.id == W_HUB ? 1.0f : L.id == W_SHAFT ? 0.75f : L.id == W_BATHS ? 0.9f : L.id == W_VOID ? 1.4f : L.id == W_NURSERY ? 1.15f : L.id == W_CHAPEL ? 0.8f : L.id == W_WARD ? 1.25f : L.id == W_STATIC ? 0.6f : L.id == W_DINNER ? 0.85f : L.id == W_NURSERY ? 0.7f : L.id == W_WOMB ? 0.55f : L.id == W_CITY ? 0.7f : L.id == W_END ? 2.0f : 1.0f;
+            float tone = L.id == W_HUB ? 1.0f : L.id == W_SHAFT ? 0.75f : L.id == W_BATHS ? 0.9f : L.id == W_VOID ? 1.4f : L.id == W_NURSERY ? 1.15f : L.id == W_CHAPEL ? 0.8f : L.id == W_WARD ? 1.25f : L.id == W_STATIC ? 0.6f : L.id == W_DINNER ? 0.85f : L.id == W_NURSERY ? 0.7f : L.id == W_WOMB ? 0.55f : L.id == W_CITY ? 0.7f : L.id == W_MORGUE ? 1.3f : L.id == W_END ? 2.0f : 1.0f;
             float mus = L.id == W_DINNER ? 0.6f : L.id == W_NURSERY ? 0.8f : L.id == W_VOID ? 0.5f : L.id == W_END ? 0.8f : L.id == W_HUB ? 0.4f : 0.0f;
             bool home = L.id == W_HUB;   // the house: a music box in tune, a low warm hum, nothing else
             if (home) tension = madness = 0;

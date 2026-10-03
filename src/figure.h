@@ -16,6 +16,7 @@ typedef enum {
     FIG_MOTHER,     // a woman in a stained nightgown, head bent too far over, hair hanging over her face
     FIG_HAND,       // a forearm and hand coming up out of something, fingers slowly closing
     FIG_FACE,       // a face in a wall, eyes following you, mouth working
+    FIG_SHEET,      // someone standing up under a mortuary sheet, a tag on one toe
     FIG_COUNT
 } FigKind;
 

@@ -10,6 +10,7 @@ static Vector3 W(const Frame *F, float x, float y, float z) {
 }
 static Vector3 add3(Vector3 a, Vector3 b, Vector3 c) { return Vector3Add(a, Vector3Add(b, c)); }
 static Color tint_or(const Fig *f, Color def) { return f->tint.a ? f->tint : def; }
+static Color scale_c(Color c, float k) { return (Color){ (unsigned char)(c.r * k), (unsigned char)(c.g * k), (unsigned char)(c.b * k), 255 }; }
 
 // head axes: turned partly toward what it is looking at, then tilted the wrong way
 static void head_axes(const Fig *f, const Frame *F, Vector3 hc, Vector3 *hr, Vector3 *hu, Vector3 *hf) {
@@ -159,6 +160,17 @@ static void face(const Fig *f, const Frame *F) {
     gfx_ellipsoid(W(F, 0, -0.2f, 0.12f), Vector3Scale(F->r, 0.09f), Vector3Scale(F->u, 0.03f + 0.08f * open), Vector3Scale(n, 0.04f), TEX_CONCRETE, (Color){ 6, 2, 2, 255 });
 }
 
+static void sheet(const Fig *f, const Frame *F) {
+    Color cl = tint_or(f, (Color){ 210, 214, 216, 255 }), skin = { 160, 170, 180, 255 };
+    gfx_limb(W(F, 0, 0.12f, 0), W(F, 0, 1.55f, 0), 0.38f, 0.2f, TEX_CLOTH, cl);
+    gfx_limb(W(F, -0.22f, 1.5f, 0), W(F, 0.22f, 1.5f, 0), 0.11f, 0.11f, TEX_CLOTH, cl);
+    Vector3 hc = W(F, 0.04f, 1.78f, 0.04f), hr, hu, hf;
+    head_axes(f, F, hc, &hr, &hu, &hf);
+    gfx_ellipsoid(hc, Vector3Scale(hr, 0.13f), Vector3Scale(hu, 0.16f), Vector3Scale(hf, 0.14f), TEX_CLOTH, cl);
+    gfx_ellipsoid(add3(hc, Vector3Scale(hf, 0.11f), Vector3Scale(hu, -0.04f)), Vector3Scale(hr, 0.05f), Vector3Scale(hu, 0.06f), Vector3Scale(hf, 0.04f), TEX_CLOTH, scale_c(cl, 0.75f));   // the shape of a mouth, open, pressing on the sheet
+    for (int s = -1; s <= 1; s += 2) gfx_limb(W(F, s * 0.12f, 0.12f, 0.05f), W(F, s * 0.13f, 0.02f, 0.3f), 0.05f, 0.03f, TEX_SKIN, skin);   // grey feet
+    gfx_box(W(F, 0.13f, 0.06f, 0.36f), (Vector3){ 0.03f, 0.04f, 0.005f }, TEX_PAPER, (Color){ 220, 210, 170, 255 }, 1.0f);   // the tag
+}
 static void penitent(const Fig *f, const Frame *F, bool kneel) {
     Color robe = tint_or(f, (Color){ 30, 26, 28, 255 }), skin = { 150, 138, 136, 255 };
     float sway = sinf(f->t * 0.7f) * 0.02f, top = kneel ? 1.12f : 1.72f;
@@ -347,6 +359,7 @@ void figure_draw(const Fig *f) {
     case FIG_MOTHER:   mother(f, &F); break;
     case FIG_HAND:     hand(f, &F); break;
     case FIG_FACE:     face(f, &F); break;
+    case FIG_SHEET:    sheet(f, &F); break;
     case FIG_COUNT:    break;
     }
 }
