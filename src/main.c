@@ -120,6 +120,23 @@ static void new_game(void) {
 
 static float frand_(float a, float b) { return a + (b - a) * (GetRandomValue(0, 10000) / 10000.0f); }
 
+// pan of a point relative to where you are facing: -1 hard left, 1 hard right
+static float pan_of(Vector3 p) {
+    float yaw = P.yaw * DEG2RAD;
+    Vector3 right = { cosf(yaw), 0, sinf(yaw) }, d = Vector3Normalize((Vector3){ p.x - P.pos.x, 0, p.z - P.pos.z });
+    return Vector3DotProduct(right, d);
+}
+// a sound that comes from somewhere: quieter with distance, from the side it is on
+static void play_from(Sfx s, Vector3 p, float vol, float pitch) {
+    float d = Vector3Distance(p, P.pos);
+    audio_play_at(s, vol / (1.0f + d * 0.08f), pitch, pan_of(p));
+}
+// a sound from a direction you are not looking: behind you, off to one side
+static void play_behind(Sfx s, float vol, float pitch) {
+    float a = (P.yaw + 180 + frand_(-70, 70)) * DEG2RAD;
+    audio_play_at(s, vol, pitch, sinf(a - P.yaw * DEG2RAD));
+}
+
 static bool ray_clear(Vector3 a, Vector3 b) {
     b3RayResult r = b3World_CastRayClosest(L.phys, b3v(a), b3v(Vector3Subtract(b, a)), b3DefaultQueryFilter());
     return !r.hit || r.fraction > 0.97f;
@@ -151,12 +168,14 @@ static void director(float dt) {
     int kind = GetRandomValue(0, 2);
     if (kind == 0 || (L.id != W_GARDEN && L.id != W_VOID)) {
         say(WHISPERS[L.id][GetRandomValue(0, 3)], 4.0f);
-        audio_play_ex(SFX_KNOCK, 0.25f, frand_(0.5f, 0.8f));
+        static const Sfx AMB[] = { SFX_KNOCK, SFX_BELL, SFX_CHANT, SFX_PRAYER, SFX_HUM, SFX_CREAK, SFX_SCRAPE };
+        Sfx a = AMB[GetRandomValue(0, 6)];
+        play_behind(a, a == SFX_HUM || a == SFX_PRAYER ? 0.35f : 0.5f, frand_(0.85f, 1.0f));
     } else if (L.id == W_GARDEN) {
-        eyesOpenT = 5.0f; audio_play(SFX_STINGER);
+        eyesOpenT = 5.0f; audio_play(SFX_SWELL);
         say("every flower opens its eyes.", 4.0f);
     } else {
-        eyeBoost = 5.0f; audio_play(SFX_STINGER); madness = fminf(1.0f, madness + 0.3f);
+        eyeBoost = 5.0f; audio_play(SFX_SWELL); madness = fminf(1.0f, madness + 0.3f);
         say("the eye opens all the way.", 4.0f);
     }
 }
@@ -173,13 +192,13 @@ static void scare_update(float dt) {
         phantomT -= dt;
         if (phantomT <= 0) {
             phantomT = frand_(9, 22);
-            if (GetRandomValue(0, 2) == 0) audio_play_ex(SFX_KNOCK, 0.35f, frand_(0.6f, 0.9f));
+            if (GetRandomValue(0, 2) == 0) play_behind(GetRandomValue(0, 1) ? SFX_KNOCK : SFX_CREAK, 0.4f, frand_(0.8f, 1.0f));
             else { phantomLeft = GetRandomValue(3, 6); stepGap = 0; }
         }
     }
     if (phantomLeft > 0) {
         stepGap -= dt;
-        if (stepGap <= 0) { audio_play_ex(SFX_STEP, 0.3f, 0.6f); stepGap = 0.5f; phantomLeft--; }
+        if (stepGap <= 0) { play_behind(SFX_STEP, 0.3f, 0.6f); stepGap = 0.62f; phantomLeft--; }
     }
     // ---- blackouts: the lights just stop. in the drains, things keep walking.
     bool creeping = L.id == W_HUB || L.creepers;
@@ -193,7 +212,7 @@ static void scare_update(float dt) {
                 float len = Vector3Length(d);
                 if (len > 2.6f) { float nl = fmaxf(2.4f, len * 0.55f); w->pos = (Vector3){ P.pos.x - d.x / len * nl, 0, P.pos.z - d.z / len * nl }; }
             }
-            audio_play(SFX_STINGER); haunt_title();
+            audio_play(SFX_SWELL); haunt_title();
             // and the game turns your head to look at it
             float bd = 1e9f; Vector3 bp = P.pos;
             for (int i = 0; i < L.watchers.size; i++) { float d = Vector3Distance(L.watchers.data[i].pos, P.pos); if (d < bd) { bd = d; bp = L.watchers.data[i].pos; } }
@@ -213,7 +232,7 @@ static void scare_update(float dt) {
         for (int i = 0; i < L.watchers.size; i++) {
             Watcher *w = &L.watchers.data[i];
             bool seen = blackout <= 0 && level_seen(&L, eye, fwd, w->pos);
-            if (seen && !w->seen) { audio_play(SFX_STINGER); }
+            if (seen && !w->seen) { audio_play(SFX_SWELL); }
             w->seen = seen;
             w->phase += dt;
             Vector3 d = { P.pos.x - w->pos.x, 0, P.pos.z - w->pos.z };
@@ -223,7 +242,7 @@ static void scare_update(float dt) {
             if (!seen && len > 0.01f) w->pos = Vector3Add(w->pos, Vector3Scale(d, (blackout > 0 ? sp * 3.3f : sp) * dt / len));
             if (len < 1.1f && L.id == W_GARDEN) { gardenCaught = true; say("it only wanted to hold you.", 4); }
             else if (len < 1.1f) {
-                audio_play(SFX_SCREAM); flash = 1;
+                audio_play(SFX_BREATH); flash = 1;
                 hub_reposition(w); blackout = 1.4f; madness = 1;
                 say("it was behind you the whole time.", 4);
             }
@@ -253,6 +272,7 @@ static void scare_update(float dt) {
                     if (L.id == W_VOID) p.y = eye.y + frand_(-1, 2);
                     if (!ray_clear(eye, p)) continue;
                     lurk[i] = (Lurker){ p, frand_(5, 9), 0, true };
+                    if (GetRandomValue(0, 2) == 0) play_from(SFX_CREAK, p, 0.5f, frand_(0.7f, 0.9f));
                     break;
                 }
                 break;
@@ -674,12 +694,12 @@ static void frame(void) {
                 Vector3 fwd = player_forward(&P);
                 if (level_watchers(&L, player_eye(&P), fwd, P.pos, frameDt, blackout > 0)) {
                     dead = true; say("it was standing right there.", 4);
-                    audio_play(SFX_SCREAM); haunt_title();
+                    audio_play(SFX_BREATH); haunt_title();
                 }
-                if (L.sawWatcher) { L.sawWatcher = false; audio_play(SFX_STINGER); madness = fminf(1, madness + 0.3f); }
+                if (L.sawWatcher) { L.sawWatcher = false; audio_play(SFX_SWELL); madness = fminf(1, madness + 0.3f); }
                 if (P.slipped) { P.slipped = false; audio_play(SFX_KNOCK); }
                 scare_update(frameDt);
-                if (gardenCaught) { gardenCaught = false; dead = true; audio_play(SFX_SCREAM); }
+                if (gardenCaught) { gardenCaught = false; dead = true; audio_play(SFX_BREATH); }
                 if (dead) go(W_HUB, true);
             }
 
@@ -716,6 +736,16 @@ static void frame(void) {
             audio_music(frozen ? 0.0f : mus, fminf(1.0f, madness * 0.9f + (blackout > 0 ? 0.4f : 0.0f)));
             float whisper = L.nearest < 18 ? 1.0f - L.nearest / 18.0f : 0.0f;
             if (!frozen) audio_set(tone, tension, whisper, tr.on ? 0.3f : 0.9f);
+            {   // the mass behind the walls gets louder the deeper you go; something breathes when one of them is close
+                float choir = L.id == W_HUB ? fminf(1.0f, dreams * 0.12f) : L.id == W_END ? 1.0f : 0.35f;
+                float breath = 0, bpan = 0, bd = 1e9f;
+                for (int i = 0; i < L.watchers.size; i++) {
+                    float d = Vector3Distance(L.watchers.data[i].pos, P.pos);
+                    if (d < bd) { bd = d; bpan = pan_of(L.watchers.data[i].pos); }
+                }
+                if (bd < 7) breath = 1.0f - bd / 7.0f;
+                audio_atmos(frozen ? 0.0f : choir, breath, bpan);
+            }
         } else {
             endT += frameDt;
             if (IsKeyPressed(KEY_ENTER) && endT > 8) { if (levelLoaded) { level_free(&L); levelLoaded = false; } state = S_TITLE; }
