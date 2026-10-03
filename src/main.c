@@ -131,7 +131,7 @@ static void load_world(WorldId id, bool wake) {
     blackout = 0; nextBlackout = 14 + GetRandomValue(0, 12); phantomLeft = 0;
     memset(lurk, 0, sizeof lurk); lurkTimer = 6 + GetRandomValue(0, 6);
     lampOn = (P.fx & (1u << FX_LAMP)) ? lampOn : 0;
-    if (id == W_HUB && !wake && dreams <= 1) say("WASD walk · SHIFT run · C kneel · E use · hold LMB at rusty walls to grip · R wake up", 12);
+    if (id == W_HUB && !wake && dreams <= 1) say("WASD walk · SHIFT run · CTRL kneel · E use · hold LMB at rusty walls to grip · R wake up", 12);
     if (id == W_SHAFT) say("hold LMB on the rusty plates. W climbs, A/D shuffle, SPACE lunges. don't let go.", 9);
     if (id == W_DRAINS) say("don't let them see you stop. don't stop seeing them.", 7);
     if (id == W_VOID) say("there is nothing underneath.", 6);
@@ -872,7 +872,7 @@ static void frame(void) {
             const char *memo = g_launches >= 6 ? "it kept your place." : g_launches >= 2 ? "you came back." : "";
             if (msgT > 0) text_c(msg, 172, 10, (Color){ 210, 200, 180, (unsigned char)(fminf(1.0f, msgT) * 255) });
             if (memo[0]) text_c(memo, 156, 10, (Color){ 130, 40, 34, (unsigned char)(150 + 60 * sinf(time * 2.0f)) });
-            text_c("WASD · SHIFT run · C kneel · E use · hold LMB to grip · F lamp · R wake up · [ ] mouse", RT_H - 18, 10, (Color){ 90, 85, 75, 255 });
+            text_c("WASD · SHIFT run · CTRL kneel · E use · hold LMB to grip · F lamp · R wake up · [ ] mouse", RT_H - 18, 10, (Color){ 90, 85, 75, 255 });
         } else {
             Vector3 eye = player_eye(&P), fwd = player_forward(&P);
             Camera3D cam = { 0 };
