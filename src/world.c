@@ -10,7 +10,7 @@
 #include <stc/vec.h>
 
 
-int g_launches, g_wakes;
+int g_launches, g_wakes, g_secret;
 
 // ---------------------------------------------------------------- helpers
 static void add_box(Level *L, Vector3 c, Vector3 h, TexId tex, Color tint, float scale, int flags) {
@@ -199,7 +199,8 @@ static void build_hub(Level *L, int seed) {
     add_box(L, (Vector3){ bx, 0.78f, bz }, (Vector3){ 0.88f, 0.1f, 1.1f }, TEX_CLOTH, (Color){ 170, 160, 150, 255 }, 1.0f, 0);
     add_box(L, (Vector3){ -3.75f, 0.9f, bz }, (Vector3){ 0.12f, 0.9f, 1.0f }, TEX_WOOD, (Color){ 110, 84, 64, 255 }, 1.0f, 0);   // headboard
     add_box(L, (Vector3){ -3.35f, 0.95f, bz }, (Vector3){ 0.25f, 0.1f, 0.5f }, TEX_CLOTH, (Color){ 200, 190, 176, 255 }, 1.0f, F_NOCOLLIDE);
-    L->wakePos = (Vector3){ -1.5f, 0.05f, bz }; L->wakeYaw = 90;
+    L->wakePos = (Vector3){ -1.5f, 0.05f, bz }; L->wakeYaw = 270;
+    if (g_secret) add_effigy(L, FIG_SLEEPER, (Vector3){ bx + 0.1f, 0.88f, bz }, -1.5708f, 0.0f);   // someone is asleep in your bed. he always was
     {   // a desk with a TV that never turns off
         float dz = -bz * 1.25f, s2 = dz < 0 ? 1.0f : -1.0f;
         add_box(L, (Vector3){ -1.0f, 0.45f, dz }, (Vector3){ 1.0f, 0.45f, 0.45f }, TEX_WOOD, (Color){ 140, 110, 90, 255 }, 1.0f, 0);
@@ -332,6 +333,7 @@ static void build_hub(Level *L, int seed) {
         add_box(L, (Vector3){ 35.6f, PF + 0.5f, 0 }, (Vector3){ 0.5f, 0.5f, 1.3f }, TEX_CLOTH, (Color){ 90, 20, 22, 255 }, 1.0f, 0);
         for (int i = 0; i < 5; i++) add_candle(L, (Vector3){ 35.6f + frand(-0.3f, 0.3f), PF + 1.0f, -1.0f + i * 0.5f }, frand(0.15f, 0.35f), true);
         add_sigil(L, (Vector3){ 33.6f, PF + 0.004f, 0 }, 1.6f, CHALK, 7 + seed);
+        L->circle = (Vector3){ 33.6f, PF, 0 };
         int kneel = seed >= 3 ? seed - 2 : 0, placed = 0;
         for (int r = 0; r < 3; r++) for (int c = 0; c < 4; c++) {
             Vector3 cp = { 28.4f + r * 1.7f, PF, -2.4f + c * 1.6f };

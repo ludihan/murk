@@ -63,12 +63,14 @@ static const char *NOTES[NOTE_COUNT] = {
     [NOTE_CANDLES] = "Light the three black candles down here and the grate\nover the lamp will open.\nThe one who lives in the drains is blind. It hunts by the sound of you. Walk softly. Kneel if it is close. Do not run.",
     [NOTE_FAMILY] = "To the family.\nThank you for your son. He will sleep for as long as we need him to.\nYou may visit on Sundays. Please do not bring anything that rings.\n\n- the Congregation of the Lower Church",
     [NOTE_AWAKE] = "If you are reading this then you are awake.\nYou are not supposed to be awake.\nLie back down.",
+    [NOTE_SLEEPER] = "You keep coming down here. You keep looking for the way out.\nThere is no way out for you. You are what he is dreaming, and we need him to keep dreaming.\nGo up and look at the bed.",
     [NOTE_BELL] = "When the bell tolls, kneel with the others.\nThe priest counts the heads.\nHe must not count one that is standing.",
 };
 static int reading = -1;   // the note on screen, or -1
 static const char *useHint;
 // the shaft: something on the wall below you that climbs when you climb, and only while you aren't looking at it
 static struct { bool on, seen; float y, lastPY, scrapeT; Vector3 pos, n; } climber;
+static float circleT;   // how long you have knelt in the parlour's circle
 static struct { int phase; float t, noticed, lift; bool warned; } gaze;
 // the lower church: three tolls, then everyone kneels and he counts them
 static struct { int phase, tolls; float t, tollT, stare; bool warned; } mass;
@@ -87,20 +89,21 @@ static const char *FX_DESC[FX_COUNT] = {
 // the game keeps a tiny file about you
 static void save_memory(void) {
 #ifdef __EMSCRIPTEN__
-    web_save_int("murk.launches", g_launches); web_save_int("murk.wakes", g_wakes); web_save_int("murk.sens", (int)(sens * 10000));
+    web_save_int("murk.launches", g_launches); web_save_int("murk.wakes", g_wakes); web_save_int("murk.sens", (int)(sens * 10000)); web_save_int("murk.s", g_secret);
 #else
     FILE *f = fopen("murk.sav", "w");
-    if (f) { fprintf(f, "%d %d %d\n", g_launches, g_wakes, (int)(sens * 10000)); fclose(f); }
+    if (f) { fprintf(f, "%d %d %d %d\n", g_launches, g_wakes, (int)(sens * 10000), g_secret); fclose(f); }
 #endif
 }
 static void load_memory(void) {
 #ifdef __EMSCRIPTEN__
     g_launches = web_load_int("murk.launches"); g_wakes = web_load_int("murk.wakes");
     { int sv = web_load_int("murk.sens"); if (sv >= 100 && sv <= 5000) sens = sv / 10000.0f; }
+    g_secret = web_load_int("murk.s") != 0;
 #else
     FILE *f = fopen("murk.sav", "r");
     if (f) {
-        int sv = 0, n = fscanf(f, "%d %d %d", &g_launches, &g_wakes, &sv);
+        int sv = 0, n = fscanf(f, "%d %d %d %d", &g_launches, &g_wakes, &sv, &g_secret);
         if (n < 2) g_launches = g_wakes = 0;
         if (n == 3 && sv >= 100 && sv <= 5000) sens = sv / 10000.0f;
         fclose(f);
@@ -125,7 +128,7 @@ static void load_world(WorldId id, bool wake) {
         if (recN > 40 && L.id != W_SHAFT && L.id != W_END) { memcpy(ghostPath[L.id], rec, recN * sizeof *rec); ghostN[L.id] = recN; }
         level_free(&L);
     }
-    recN = 0; recT = 0;
+    recN = 0; recT = 0; circleT = 0;
     memset(&climber, 0, sizeof climber);
     memset(&gaze, 0, sizeof gaze); gaze.t = 7.0f;
     memset(&mass, 0, sizeof mass); mass.t = 8.0f;
@@ -433,6 +436,21 @@ static bool update_mass(float dt, Vector3 eye) {
     return false;
 }
 
+// kneel alone in the chalk circle long enough and someone answers
+static void secret_update(float dt) {
+    if (L.id != W_HUB || L.circle.y == 0 || blackout > 0) return;
+    Vector3 d = Vector3Subtract(P.pos, L.circle);
+    bool in = fabsf(d.y) < 0.5f && sqrtf(d.x * d.x + d.z * d.z) < 1.3f && P.crouch > 0.5f && P.speedMeter < 0.3f;
+    circleT = in ? circleT + dt : 0;
+    if (circleT < 9.0f) return;
+    circleT = -1e9f;   // once a visit
+    blackout = 3.5f;
+    audio_play_ex(SFX_CHANT, 0.9f, 0.85f); play_behind(SFX_PRAYER, 0.6f, 0.9f);
+    Use u = { { L.circle.x + 0.3f, L.circle.y + 0.01f, L.circle.z }, USE_NOTE, NOTE_SLEEPER, false };
+    Uses_push(&L.uses, u);
+    if (!g_secret) { g_secret = 1; save_memory(); }
+}
+
 static void scare_update(float dt) {
     Vector3 eye = player_eye(&P), fwd = player_forward(&P);
     // ---- the game hitches: everything stops and the sound drops out, then it all lurches back
@@ -465,7 +483,7 @@ static void scare_update(float dt) {
             audio_play(SFX_KNOCK);
         }
     }
-    if (L.id == W_HUB) hub_visitors(dt, eye, fwd);
+    if (L.id == W_HUB) { hub_visitors(dt, eye, fwd); secret_update(dt); }
     if (L.id == W_GARDEN) garden_update(dt, eye);
     director(dt);
     // ---- your own path, walked by someone else
@@ -866,6 +884,18 @@ static const char *END_LINES[] = {
     "",
     "NEMA",
 };
+// once you have knelt in the circle, you know who is in the bed
+static const char *END_LINES_KNOWN[] = {
+    "you lie down beside him.",
+    "he is warm. he is breathing.",
+    "he has your face. he always had your face.",
+    "upstairs, they are kneeling around a bed.",
+    "they will keep you asleep for as long as they need you.",
+    "",
+    "you were never the one dreaming.",
+    "",
+    "NEMA",
+};
 
 static void use_thing(Use *u) {
     u->done = true;
@@ -1141,12 +1171,13 @@ static void frame(void) {
             draw_scene(cam, time);
             if (state == S_PLAY) draw_hud(time);
             else {
-                int n = (int)(sizeof END_LINES / sizeof *END_LINES);
+                const char **lines = g_secret ? END_LINES_KNOWN : END_LINES;
+                int n = g_secret ? (int)(sizeof END_LINES_KNOWN / sizeof *END_LINES_KNOWN) : (int)(sizeof END_LINES / sizeof *END_LINES);
                 for (int i = 0; i < n; i++) {
                     float a = fminf(1.0f, fmaxf(0.0f, (endT - 2.0f - i * 1.7f) * 0.6f));
                     Color lc = i == n - 1 ? (Color){ 150, 24, 20, 255 } : (Color){ 220, 215, 200, 255 };
                     lc.a = (unsigned char)(a * 255);
-                    if (a > 0 && END_LINES[i][0]) text_c(END_LINES[i], 54 + i * 16, 10, lc);
+                    if (a > 0 && lines[i][0]) text_c(lines[i], 54 + i * 16, 10, lc);
                 }
                 if (endT > 17) text_c("ENTER", RT_H - 24, 10, (Color){ 120, 115, 105, 255 });
             }

@@ -156,6 +156,15 @@ static void priest(const Fig *f, const Frame *F) {
     }
 }
 
+static void sleeper(const Fig *f, const Frame *F) {
+    Color sheet = tint_or(f, (Color){ 196, 188, 176, 255 });
+    float breathe = 1.0f + 0.04f * sinf(f->t * 1.3f);
+    gfx_ellipsoid(W(F, 0, 0.1f, -0.1f), Vector3Scale(F->r, 0.3f), Vector3Scale(F->u, 0.14f * breathe), Vector3Scale(F->f, 0.55f), TEX_CLOTH, sheet);
+    gfx_ellipsoid(W(F, 0, 0.08f, -0.85f), Vector3Scale(F->r, 0.24f), Vector3Scale(F->u, 0.1f), Vector3Scale(F->f, 0.35f), TEX_CLOTH, sheet);
+    for (int s = -1; s <= 1; s += 2) gfx_ellipsoid(W(F, s * 0.1f, 0.14f, -1.2f), Vector3Scale(F->r, 0.06f), Vector3Scale(F->u, 0.09f), Vector3Scale(F->f, 0.05f), TEX_CLOTH, sheet);
+    gfx_ellipsoid(W(F, 0, 0.12f, 0.6f), Vector3Scale(F->r, 0.13f), Vector3Scale(F->u, 0.12f), Vector3Scale(F->f, 0.14f), TEX_CLOTH, sheet);   // the head, covered
+}
+
 void figure_draw(const Fig *f) {
     Frame F;
     F.o = f->pos;
@@ -174,5 +183,6 @@ void figure_draw(const Fig *f) {
     case FIG_CRAWLER: case FIG_CLIMBER: crawler(f, &F); break;
     case FIG_GARDENER: gardener(f, &F); break;
     case FIG_PRIEST:   priest(f, &F); break;
+    case FIG_SLEEPER:  sleeper(f, &F); break;
     }
 }
