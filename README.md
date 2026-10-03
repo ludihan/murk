@@ -7,17 +7,20 @@ Read what people left lying around.
 
     THE HOUSE (safe)
     ├─ the shaft ─────────── a door at the top ──> the city ──┬─ the hospital ──> the ward
+    │                                                        ├─ the theatre ──> (backstage) the dinner
     │                                                        └─ the underground ──> the static sea
-    ├─ the drains ────────── a hatch in a dead end ──> the ward ── its last lap ──> below
+    ├─ the baths ─────────── down the slide ──> the ward ──┬─ the lift (from lap two) ──> the mortuary ── the drain ──> the baths
+    │                                                      └─ its last lap ──> below
     ├─ the steps ─────────── a lone door on the way ──> the static sea (its screens link anywhere)
-    ├─ the orchard ───────── a door in the hedge ──> the dinner ── sit down ──> below
+    ├─ the nursery ───────── the dollhouse door ──> the dinner ── sit down ──> below
     ├─ the lower church ──── a low door behind the altar ──> below ── a door home
     └─ the way out (needs something from each of the five)
 
-Each dream has its own thing with its own rules, and it takes its time arriving: something that climbs when you
-climb, something blind that hears you, an eye that sees what moves, flowers that call the gardeners, a priest
-who counts heads, a corridor that loops, a grey man, a host who moves when you aren't looking, a tall man at
-the ends of streets.
+Most of it is dark: you see what is close to you, and the lamp throws a beam. Each dream has its own thing with
+its own rules, and it takes its time arriving: something that climbs when you climb and copies your sounds,
+something blind in a drained pool, an eye and the hands that rise when it opens, a mother sixteen metres tall,
+a priest who counts heads, a woman in the ward who moves in the dark, bodies that sit up, puppets that are
+nearer each time the lights come up, a tall man at the ends of streets.
 
     meson setup build && ninja -C build && ./build/murk
 
