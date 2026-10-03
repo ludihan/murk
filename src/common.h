@@ -31,6 +31,7 @@ typedef struct Watcher { Vector3 pos; float phase, stride; bool seen; } Watcher;
 typedef struct Mote    { Vector3 pos, vel; float life; } Mote;
 typedef struct Bloom   { Vector3 pos; Color col; float size, yaw; } Bloom;   // a flower that watches you
 typedef struct Prop    { b3BodyId body; Vector3 h; TexId tex; Color tint; } Prop;
+typedef struct Effigy  { int kind; Vector3 pos; float yaw, tilt, look; bool seen; } Effigy;   // a figure that stays where it was put (mostly)
 
 #define i_type Boxes,    Box
 #include <stc/vec.h>
@@ -45,6 +46,8 @@ typedef struct Prop    { b3BodyId body; Vector3 h; TexId tex; Color tint; } Prop
 #define i_type Blooms,   Bloom
 #include <stc/vec.h>
 #define i_type Props,    Prop
+#include <stc/vec.h>
+#define i_type Effigies, Effigy
 #include <stc/vec.h>
 
 #define RT_W 480

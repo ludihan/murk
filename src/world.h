@@ -21,6 +21,7 @@ typedef struct Level {
     Watchers watchers;
     Motes motes;
     Props props;
+    Effigies effigies;
     Blooms blooms;
     Sky sky;
     Color moteCol;          // dust / pollen / embers

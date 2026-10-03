@@ -28,7 +28,7 @@ static bool levelLoaded;
 static int dreams;
 static float madness, tension, flash, lampOn, nameT, stepDist, endT;
 static float blackout, nextBlackout = 25, glitch;
-static float freezeT, nextFreeze = 70, pullT, pullYaw, phantomT = 15, stepGap, titleT;
+static float freezeT, nextFreeze = 70, phantomT = 15, stepGap, titleT;
 static int phantomLeft;
 static float sens = 0.085f;   // degrees per mouse count; [ and ] change it
 static float stareT, nextEvent = 30, eyesOpenT, eyeBoost;
@@ -42,6 +42,13 @@ static char msg[160];
 static float msgT;
 
 static struct { bool on; float t; WorldId to; bool wake, loaded; } tr;
+
+// the last time you were in a dream, you walked a path through it. next time, someone else walks it.
+#define GHOST_MAX 1600
+static Vector3 ghostPath[W_COUNT][GHOST_MAX], rec[GHOST_MAX];
+static int ghostN[W_COUNT], recN;
+static float recT;
+static struct { bool on, noticed; float t; Vector3 pos; float yaw; } ghost;
 
 static const char *FX_NAME[FX_COUNT] = { "LAMP", "GLOVES", "BOOTS", "FEATHER" };
 static const char *FX_DESC[FX_COUNT] = {
@@ -78,15 +85,21 @@ static void load_memory(void) {
 }
 
 static void haunt_title(void) {
-    static const char *T[] = { "MURK - don't turn around", "MURK - it can see your desktop", "MURK - it's in the room", "MURK - wake up", "MURK - not responding" };
+    static const char *T[] = { "MURK (Not Responding)", "MURK - NEMA", "MURK - do not wake him", "MURK - he is still asleep", "MURK - 1 player" };
     SetWindowTitle(T[GetRandomValue(0, 4)]);
     titleT = 3.0f;
 }
 
+static float frand_(float a, float b) { return a + (b - a) * (GetRandomValue(0, 10000) / 10000.0f); }
 static void say(const char *s, float secs) { snprintf(msg, sizeof msg, "%s", s); msgT = secs; }
 
 static void load_world(WorldId id, bool wake) {
-    if (levelLoaded) level_free(&L);
+    if (levelLoaded) {
+        if (recN > 40 && L.id != W_SHAFT && L.id != W_END) { memcpy(ghostPath[L.id], rec, recN * sizeof *rec); ghostN[L.id] = recN; }
+        level_free(&L);
+    }
+    recN = 0; recT = 0;
+    ghost.on = ghostN[id] > 40 && dreams >= 2 && GetRandomValue(0, 2) > 0; ghost.noticed = false; ghost.t = -frand_(4, 9);
     level_build(&L, id, ++dreams);
     levelLoaded = true;
     player_spawn(&P, &L);
@@ -95,7 +108,7 @@ static void load_world(WorldId id, bool wake) {
         P.yaw = 250;
     }
     nameT = 3.5f;
-    blackout = 0; nextBlackout = 14 + GetRandomValue(0, 12); pullT = 0; phantomLeft = 0;
+    blackout = 0; nextBlackout = 14 + GetRandomValue(0, 12); phantomLeft = 0;
     memset(lurk, 0, sizeof lurk); lurkTimer = 6 + GetRandomValue(0, 6);
     lampOn = (P.fx & (1u << FX_LAMP)) ? lampOn : 0;
     if (id == W_HUB && !wake && dreams <= 1) say("WASD walk · SHIFT run · SPACE jump · hold LMB at rusty walls to grip · R wake up", 12);
@@ -119,7 +132,6 @@ static void new_game(void) {
     DisableCursor();
 }
 
-static float frand_(float a, float b) { return a + (b - a) * (GetRandomValue(0, 10000) / 10000.0f); }
 
 // pan of a point relative to where you are facing: -1 hard left, 1 hard right
 static float pan_of(Vector3 p) {
@@ -143,23 +155,14 @@ static bool ray_clear(Vector3 a, Vector3 b) {
     return !r.hit || r.fraction > 0.97f;
 }
 
-static void hub_reposition(Watcher *w) {
-    float a = frand_(0, 6.2831f);
-    float r = L.id == W_GARDEN ? 30.0f : 6.5f;
-    Vector3 p = { sinf(a) * r, 0, cosf(a) * r };
-    if (L.id == W_GARDEN) { p.x = Clamp(p.x + P.pos.x, -46, 46); p.z = Clamp(p.z + P.pos.z, -46, 46); }
-    w->pos = p;
-}
-
 static const char *WHISPERS[W_COUNT][4] = {
-    { "did you hear that?", "someone is breathing in the room.", "the ceiling is lower than it was.", "you left the door open." },
-    { "don't look down.", "it's getting closer to your heels.", "your hands are not yours.", "up. only up." },
-    { "something is dragging.", "they know the way better than you.", "count the steps behind you.", "the walls are wet." },
-    { "the eye has noticed you.", "there is no floor. there never was.", "you are falling very slowly.", "everything here is looking." },
+    { "the candles were not lit when you fell asleep.", "someone has been sitting in the chairs.", "they are praying under the floor.", "he is still asleep. good." },
+    { "don't look down.", "it climbs when you climb.", "your hands are not yours.", "it was a long way down for him too." },
+    { "it can hear your heart.", "walk softly.", "something is drinking from the water.", "the walls are wet. they are always wet." },
+    { "the eye was here first.", "there is no floor. there never was.", "you are falling very slowly.", "hold still and it looks past you." },
     { "the flowers were people.", "someone planted you here.", "it is so quiet. why is it so quiet.", "don't pick anything." },
     { "stay.", "stay.", "stay.", "stay." },
 };
-
 // something happens every half minute or so, so no dream ever just sits there
 static void director(float dt) {
     if (tr.on || L.id == W_END) return;
@@ -213,11 +216,7 @@ static void scare_update(float dt) {
                 float len = Vector3Length(d);
                 if (len > 2.6f) { float nl = fmaxf(2.4f, len * 0.55f); w->pos = (Vector3){ P.pos.x - d.x / len * nl, 0, P.pos.z - d.z / len * nl }; }
             }
-            audio_play(SFX_SWELL); haunt_title();
-            // and the game turns your head to look at it
-            float bd = 1e9f; Vector3 bp = P.pos;
-            for (int i = 0; i < L.watchers.size; i++) { float d = Vector3Distance(L.watchers.data[i].pos, P.pos); if (d < bd) { bd = d; bp = L.watchers.data[i].pos; } }
-            if (bd < 1e8f) { pullYaw = atan2f(bp.x - P.pos.x, -(bp.z - P.pos.z)) * RAD2DEG; pullT = 0.7f; }
+            if (L.watchers.size) play_behind(SFX_BREATH, 0.35f, 0.9f);
         }
     } else if (haunted && !tr.on) {
         nextBlackout -= dt;
@@ -246,15 +245,45 @@ static void scare_update(float dt) {
                 w->stride += step * 3.0f;
             }
             if (len < 1.1f && L.id == W_GARDEN) { gardenCaught = true; say("it only wanted to hold you.", 4); }
-            else if (len < 1.1f) {
-                audio_play(SFX_BREATH); flash = 1;
-                hub_reposition(w); blackout = 1.4f; madness = 1;
-                say("it was behind you the whole time.", 4);
+            else if (len < 1.1f) {   // it touches you. the light goes. when it comes back it is in a corner with its back to you
+                audio_play_ex(SFX_BREATH, 0.6f, 0.8f);
+                float cx = P.pos.x > 0 ? -7.3f : 7.3f, cz = P.pos.z > 0 ? -7.3f : 7.3f;
+                w->pos = (Vector3){ cx, 0, cz };
+                blackout = 3.0f; madness = fminf(1.0f, madness + 0.5f);
+                say("it only wanted to be near you.", 4);
             }
         }
         L.nearest = nearest;
     }
     director(dt);
+    // ---- your own path, walked by someone else
+    recT += dt;
+    if (recT >= 0.25f && recN < GHOST_MAX) { recT = 0; rec[recN++] = P.pos; }
+    if (ghost.on) {
+        const Vector3 *gp = ghostPath[L.id];
+        int n = ghostN[L.id];
+        if (!ghost.noticed) ghost.t += dt;
+        if (ghost.t >= 0) {
+            float fi = ghost.t / 0.25f;
+            int i = (int)fi;
+            if (i >= n - 1) ghost.on = false;
+            else {
+                Vector3 np = Vector3Lerp(gp[i], gp[i + 1], fi - i);
+                Vector3 mv = Vector3Subtract(gp[i + 1], gp[i]);
+                if (!ghost.noticed && Vector3Length((Vector3){ mv.x, 0, mv.z }) > 0.02f) ghost.yaw = atan2f(mv.x, -mv.z);
+                ghost.pos = np;
+                bool seen = level_seen(&L, eye, fwd, np);
+                if (!ghost.noticed && Vector3Distance(np, P.pos) < 4.5f) { ghost.noticed = true; ghost.yaw = atan2f(P.pos.x - np.x, -(P.pos.z - np.z)); }
+                else if (ghost.noticed && !seen) ghost.on = false;   // look away and it was never there
+            }
+        }
+    }
+    // ---- the ones that kneel and stand still: they turn their heads when you aren't looking
+    for (int i = 0; i < L.effigies.size; i++) {
+        Effigy *e = &L.effigies.data[i];
+        e->seen = level_seen(&L, eye, fwd, e->pos);
+        if (!e->seen && Vector3Distance(e->pos, P.pos) < 10) e->look = fminf(1.0f, e->look + dt * 0.6f);
+    }
     // ---- lurkers
     if (L.id != W_END && L.id != W_SHAFT) {
         for (int i = 0; i < 3; i++) {
@@ -309,7 +338,7 @@ static Color scale_col(Color c, float k) {
 
 static void draw_scene(Camera3D cam, float time) {
     float dens = L.fogDensity * (lampOn > 0.5f ? 0.55f : 1.0f);
-    float light = L.light * flicker(time, L.id == W_HUB ? 1.0f + 0.12f * (dreams > 8 ? 8 : dreams) : 0.25f) * (lampOn > 0.5f ? 1.2f : 1.0f);
+    float light = L.light * flicker(time, L.id == W_HUB ? 0.35f + 0.05f * (dreams > 8 ? 8 : dreams) : 0.15f) * (lampOn > 0.5f ? 1.2f : 1.0f);
     if (blackout > 0) { light *= 0.04f; dens *= 1.8f; }
     gfx_begin_scene(cam, L.fog, dens, light, time);
     gfx_sky(&L.sky, time, P.pos);
@@ -335,6 +364,16 @@ static void draw_scene(Camera3D cam, float time) {
                   atan2f(P.pos.x - w->pos.x, -(P.pos.z - w->pos.z)), w->stride, eye, 0.7f, sinf(i * 1.7f) * 0.35f, w->phase, { 0, 0, 1 }, { 0 } };
         figure_draw(&f);
     }
+    for (int i = 0; i < L.effigies.size; i++) {
+        const Effigy *e = &L.effigies.data[i];
+        if (Vector3Distance(eye, e->pos) > cull + 2) continue;
+        Fig f = { (FigKind)e->kind, e->pos, e->yaw, 0, eye, e->look * 0.9f, e->tilt, time + i, { 0, 0, 1 }, { 0 } };
+        figure_draw(&f);
+    }
+    if (ghost.on && ghost.t >= 0) {
+        Fig f = { FIG_PENITENT, ghost.pos, ghost.yaw, ghost.t * 3, eye, ghost.noticed ? 1.0f : 0.0f, 0.0f, time, { 0, 0, 1 }, (Color){ 18, 16, 18, 255 } };
+        figure_draw(&f);
+    }
     // lurkers: someone standing very still at the edge of the fog
     for (int i = 0; i < 3; i++) {
         const Lurker *k = &lurk[i];
@@ -355,13 +394,13 @@ static void draw_scene(Camera3D cam, float time) {
         gfx_ellipsoid(Vector3Add(ec, Vector3Scale(to, s * 0.13f)), Vector3Scale(r, s * 0.07f), Vector3Scale(u, s * 0.09f), Vector3Scale(to, s * 0.02f), TEX_CONCRETE, (Color){ 4, 2, 3, 255 });
     }
     if (L.sludge) gfx_slab(L.sludgeY, 6.0f, TEX_SLUDGE, (Color){ 140, 160, 90, 255 }, time * 12.0f);
-    if (L.water) gfx_slab(L.waterY, L.waterHalf, TEX_WATER, (Color){ 150, 190, 255, 255 }, time * 3.0f);
+    if (L.water) gfx_slab(L.waterY, L.waterHalf, TEX_WATER, (Color){ 90, 100, 110, 255 }, time * 3.0f);
 
     gfx_set_emit(true);
     for (int i = 0; i < L.boxes.size; i++) {
         const Box *b = &L.boxes.data[i];
         if (!(b->flags & F_EMIT)) continue;
-        float k = ((L.id == W_HUB || L.id == W_DRAINS) && b->h.y < 0.2f) ? flicker(time, 1.0f) : 1.0f;
+        float k = ((L.id == W_HUB || L.id == W_DRAINS) && b->h.y < 0.2f) ? flicker(time + i, 0.4f) : 1.0f;
         gfx_glow(b->c, b->h, scale_col(b->tint, k));
     }
     for (int i = 0; i < L.pickups.size; i++) {
@@ -397,7 +436,7 @@ static void draw_scene(Camera3D cam, float time) {
         float mx = fmaxf(b->h.x, fmaxf(b->h.y, b->h.z));
         if (mx > 1.6f || b->h.y > 3.0f) continue;
         if (dist_to_box(eye, b) > cull) continue;
-        float k = ((L.id == W_HUB || L.id == W_DRAINS) && b->h.y < 0.2f) ? flicker(time, 1.0f) : 1.0f;
+        float k = ((L.id == W_HUB || L.id == W_DRAINS) && b->h.y < 0.2f) ? flicker(time + i, 0.4f) : 1.0f;
         Vector3 ho = Vector3Add(b->c, Vector3Scale(Vector3Normalize(Vector3Subtract(eye, b->c)), 0.45f));   // pull it off the wall it hangs on
         gfx_halo(ho, 0.9f + mx * 2.6f, b->tint, 0.55f * k);
     }
@@ -420,8 +459,9 @@ static void draw_scene(Camera3D cam, float time) {
 }
 
 // ---------------------------------------------------------------- title: a lit door at the end of the orchard
+// it is not quite the same every time you open the game
 static void draw_title(float time) {
-    static const Sky sky = { true, { 8, 4, 38, 255 }, { 70, 30, 84, 255 }, { 70, 30, 84, 255 }, 1.0f, true, { 255, 236, 230, 255 }, { -0.4f, 0.36f, -0.84f }, { 70, 255, 200, 255 }, 1.0f, false, 0 };
+    static const Sky sky = { true, { 4, 5, 8, 255 }, { 30, 34, 36, 255 }, { 30, 34, 36, 255 }, 0.35f, true, { 220, 214, 196, 255 }, { -0.4f, 0.36f, -0.84f }, { 0, 0, 0, 0 }, 0.0f, false, 0 };
     Camera3D cam = { 0 };
     float yaw = sinf(time * 0.09f) * 0.28f;
     cam.position = (Vector3){ 0, 1.6f, 0 };
@@ -429,55 +469,58 @@ static void draw_title(float time) {
     cam.up = (Vector3){ 0, 1, 0 };
     cam.fovy = 70;
     cam.projection = CAMERA_PERSPECTIVE;
-    gfx_begin_scene(cam, sky.horizon, 0.024f, 1.2f, time);
+    bool doorLit = g_launches < 4;
+    gfx_begin_scene(cam, sky.horizon, 0.03f, 1.0f, time);
     gfx_sky(&sky, time, cam.position);
-    gfx_box((Vector3){ 0, -0.5f, 0 }, (Vector3){ 90, 0.5f, 90 }, TEX_GRASS, (Color){ 140, 170, 160, 255 }, 3.0f);
+    gfx_box((Vector3){ 0, -0.5f, 0 }, (Vector3){ 90, 0.5f, 90 }, TEX_GRASS, (Color){ 90, 104, 98, 255 }, 3.0f);
     gfx_box((Vector3){ 0, 2.2f, -26 }, (Vector3){ 1.8f, 2.2f, 0.25f }, TEX_CONCRETE, (Color){ 36, 32, 40, 255 }, 1.0f);
     for (int i = 0; i < 6; i++) {
         float z = -4 - i * 3.6f;
         gfx_box((Vector3){ -3.2f, 0.9f, z }, (Vector3){ 0.1f, 0.9f, 0.1f }, TEX_RUST, (Color){ 70, 60, 70, 255 }, 1.0f);
         gfx_box((Vector3){ 3.2f, 0.9f, z - 1.8f }, (Vector3){ 0.1f, 0.9f, 0.1f }, TEX_RUST, (Color){ 70, 60, 70, 255 }, 1.0f);
     }
-    static const Color PET[4] = { { 255, 100, 170, 255 }, { 120, 235, 255, 255 }, { 255, 220, 110, 255 }, { 200, 150, 255, 255 } };
     for (int i = 0; i < 70; i++) {
         float a = (i * 2.399f), r = 5 + (i * 37 % 41);
         float x = sinf(a) * r * 0.9f, z = -cosf(a) * r - 2.0f;
         if (fabsf(x) < 1.6f) continue;
         float h = 0.8f + (i * 13 % 25) / 10.0f;
-        gfx_box((Vector3){ x, h / 2, z }, (Vector3){ 0.05f, h / 2, 0.05f }, TEX_GRASS, (Color){ 90, 150, 130, 255 }, 1.0f);
+        gfx_box((Vector3){ x, h / 2, z }, (Vector3){ 0.05f, h / 2, 0.05f }, TEX_GRASS, (Color){ 70, 100, 90, 255 }, 1.0f);
     }
+    // the second time, someone is waiting beside the door. later they are on the path, closer. later still, there are more
+    if (g_launches >= 2) {
+        Fig f = { FIG_PENITENT, { 2.4f, 0, -25.2f }, 0, 0, cam.position, 1.0f, 0.3f, time, { 0, 0, 1 }, (Color){ 16, 14, 16, 255 } };
+        if (g_launches >= 4) f.pos = (Vector3){ 1.1f, 0, -13.0f };
+        figure_draw(&f);
+    }
+    if (g_launches >= 6) for (int i = 0; i < 4; i++) {
+        Fig f = { FIG_KNEELER, { (i & 1) ? 1.9f : -1.9f, 0, -6.0f - i * 4.0f }, (i & 1) ? -1.5708f : 1.5708f, 0, cam.position, 0.0f, 0.1f, time + i, { 0, 0, 1 }, (Color){ 20, 18, 20, 255 } };
+        figure_draw(&f);
+    }
+    static const Color PET[4] = { { 200, 190, 170, 255 }, { 150, 40, 44, 255 }, { 120, 100, 130, 255 }, { 190, 176, 120, 255 } };
     gfx_set_emit(true);
-    gfx_glow((Vector3){ 0, 1.9f, -25.7f }, (Vector3){ 1.3f, 1.8f, 0.05f }, (Color){ 255, 238, 215, 255 });
+    if (doorLit) gfx_glow((Vector3){ 0, 1.9f, -25.7f }, (Vector3){ 1.3f, 1.8f, 0.05f }, (Color){ 230, 214, 190, 255 });
     for (int i = 0; i < 6; i++) {
-        gfx_glow((Vector3){ -3.2f, 1.95f, -4 - i * 3.6f }, (Vector3){ 0.14f, 0.14f, 0.14f }, (Color){ 255, 190, 120, 255 });
-        gfx_glow((Vector3){ 3.2f, 1.95f, -5.8f - i * 3.6f }, (Vector3){ 0.14f, 0.14f, 0.14f }, (Color){ 255, 190, 120, 255 });
+        gfx_glow((Vector3){ -3.2f, 1.95f, -4 - i * 3.6f }, (Vector3){ 0.1f, 0.1f, 0.1f }, (Color){ 230, 150, 80, 255 });
+        gfx_glow((Vector3){ 3.2f, 1.95f, -5.8f - i * 3.6f }, (Vector3){ 0.1f, 0.1f, 0.1f }, (Color){ 230, 150, 80, 255 });
     }
     for (int i = 0; i < 70; i++) {
         float a = (i * 2.399f), r = 5 + (i * 37 % 41);
         float x = sinf(a) * r * 0.9f, z = -cosf(a) * r - 2.0f;
         if (fabsf(x) < 1.6f) continue;
         float h = 0.8f + (i * 13 % 25) / 10.0f, sz = 0.3f + (i % 5) * 0.07f;
-        Color c = scale_col(PET[i % 4], 0.85f + 0.15f * sinf(time * 1.5f + i));
+        Color c = scale_col(PET[i % 4], 0.6f + 0.1f * sinf(time * 1.5f + i));
         gfx_glow((Vector3){ x, h + 0.1f, z }, (Vector3){ sz, 0.025f, sz * 0.38f }, c);
         gfx_glow((Vector3){ x, h + 0.1f, z }, (Vector3){ sz * 0.38f, 0.025f, sz }, c);
-        gfx_glow((Vector3){ x, h + 0.1f, z }, (Vector3){ sz * 0.25f, 0.04f, sz * 0.25f }, (Color){ 255, 230, 160, 255 });
     }
     gfx_begin_glow();
-    gfx_halo((Vector3){ 0, 1.9f, -25.0f }, 9.0f, (Color){ 255, 220, 190, 255 }, 0.8f);
+    if (doorLit) gfx_halo((Vector3){ 0, 1.9f, -25.0f }, 9.0f, (Color){ 220, 200, 170, 255 }, 0.6f);
     for (int i = 0; i < 6; i++) {
-        gfx_halo((Vector3){ -3.2f, 1.95f, -4 - i * 3.6f }, 1.4f, (Color){ 255, 190, 120, 255 }, 0.7f);
-        gfx_halo((Vector3){ 3.2f, 1.95f, -5.8f - i * 3.6f }, 1.4f, (Color){ 255, 190, 120, 255 }, 0.7f);
+        gfx_halo((Vector3){ -3.2f, 1.95f, -4 - i * 3.6f }, 1.2f, (Color){ 230, 150, 80, 255 }, 0.5f);
+        gfx_halo((Vector3){ 3.2f, 1.95f, -5.8f - i * 3.6f }, 1.2f, (Color){ 230, 150, 80, 255 }, 0.5f);
     }
-    for (int i = 0; i < 70; i++) {
-        float a = (i * 2.399f), r = 5 + (i * 37 % 41);
-        float x = sinf(a) * r * 0.9f, z = -cosf(a) * r - 2.0f;
-        if (fabsf(x) < 1.6f) continue;
-        float h = 0.8f + (i * 13 % 25) / 10.0f;
-        gfx_halo((Vector3){ x, h + 0.1f, z }, 1.1f, PET[i % 4], 0.4f);
-    }
-    for (int i = 0; i < 50; i++) {   // fireflies
-        float t = time * 0.2f + i * 1.7f;
-        gfx_halo((Vector3){ sinf(t * 1.3f + i) * 9, 0.8f + fmodf(t * 0.5f + i, 4.0f), -4 - fmodf(i * 3.7f, 20) + cosf(t) * 2 }, 0.3f, (Color){ 255, 170, 230, 255 }, 0.6f);
+    for (int i = 0; i < 40; i++) {   // ash, drifting down
+        float t = time * 0.15f + i * 1.7f;
+        gfx_halo((Vector3){ sinf(t * 1.3f + i) * 9, 4.5f - fmodf(t * 0.5f + i, 4.5f), -4 - fmodf(i * 3.7f, 20) + cosf(t) * 2 }, 0.12f, (Color){ 170, 160, 150, 255 }, 0.5f);
     }
     gfx_end_glow();
     gfx_set_emit(false);
@@ -532,13 +575,14 @@ static void draw_hud(float time) {
 
 static const char *END_LINES[] = {
     "you lie down.",
-    "the ceiling is just a ceiling.",
-    "the bulb is just a bulb.",
-    "somewhere under the floor, something lets go.",
+    "the candles are all lit now.",
+    "they are kneeling around the bed. all of them.",
+    "someone is holding your hand. it is very cold.",
+    "a voice you know says: he is sleeping. don't wake him.",
     "",
-    "you wake up.",
+    "so you don't.",
     "",
-    "(or you don't.)",
+    "NEMA",
 };
 
 // ---------------------------------------------------------------- dev bot (MURK_BOT=climb|walk|jump)
@@ -601,12 +645,6 @@ static void frame(void) {
 #ifdef __EMSCRIPTEN__
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) DisableCursor();   // browsers drop pointer lock on Esc; click to take it back
 #endif
-            if (pullT > 0) {   // something takes the camera for a moment
-                pullT -= frameDt;
-                float diff = fmodf(pullYaw - P.yaw + 540.0f, 360.0f) - 180.0f;
-                P.yaw += diff * fminf(1.0f, frameDt * 7.0f);
-                P.pitch *= 1.0f - fminf(1.0f, frameDt * 5.0f);
-            }
             if (IsKeyPressed(KEY_SPACE)) P.jumpBuf = 0.12f;
             if (IsKeyPressed(KEY_F) && (P.fx & (1u << FX_LAMP))) lampOn = lampOn > 0.5f ? 0.0f : 1.0f;
             if (IsKeyPressed(KEY_R) && L.id != W_HUB) go(W_HUB, true);
@@ -719,7 +757,7 @@ static void frame(void) {
             }
         } else {
             endT += frameDt;
-            if (IsKeyPressed(KEY_ENTER) && endT > 8) { if (levelLoaded) { level_free(&L); levelLoaded = false; } state = S_TITLE; }
+            if (IsKeyPressed(KEY_ENTER) && endT > 17) { if (levelLoaded) { level_free(&L); levelLoaded = false; } state = S_TITLE; }
         }
         if (nameT > 0) nameT -= frameDt;
         if (msgT > 0) msgT -= frameDt;
@@ -739,7 +777,7 @@ static void frame(void) {
             int j = (int)(sinf(time * 40) * 1.2f * (sinf(time * 0.7f) > 0.95f));
             text_c("M U R K", 82 + j, 40, (Color){ 120, 20, 40, 255 });
             text_c("M U R K", 80 + j, 40, (Color){ 235, 220, 195, 255 });
-            text_c("a descent into other people's dreams", 128, 10, (Color){ 120, 110, 95, 255 });
+            text_c(g_launches >= 3 ? "do not wake him" : "a descent into other people's dreams", 128, 10, (Color){ 120, 110, 95, 255 });
             if ((int)(time * 1.5f) % 2) text_c("press ENTER or click", 190, 10, (Color){ 170, 160, 140, 255 });
             const char *memo = g_launches >= 6 ? "it kept your place." : g_launches >= 2 ? "you came back." : "";
             if (msgT > 0) text_c(msg, 172, 10, (Color){ 210, 200, 180, (unsigned char)(fminf(1.0f, msgT) * 255) });
@@ -759,16 +797,18 @@ static void frame(void) {
             else {
                 int n = (int)(sizeof END_LINES / sizeof *END_LINES);
                 for (int i = 0; i < n; i++) {
-                    float a = fminf(1.0f, fmaxf(0.0f, (endT - 2.0f - i * 1.1f)));
-                    if (a > 0 && END_LINES[i][0]) text_c(END_LINES[i], 60 + i * 16, 10, (Color){ 220, 215, 200, (unsigned char)(a * 255) });
+                    float a = fminf(1.0f, fmaxf(0.0f, (endT - 2.0f - i * 1.7f) * 0.6f));
+                    Color lc = i == n - 1 ? (Color){ 150, 24, 20, 255 } : (Color){ 220, 215, 200, 255 };
+                    lc.a = (unsigned char)(a * 255);
+                    if (a > 0 && END_LINES[i][0]) text_c(END_LINES[i], 54 + i * 16, 10, lc);
                 }
-                if (endT > 8) text_c("ENTER", RT_H - 24, 10, (Color){ 120, 115, 105, 255 });
+                if (endT > 17) text_c("ENTER", RT_H - 24, 10, (Color){ 120, 115, 105, 255 });
             }
         }
         EndTextureMode();
         {
             Color lo = { 128, 128, 128, 255 }, hi = lo;
-            if (state == S_TITLE || !levelLoaded) { lo = (Color){ 112, 124, 158, 255 }; hi = (Color){ 158, 128, 124, 255 }; }
+            if (state == S_TITLE || !levelLoaded) { lo = (Color){ 118, 128, 136, 255 }; hi = (Color){ 140, 130, 120, 255 }; }
             else if (L.gradeLo.a) { lo = L.gradeLo; hi = L.gradeHi; }
             gfx_grade(lo, hi);
         }

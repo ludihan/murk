@@ -1,5 +1,6 @@
 #include "world.h"
 #include "gfx.h"
+#include "figure.h"
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
@@ -52,6 +53,39 @@ static void add_prop(Level *L, Vector3 c, Vector3 h, TexId tex, Color tint, floa
     b3CreateHullShape(body, &sd, &hull.base);
     Prop p = { body, h, tex, tint };
     Props_push(&L->props, p);
+}
+
+static const Color CHALK = { 196, 190, 176, 255 }, SOOT = { 30, 24, 22, 255 };
+
+// ---------------------------------------------------------------- the furniture of a ceremony
+static void add_candle(Level *L, Vector3 p, float h, bool black) {
+    add_box(L, (Vector3){ p.x, p.y + h / 2, p.z }, (Vector3){ 0.035f, h / 2, 0.035f }, TEX_SKIN, black ? (Color){ 40, 34, 34, 255 } : (Color){ 210, 200, 176, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ p.x, p.y + h + 0.045f, p.z }, (Vector3){ 0.014f, 0.04f, 0.014f }, TEX_CONCRETE, (Color){ 255, 168, 80, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+}
+// a cross hung upside down on a wall. axis is the wall normal (0 = x, 2 = z)
+static void add_cross(Level *L, Vector3 p, float size, int axis, Color c) {
+    Vector3 v = axis == 0 ? (Vector3){ 0.03f, size, 0.05f } : (Vector3){ 0.05f, size, 0.03f };
+    Vector3 hb = axis == 0 ? (Vector3){ 0.03f, 0.05f, size * 0.42f } : (Vector3){ size * 0.42f, 0.05f, 0.03f };
+    add_box(L, p, v, TEX_WOOD, c, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ p.x, p.y - size * 0.45f, p.z }, hb, TEX_WOOD, c, 1.0f, F_NOCOLLIDE);
+}
+static void add_sigil(Level *L, Vector3 p, float r, Color c, int seed) {
+    Box b = { { p.x, p.y + 0.012f, p.z }, { r, 0.001f, r }, (TexId)gfx_sigil_tex(c, seed), WHITE, 1.0f, F_DECAL | F_NOCOLLIDE };
+    Boxes_push(&L->boxes, b);
+}
+// a plain wooden chair, facing yaw (0 = -Z)
+static void add_chair(Level *L, Vector3 p, float yaw) {
+    Color c = { 120, 96, 76, 255 };
+    bool alongZ = fabsf(sinf(yaw)) < 0.7f;
+    float fx = sinf(yaw), fz = -cosf(yaw);
+    add_box(L, (Vector3){ p.x, 0.45f, p.z }, (Vector3){ 0.22f, 0.03f, 0.22f }, TEX_WOOD, c, 1.0f, 0);
+    for (int i = 0; i < 4; i++) add_box(L, (Vector3){ p.x + (i & 1 ? 0.18f : -0.18f), 0.21f, p.z + (i & 2 ? 0.18f : -0.18f) }, (Vector3){ 0.02f, 0.21f, 0.02f }, TEX_WOOD, c, 1.0f, F_NOCOLLIDE);
+    Vector3 back = { p.x - fx * 0.2f, 0.78f, p.z - fz * 0.2f };
+    add_box(L, back, alongZ ? (Vector3){ 0.22f, 0.32f, 0.025f } : (Vector3){ 0.025f, 0.32f, 0.22f }, TEX_WOOD, c, 1.0f, F_NOCOLLIDE);
+}
+static void add_effigy(Level *L, FigKind k, Vector3 p, float yaw, float tilt) {
+    Effigy e = { (int)k, p, yaw, tilt, 0, false };
+    Effigies_push(&L->effigies, e);
 }
 
 static Color scale_tint(Color c, float k) { return (Color){ (unsigned char)(c.r * k), (unsigned char)(c.g * k), (unsigned char)(c.b * k), 255 }; }
@@ -143,10 +177,29 @@ static void build_hub(Level *L, int seed) {
         add_box(L, (Vector3){ sx, 0.55f, sz }, (Vector3){ 1.6f, 0.55f, 0.12f }, TEX_TILE, (Color){ 150, 150, 130, 255 }, 1.0f, 0);
     }
     if (seed == 1) {   // somebody is standing in the corner, facing the wall. next time you wake up they're gone.
-        float fx = CX[(bc + 2) % 4] * 1.17f, fz = CZ[(bc + 2) % 4] * 1.4f;
-        fx = fx > 0 ? S - 0.5f : -S + 0.5f; fz = fz > 0 ? S - 0.5f : -S + 0.5f;
-        add_box(L, (Vector3){ fx, 0.9f, fz }, (Vector3){ 0.2f, 0.9f, 0.14f }, TEX_CONCRETE, (Color){ 20, 18, 18, 255 }, 1.0f, F_NOCOLLIDE);
-        add_box(L, (Vector3){ fx, 1.95f, fz }, (Vector3){ 0.14f, 0.18f, 0.14f }, TEX_CONCRETE, (Color){ 26, 22, 22, 255 }, 1.0f, F_NOCOLLIDE);
+        float fx = CX[(bc + 2) % 4] > 0 ? S - 0.6f : -S + 0.6f, fz = CZ[(bc + 2) % 4] > 0 ? S - 0.6f : -S + 0.6f;
+        add_effigy(L, FIG_PENITENT, (Vector3){ fx, 0, fz }, atan2f(fx, -fz), 0.0f);
+    }
+    {   // every time you wake there is more of it: candles around the bed, a cross over it, chalk on the floor, chairs
+        float bx = CX[bc], bz = CZ[bc];
+        int candles = seed >= 2 ? (seed - 1) * 2 : 0;
+        if (candles > 16) candles = 16;
+        for (int i = 0; i < candles; i++) {
+            float a = i * 6.2831853f / 16.0f + 0.2f;
+            Vector3 cp = { bx + sinf(a) * 1.55f, 0, bz + cosf(a) * 2.35f };
+            if (fabsf(cp.x) > S - 0.3f || fabsf(cp.z) > S - 0.3f) continue;
+            add_candle(L, cp, frand(0.12f, 0.3f), i % 3 == 0);
+        }
+        if (seed >= 3) add_cross(L, (Vector3){ bx > 0 ? S - 0.06f : -S + 0.06f, 2.0f, bz }, 0.45f, 0, (Color){ 90, 60, 50, 255 });
+        if (seed >= 4) add_sigil(L, (Vector3){ 0, 0.004f, 0 }, 2.2f, (Color){ 120, 30, 24, 255 }, seed);
+        if (seed >= 6) {   // they sat here and watched you sleep
+            float cx0 = bx * 0.25f, cz0 = bz * 0.25f;
+            float yaw = atan2f(bx - cx0, -(bz - cz0));
+            for (int i = 0; i < 4; i++) {
+                Vector3 cp = { cx0 + cosf(yaw) * (i - 1.5f) * 0.75f, 0, cz0 + sinf(yaw) * (i - 1.5f) * 0.75f };
+                add_chair(L, cp, yaw);
+            }
+        }
     }
     // a threadbare rug, and a window onto somewhere that isn't there
     add_box(L, (Vector3){ 0, 0.008f, 0 }, (Vector3){ 2.6f, 0.004f, 3.4f }, TEX_MOSAIC, (Color){ 52, 40, 48, 255 }, 1.4f, F_NOCOLLIDE);
@@ -169,8 +222,9 @@ static void build_hub(Level *L, int seed) {
         snprintf(buf, sizeof buf, "WOKEN %d TIMES", g_wakes);
         add_decal(L, buf, (Vector3){ -S, 2.4f, -4.0f }, 0, 1, 0.22f, BLOOD);
     }
-    if (seed >= 3) add_decal(L, "IT FOLLOWED YOU", (Vector3){ -4.6f, 2.0f, S }, 2, -1, 0.26f, BLOOD);
-    if (seed >= 5) add_decal(L, "DON'T LOOK BEHIND YOU", (Vector3){ 4.2f, 2.5f, S }, 2, -1, 0.22f, BLOOD);
+    if (seed >= 3) add_decal(L, "DO NOT WAKE HIM", (Vector3){ -4.6f, 2.0f, S }, 2, -1, 0.22f, CHALK);
+    if (seed >= 5) add_decal(L, "NEMA", (Vector3){ 4.2f, 2.5f, S }, 2, -1, 0.3f, BLOOD);
+    if (seed >= 7) add_decal(L, "PATER NOSTER QUI ES IN INFERNIS", (Vector3){ 0, 3.3f, -S }, 2, 1, 0.16f, SOOT);
     // visitors: they only move when you aren't looking, and there are more each time you wake
     int visitors = seed >= 3 ? (seed - 1) / 2 : 0;
     if (visitors > 3) visitors = 3;
@@ -270,7 +324,7 @@ static void build_shaft(Level *L, int seed) {
             if (c - hb < cur + 1.0f) continue;
             wall_box(L, w, 0.0f, sMid, cur, c - hb, 0.25f, TEX_RUST, rust, F_GRIP);
             static const int ax[4] = { 2, 0, 2, 0 }, dr[4] = { 1, -1, -1, 1 };
-            if (b == 0) add_decal(L, "LET GO", wall_pt(w, sMid / 2, c, 0.0f), ax[w], dr[w], 0.22f, BLOOD);
+            if (b == 0) add_decal(L, "LET GO", wall_pt(w, sMid / 2, c, 0.0f), ax[w], dr[w], 0.22f, CHALK);
             cur = c + hb;
         }
         wall_box(L, w, 0.0f, sMid, cur, y1, 0.25f, TEX_RUST, rust, F_GRIP);
@@ -283,7 +337,7 @@ static void build_shaft(Level *L, int seed) {
     Pickup pk = { pp, FX_GLOVES, false };
     Pickups_push(&L->pickups, pk);
     wall_box(L, w, 0.0f, sMid, top + 0.6f, top + STEP + 3.0f, 0.25f, TEX_RUST, rust, F_GRIP);
-    add_decal(L, "IT IS ABOVE YOU", wall_pt((w + 1) % 4, W, top + STEP + 2.5f, 0.0f), (((w + 1) % 4) % 2 == 0) ? 2 : 0,
+    add_decal(L, "HE IS BELOW", wall_pt((w + 1) % 4, W, top + STEP + 2.5f, 0.0f), (((w + 1) % 4) % 2 == 0) ? 2 : 0,
               ((w + 1) % 4) == 0 ? 1 : ((w + 1) % 4) == 1 ? -1 : ((w + 1) % 4) == 2 ? -1 : 1, 0.3f, BLOOD);
     // spawn facing the first grip strip (wall 1, +X)
     L->spawn = (Vector3){ W - 2.0f, 0.05f, -W / 2 };
@@ -405,7 +459,7 @@ static void build_drains(Level *L, int seed) {
     }
     free(room);
     {   // dead ends get a message
-        static const char *DEAD[] = { "IT WAS HERE", "STAY", "DON'T STOP", "TOO LATE", "BEHIND YOU", "IT HEARS YOU" };
+        static const char *DEAD[] = { "HUSH", "STAY", "NEMA", "HE HEARS", "KNEEL", "NON SERVIAM" };
         int placed = 0;
         for (int i = 1; i < N * N && placed < 7; i++) {
             int o = L->open[i], cnt = (o & 1) + ((o >> 1) & 1) + ((o >> 2) & 1) + ((o >> 3) & 1);
@@ -463,7 +517,7 @@ static void build_void(Level *L, int seed) {
     L->spawn = (Vector3){ 0, 0.05f, 0 };
     L->spawnYaw = 0;
     add_box(L, (Vector3){ 0, 2.5f, 5.0f }, (Vector3){ 1.3f, 2.5f, 0.12f }, TEX_CONCRETE, (Color){ 40, 36, 44, 255 }, 2.0f, F_NOCOLLIDE);
-    add_decal(L, "TURN BACK", (Vector3){ 0, 3.0f, 4.88f }, 2, -1, 0.3f, BLOOD);
+    add_decal(L, "HE FELL TOO", (Vector3){ 0, 3.0f, 4.88f }, 2, -1, 0.3f, CHALK);
     const int COUNT = 30;
     int last = -1;
     for (int i = 1; i <= COUNT; i++) {
@@ -584,16 +638,16 @@ static void flower_at(Level *L, float x, float z, float hgt, Color col, float si
 static void build_garden(Level *L, int seed) {
     L->name = "THE ORCHARD";
     SetRandomSeed(seed * 6007 + 3);
-    L->fog = (Color){ 70, 30, 84, 255 };
-    L->fogDensity = 0.021f;
-    L->light = 1.3f;
+    L->fog = (Color){ 30, 34, 36, 255 };
+    L->fogDensity = 0.03f;
+    L->light = 1.0f;
     L->killY = -7;
-    L->sky = (Sky){ true, { 8, 4, 38, 255 }, { 70, 30, 84, 255 }, { 70, 30, 84, 255 }, 1.0f, true, { 255, 236, 230, 255 }, { -0.35f, 0.42f, -0.84f }, { 70, 255, 200, 255 }, 0.9f, false, 0 };
-    L->gradeLo = (Color){ 112, 124, 158, 255 }; L->gradeHi = (Color){ 158, 128, 124, 255 };
-    L->moteCol = (Color){ 255, 170, 230, 255 }; L->moteGlow = true;
+    L->sky = (Sky){ true, { 4, 5, 8, 255 }, { 30, 34, 36, 255 }, { 30, 34, 36, 255 }, 0.35f, true, { 220, 214, 196, 255 }, { -0.35f, 0.42f, -0.84f }, { 0, 0, 0, 0 }, 0.0f, false, 0 };
+    L->gradeLo = (Color){ 118, 128, 136, 255 }; L->gradeHi = (Color){ 140, 130, 120, 255 };
+    L->moteCol = (Color){ 150, 140, 130, 255 }; L->moteGlow = true;
     L->creepers = true;
     const float E = 50, P = 14;       // half size of the field, half size of the pond
-    Color gc = { 100, 135, 130, 255 };
+    Color gc = { 92, 84, 76, 255 };
     // the ground, with a square pond cut out of the middle
     add_box(L, (Vector3){ 0, -0.5f, -(E + P) / 2 }, (Vector3){ E + 1, 0.5f, (E - P) / 2 }, TEX_GRASS, gc, 3.0f, 0);
     add_box(L, (Vector3){ 0, -0.5f, (E + P) / 2 }, (Vector3){ E + 1, 0.5f, (E - P) / 2 }, TEX_GRASS, gc, 3.0f, 0);
@@ -625,17 +679,18 @@ static void build_garden(Level *L, int seed) {
         float a = i * 1.5708f + 0.785f;
         Vector3 pc = { sinf(a) * 2.4f, top + 1.7f, MZ + cosf(a) * 2.4f };
         add_box(L, pc, (Vector3){ 0.25f, 1.7f, 0.25f }, TEX_CONCRETE, (Color){ 190, 180, 200, 255 }, 1.2f, 0);
-        add_box(L, (Vector3){ pc.x, top + 3.5f, pc.z }, (Vector3){ 0.2f, 0.2f, 0.2f }, TEX_CONCRETE, (Color){ 255, 120, 200, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+        add_candle(L, (Vector3){ pc.x, top + 3.4f, pc.z }, 0.25f, true);
     }
     add_box(L, (Vector3){ 0, top + 0.3f, MZ }, (Vector3){ 0.7f, 0.3f, 0.7f }, TEX_FLESH, (Color){ 220, 190, 200, 255 }, 1.0f, 0);
     Pickup pk = { { 0, top + 1.8f, MZ }, FX_FEATHER, false };
     Pickups_push(&L->pickups, pk);
-    add_box(L, (Vector3){ 0, 25, MZ }, (Vector3){ 0.05f, 25, 0.05f }, TEX_CONCRETE, (Color){ 255, 200, 240, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
-    add_decal(L, "TAKE IT AND GO", (Vector3){ 0, 1.2f, MZ + 9.6f }, 2, 1, 0.22f, BLOOD);
+    add_box(L, (Vector3){ 0, 25, MZ }, (Vector3){ 0.05f, 25, 0.05f }, TEX_CONCRETE, (Color){ 200, 170, 140, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_sigil(L, (Vector3){ 0, top, MZ }, 2.0f, CHALK, 41);
+    add_decal(L, "TAKE IT. HE WILL KNOW", (Vector3){ 0, 1.2f, MZ + 9.6f }, 2, 1, 0.22f, BLOOD);
     L->spawn = (Vector3){ 0, 0.05f, 42 };
     L->spawnYaw = 0;
     // fruit trees: tall dark trunks hung with lanterns
-    static const Color FRUIT[4] = { { 255, 120, 180, 255 }, { 255, 190, 90, 255 }, { 110, 240, 255, 255 }, { 190, 150, 255, 255 } };
+    static const Color FRUIT[4] = { { 200, 120, 70, 255 }, { 170, 90, 60, 255 }, { 210, 160, 90, 255 }, { 150, 60, 50, 255 } };
     for (int i = 0; i < 46; i++) {
         float x = frand(-E + 4, E - 4), z = frand(-E + 4, E - 4);
         if (fabsf(x) < P + 2 && fabsf(z) < P + 2) continue;                 // pond
@@ -653,7 +708,7 @@ static void build_garden(Level *L, int seed) {
         }
     }
     // flowers that watch. more of them near the path to the shrine.
-    static const Color PET[4] = { { 255, 100, 170, 255 }, { 120, 235, 255, 255 }, { 255, 220, 110, 255 }, { 200, 150, 255, 255 } };
+    static const Color PET[4] = { { 200, 190, 170, 255 }, { 150, 40, 44, 255 }, { 120, 100, 130, 255 }, { 190, 176, 120, 255 } };
     for (int i = 0; i < 150; i++) {
         float x = frand(-E + 3, E - 3), z = frand(-E + 3, E - 3);
         if (fabsf(x) < P && fabsf(z) < P) continue;
@@ -661,12 +716,12 @@ static void build_garden(Level *L, int seed) {
         flower_at(L, x, z, frand(0.8f, 3.4f), PET[GetRandomValue(0, 3)], frand(0.55f, 1.2f));
     }
     // standing stones with writing on them
-    static const char *STONE[] = { "WAKE UP", "YOU ARE NOT ALONE HERE", "THEY GROW WHERE YOU LOOK AWAY", "DON'T COUNT THEM", "IT'S SO BEAUTIFUL" };
+    static const char *STONE[] = { "WE PLANTED THEM IN ROWS", "EACH ONE HAD A NAME", "THEY GROW WHERE YOU LOOK AWAY", "DON'T COUNT THEM", "ET IN ARCADIA EGO" };
     for (int i = 0; i < 5; i++) {
         float x = (i % 2 ? 1 : -1) * frand(6, 16), z = 36 - i * 13.0f;
         if (fabsf(z) < P + 2 && fabsf(x) < P + 2) continue;
         add_box(L, (Vector3){ x, 1.3f, z }, (Vector3){ 0.9f, 1.3f, 0.2f }, TEX_CONCRETE, (Color){ 150, 140, 160, 255 }, 1.5f, 0);
-        add_decal(L, STONE[i], (Vector3){ x, 1.5f, z + 0.2f }, 2, 1, 0.16f, (i % 2) ? BLOOD : (Color){ 230, 200, 255, 255 });
+        add_decal(L, STONE[i], (Vector3){ x, 1.5f, z + 0.2f }, 2, 1, 0.16f, (i % 2) ? BLOOD : CHALK);
     }
     // gardeners
     int n = 3 + (seed / 3 > 3 ? 3 : seed / 3);
@@ -681,21 +736,28 @@ static void build_garden(Level *L, int seed) {
 // ---------------------------------------------------------------- END: the way out
 static void build_end(Level *L) {
     L->name = "THE WAY OUT";
-    L->fog = (Color){ 200, 196, 188, 255 };
-    L->fogDensity = 0.05f;
-    L->light = 1.2f;
+    L->fog = (Color){ 70, 60, 52, 255 };
+    L->fogDensity = 0.07f;
+    L->light = 0.85f;
     L->killY = -50;
     L->gradeLo = (Color){ 134, 128, 126, 255 }; L->gradeHi = (Color){ 140, 130, 122, 255 };
     L->moteCol = (Color){ 230, 225, 210, 255 };
     L->spawn = (Vector3){ 0, 0.05f, 7 };
     L->spawnYaw = 0;
     // a long white hall that ends at a bed
-    room(L, 3, 12, 3.2f, TEX_TILE, (Color){ 230, 230, 225, 255 }, TEX_WOOD, (Color){ 220, 210, 200, 255 }, TEX_CONCRETE, (Color){ 230, 230, 225, 255 });
+    room(L, 3, 12, 3.2f, TEX_TILE, (Color){ 170, 160, 150, 255 }, TEX_WOOD, (Color){ 220, 210, 200, 255 }, TEX_CONCRETE, (Color){ 230, 230, 225, 255 });
     add_box(L, (Vector3){ 0, 0.35f, -10.5f }, (Vector3){ 1.0f, 0.35f, 1.5f }, TEX_WOOD, (Color){ 220, 200, 190, 255 }, 1.0f, 0);
     add_box(L, (Vector3){ 0, 0.78f, -10.3f }, (Vector3){ 0.92f, 0.1f, 1.3f }, TEX_TILE, (Color){ 240, 230, 230, 255 }, 1.0f, F_NOCOLLIDE);
     add_box(L, (Vector3){ 0, 1.8f, -11.88f }, (Vector3){ 1.0f, 0.8f, 0.05f }, TEX_CONCRETE, (Color){ 255, 255, 250, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
     add_decal(L, "DON'T LIE DOWN", (Vector3){ 0, 2.6f, -12.0f }, 2, 1, 0.28f, BLOOD);
     L->bed = (Vector3){ 0, 0, -9.0f };
+    for (int i = 0; i < 6; i++) for (int s = -1; s <= 1; s += 2) {
+        float z = 4.0f - i * 2.2f;
+        add_effigy(L, FIG_KNEELER, (Vector3){ s * 2.1f, 0, z }, s < 0 ? 1.5708f : -1.5708f, frand(-0.2f, 0.2f));
+        add_candle(L, (Vector3){ s * 2.7f, 0, z + 1.0f }, frand(0.15f, 0.4f), false);
+    }
+    add_effigy(L, FIG_PRIEST, (Vector3){ 1.6f, 0, -10.6f }, 3.14159f, 0.0f);
+    add_cross(L, (Vector3){ 0, 2.0f, -11.75f }, 0.5f, 2, (Color){ 40, 28, 24, 255 });   // against the light
 }
 
 // ---------------------------------------------------------------- lifecycle
@@ -728,7 +790,7 @@ void level_build(Level *L, WorldId id, int seed) {
 void level_free(Level *L) {
     if (b3World_IsValid(L->phys)) b3DestroyWorld(L->phys);
     Boxes_drop(&L->boxes); Pickups_drop(&L->pickups); Portals_drop(&L->portals);
-    Watchers_drop(&L->watchers); Motes_drop(&L->motes); Blooms_drop(&L->blooms); Props_drop(&L->props);
+    Watchers_drop(&L->watchers); Motes_drop(&L->motes); Blooms_drop(&L->blooms); Props_drop(&L->props); Effigies_drop(&L->effigies);
     free(L->open); free(L->dist);
     memset(L, 0, sizeof *L);
 }

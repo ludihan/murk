@@ -25,6 +25,8 @@ void gfx_update_static(float time, bool face);
 // runtime text (blood on the walls). returns a TexId-compatible slot >= TEX_COUNT
 int gfx_text_tex(const char *s, Color c);
 float gfx_text_aspect(int id);
+// a ritual circle (decal texture, square)
+int gfx_sigil_tex(Color c, int seed);
 // flat quad facing +/- along the thin axis of h (dir = +1/-1 is which way it faces)
 void gfx_decal(Vector3 c, Vector3 h, int id, float dir);
 // final pass: low-res target -> window with the nasty post shader

@@ -6,7 +6,7 @@
 #include <string.h>
 
 RenderTexture2D gfx_rt;
-#define MAX_DECAL 32
+#define MAX_DECAL 96
 static Texture2D decalTex[MAX_DECAL];
 static float decalAsp[MAX_DECAL];
 static char decalStr[MAX_DECAL][96];
@@ -375,6 +375,38 @@ int gfx_text_tex(const char *s, Color c) {
 }
 float gfx_text_aspect(int id) { return decalAsp[id - TEX_COUNT]; }
 
+// a circle drawn on the floor in chalk or worse: two rings, a star with one point down, marks between the rings
+int gfx_sigil_tex(Color c, int seed) {
+    uint32_t cc = (c.r << 24) | (c.g << 16) | (c.b << 8) | c.a;
+    char key[32]; snprintf(key, sizeof key, "\x01sigil%d", seed);
+    for (int i = 0; i < decalN; i++) if (decalCol[i] == cc && !strcmp(decalStr[i], key)) return TEX_COUNT + i;
+    if (decalN >= MAX_DECAL) return TEX_COUNT + decalN - 1;
+    const int S = 256;
+    Image img = GenImageColor(S, S, BLANK);
+    Vector2 o = { S / 2.0f, S / 2.0f };
+    for (int k = 0; k < 3; k++) { ImageDrawCircleLinesV(&img, o, 120 - k, c); ImageDrawCircleLinesV(&img, o, 96 - k, c); }
+    Vector2 pt[5];
+    for (int k = 0; k < 5; k++) { float a = 1.5708f + k * 1.2566f; pt[k] = (Vector2){ o.x + cosf(a) * 94, o.y + sinf(a) * 94 }; }
+    for (int k = 0; k < 5; k++) ImageDrawLineEx(&img, pt[k], pt[(k + 2) % 5], 3, c);
+    for (int k = 0; k < 28; k++) {   // letters nobody taught you, between the rings
+        float a = k * 6.2831853f / 28 + rnd(k, seed, 7) * 0.1f, r0 = 100, r1 = 116;
+        Vector2 p0 = { o.x + cosf(a) * r0, o.y + sinf(a) * r0 }, p1 = { o.x + cosf(a + 0.12f * (rnd(k, seed, 8) - 0.5f)) * r1, o.y + sinf(a + 0.1f) * r1 };
+        ImageDrawLineEx(&img, p0, p1, 2, c);
+        if (rnd(k, seed, 9) > 0.5f) ImageDrawLineEx(&img, p1, (Vector2){ p1.x + cosf(a + 1.6f) * 6, p1.y + sinf(a + 1.6f) * 6 }, 2, c);
+    }
+    for (int y = 0; y < S; y++) for (int x = 0; x < S; x++) {   // smudged: the chalk has been walked through
+        Color p = GetImageColor(img, x, y);
+        if (p.a && rnd(x, y, seed + 5) < 0.25f + 0.5f * fbm(x / (float)S, y / (float)S, 3, seed)) ImageDrawPixel(&img, x, y, (Color){ c.r, c.g, c.b, (unsigned char)(p.a * 0.35f) });
+    }
+    Texture2D t = LoadTextureFromImage(img);
+    UnloadImage(img);
+    SetTextureFilter(t, TEXTURE_FILTER_POINT);
+    decalTex[decalN] = t; decalAsp[decalN] = 1.0f;
+    snprintf(decalStr[decalN], sizeof decalStr[0], "%s", key);
+    decalCol[decalN] = cc;
+    return TEX_COUNT + decalN++;
+}
+
 void gfx_decal(Vector3 c, Vector3 h, int id, float dir) {
     Texture2D t = decalTex[id - TEX_COUNT];
     rlCheckRenderBatchLimit(8);
@@ -382,7 +414,8 @@ void gfx_decal(Vector3 c, Vector3 h, int id, float dir) {
     rlBegin(RL_QUADS);
     rlColor4ub(255, 255, 255, 255);
     Vector3 r, u = { 0, h.y, 0 };
-    if (h.z < h.x) r = (Vector3){ h.x * (dir > 0 ? 1 : -1), 0, 0 };
+    if (h.y < h.x && h.y < h.z) { r = (Vector3){ h.x, 0, 0 }; u = (Vector3){ 0, 0, -h.z }; }   // lying on the floor
+    else if (h.z < h.x) r = (Vector3){ h.x * (dir > 0 ? 1 : -1), 0, 0 };
     else           r = (Vector3){ 0, 0, h.z * (dir > 0 ? -1 : 1) };
     Vector3 bl = Vector3Subtract(Vector3Subtract(c, r), u), br = Vector3Subtract(Vector3Add(c, r), u);
     Vector3 tr = Vector3Add(Vector3Add(c, r), u), tl = Vector3Add(Vector3Subtract(c, r), u);
