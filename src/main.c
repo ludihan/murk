@@ -908,7 +908,9 @@ static void frame(void) {
 }
 
 int main(void) {
-    SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE);
+    // the screenshot hook renders without ever showing a window or making a sound
+    bool shot = getenv("MURK_SHOT") != NULL;
+    SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE | (shot ? FLAG_WINDOW_HIDDEN : 0));
     InitWindow(1280, 720, "MURK");
     SetWindowMinSize(480, 270);
 #ifdef __EMSCRIPTEN__
@@ -919,7 +921,7 @@ int main(void) {
 #endif
     load_memory();
     gfx_init();
-    audio_init();
+    if (!shot) audio_init();
 
     // dev hook: MURK_SHOT="world,x,y,z,yaw,pitch,fx,frames,path" renders a frame and exits
     float sx = 0, sy = 0, sz = 0, syaw = 0, spit = 0; int sfxmask = 0;
