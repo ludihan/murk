@@ -36,7 +36,7 @@ Vector3 player_forward(const Player *p) {
 }
 Vector3 player_eye(const Player *p) {
     float bob = sinf(p->bob) * 0.035f * (p->grounded ? 1 : 0);
-    return (Vector3){ p->pos.x, p->pos.y + EYE + bob - p->landKick, p->pos.z };
+    return (Vector3){ p->pos.x, p->pos.y + EYE + bob - p->landKick - p->crouch * 0.75f, p->pos.z };
 }
 
 void player_spawn(Player *p, const Level *L) {
@@ -82,6 +82,7 @@ Input input_read(void) {
     in.sprint = IsKeyDown(KEY_LEFT_SHIFT);
     in.grip = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
     in.glide = IsKeyDown(KEY_SPACE);
+    in.crouch = IsKeyDown(KEY_C) || IsKeyDown(KEY_LEFT_CONTROL);
     return in;
 }
 
@@ -90,7 +91,9 @@ void player_update(Player *p, Level *L, const Input *in, float dt) {
     float yaw = p->yaw * DEG2RAD;
     Vector3 fwd = { sinf(yaw), 0, -cosf(yaw) }, right = { cosf(yaw), 0, sinf(yaw) };
     float mx = in->mx, mz = in->mz;
-    bool sprint = in->sprint;
+    bool kneel = in->crouch && !p->gripping;
+    p->crouch += ((kneel ? 1.0f : 0.0f) - p->crouch) * fminf(1.0f, dt * 9.0f);
+    bool sprint = in->sprint && p->crouch < 0.5f;
     bool jumpPressed = p->jumpBuf > 0;
 
     p->regrabLock = fmaxf(0, p->regrabLock - dt);
@@ -103,6 +106,7 @@ void player_update(Player *p, Level *L, const Input *in, float dt) {
     if (p->grounded) { p->coyote = 0.12f; p->airJumps = boots ? 1 : 0; }
     else p->coyote = fmaxf(0, p->coyote - dt);
     if (p->grounded && !wasGrounded && p->vel.y < -9) p->landKick = fminf(0.3f, -p->vel.y * 0.02f);
+    if (p->grounded && !wasGrounded && p->vel.y < -6) p->noise = fmaxf(p->noise, fminf(1.0f, -p->vel.y * 0.08f));   // landings carry
     p->landKick = fmaxf(0, p->landKick - dt * 1.2f);
 
     // ---- grip: hold the left mouse button next to a rusty surface
@@ -163,7 +167,7 @@ void player_update(Player *p, Level *L, const Input *in, float dt) {
         }
     } else {
         // ---- walking / falling
-        float speed = (sprint ? 6.0f : 3.6f) * (p->gliding ? 1.35f : 1.0f);
+        float speed = (sprint ? 6.0f : 3.6f) * (p->gliding ? 1.35f : 1.0f) * (1.0f - 0.55f * p->crouch);
         Vector3 wish = Vector3Add(Vector3Scale(right, mx), Vector3Scale(fwd, mz));
         if (Vector3Length(wish) > 1) wish = Vector3Normalize(wish);
         p->gliding = feather && in->glide && !p->grounded && p->vel.y < 1.0f && p->jumpBuf <= 0;
@@ -188,6 +192,10 @@ void player_update(Player *p, Level *L, const Input *in, float dt) {
 
     float horiz = Vector3Length((Vector3){ p->vel.x, 0, p->vel.z });
     p->speedMeter = horiz;
+    // noise: running is loud, walking carries, kneeling and creeping is almost nothing
+    float loud = !p->grounded ? 0.0f : horiz < 0.4f ? 0.0f : sprint ? 1.0f : 0.12f + 0.38f * (1.0f - p->crouch);
+    if (p->gripping) loud = 0.15f;
+    p->noise = fmaxf(loud, p->noise - dt * 0.8f);
     float rollTarget = p->gripping ? sinf(GetTime() * 2.3f) * 1.2f * (1.0f - p->grip) + (-mx) * 2.0f : -mx * 1.2f;
     p->roll += (rollTarget - p->roll) * fminf(1, dt * 8);
 }

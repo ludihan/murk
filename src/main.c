@@ -50,6 +50,25 @@ static int ghostN[W_COUNT], recN;
 static float recT;
 static struct { bool on, noticed; float t; Vector3 pos; float yaw; } ghost;
 
+// the pages. most of them were written for someone else, and they tell you the rules anyway
+static const char *NOTES[NOTE_COUNT] = {
+    [NOTE_VIGIL] = "PARISH NOTICE.\nThe vigil continues in shifts. Kneel when the bell is rung.\nDo not speak to him if he speaks. Do not let him see your faces.\nWhatever he asks for, do not wake him.",
+    [NOTE_DAY9] = "Day 9.\nHe sleeps through the day now. Father A. says that is good.\nHe says the sleep is where the door is, and that every door\nin the house must be left open.",
+    [NOTE_DOORS] = "I counted the doors in his room tonight. There were four.\nWhen I came back up with the candles there were five.\nI did not tell Father A. I think he already knows.",
+    [NOTE_GARDEN] = "He talked in his sleep again. He described a garden.\nHe said the flowers were all looking at him and that he\ndid not want to pick any of them.\nFather A. wrote down every word.",
+    [NOTE_DRAINS] = "Do not go down to the drains after dark.\nBrother M. went down to see what was drinking from the water.\nWe hear him sometimes when we are quiet. Tapping.",
+    [NOTE_CLIMB] = "It climbs the way you do. It has learned your hands.\nWhen you climb, it climbs. When you stop, it stops.\nDo not stop for long. The water is coming up behind it.",
+    [NOTE_EYE] = "There is an eye above the steps.\nIt does not see what does not move. When it opens, be still,\nor be behind the old stones. It closes again. It always closes again.",
+    [NOTE_FLOWERS] = "The flowers are its eyes and the gardeners are its hands.\nA flower that sees you will call them to where you stood.\nKeep low. Keep to where the petals are closed.",
+    [NOTE_CANDLES] = "Light the three black candles down here and the grate\nover the lamp will open.\nThe one who lives in the drains is blind. It hunts by the sound of you. Walk softly. Kneel if it is close. Do not run.",
+    [NOTE_FAMILY] = "To the family.\nThank you for your son. He will sleep for as long as we need him to.\nYou may visit on Sundays. Please do not bring anything that rings.\n\n- the Congregation of the Lower Church",
+    [NOTE_AWAKE] = "If you are reading this then you are awake.\nYou are not supposed to be awake.\nLie back down.",
+    [NOTE_BELL] = "When the bell tolls, kneel with the others.\nThe priest counts the heads.\nHe must not count one that is standing.",
+};
+static int reading = -1;   // the note on screen, or -1
+static const char *useHint;
+static void use_thing(Use *u);
+
 static const char *FX_NAME[FX_COUNT] = { "LAMP", "GLOVES", "BOOTS", "FEATHER" };
 static const char *FX_DESC[FX_COUNT] = {
     "press F to toggle it. the dark pulls back a little.",
@@ -94,6 +113,7 @@ static float frand_(float a, float b) { return a + (b - a) * (GetRandomValue(0, 
 static void say(const char *s, float secs) { snprintf(msg, sizeof msg, "%s", s); msgT = secs; }
 
 static void load_world(WorldId id, bool wake) {
+    reading = -1; useHint = NULL;
     if (levelLoaded) {
         if (recN > 40 && L.id != W_SHAFT && L.id != W_END) { memcpy(ghostPath[L.id], rec, recN * sizeof *rec); ghostN[L.id] = recN; }
         level_free(&L);
@@ -111,11 +131,12 @@ static void load_world(WorldId id, bool wake) {
     blackout = 0; nextBlackout = 14 + GetRandomValue(0, 12); phantomLeft = 0;
     memset(lurk, 0, sizeof lurk); lurkTimer = 6 + GetRandomValue(0, 6);
     lampOn = (P.fx & (1u << FX_LAMP)) ? lampOn : 0;
-    if (id == W_HUB && !wake && dreams <= 1) say("WASD walk · SHIFT run · SPACE jump · hold LMB at rusty walls to grip · R wake up", 12);
+    if (id == W_HUB && !wake && dreams <= 1) say("WASD walk · SHIFT run · C kneel · E use · hold LMB at rusty walls to grip · R wake up", 12);
     if (id == W_SHAFT) say("hold LMB on the rusty plates. W climbs, A/D shuffle, SPACE lunges. don't let go.", 9);
     if (id == W_DRAINS) say("don't let them see you stop. don't stop seeing them.", 7);
     if (id == W_VOID) say("there is nothing underneath.", 6);
 }
+
 
 static void go(WorldId to, bool wake) {
     if (tr.on) return;
@@ -364,6 +385,18 @@ static void draw_scene(Camera3D cam, float time) {
                   atan2f(P.pos.x - w->pos.x, -(P.pos.z - w->pos.z)), w->stride, eye, 0.7f, sinf(i * 1.7f) * 0.35f, w->phase, { 0, 0, 1 }, { 0 } };
         figure_draw(&f);
     }
+    for (int i = 0; i < L.uses.size; i++) {
+        const Use *u = &L.uses.data[i];
+        if (Vector3Distance(eye, u->pos) > cull) continue;
+        if (u->kind == USE_NOTE) {
+            gfx_box((Vector3){ u->pos.x, u->pos.y + 0.004f, u->pos.z }, (Vector3){ 0.13f, 0.004f, 0.18f }, TEX_SKIN, u->done ? (Color){ 150, 140, 120, 255 } : (Color){ 235, 225, 196, 255 }, 1.0f);
+            for (int k = 0; k < 5; k++)   // lines of handwriting
+                gfx_box((Vector3){ u->pos.x - 0.01f * (k & 1), u->pos.y + 0.009f, u->pos.z - 0.12f + k * 0.055f }, (Vector3){ 0.09f - 0.02f * (k == 4), 0.001f, 0.006f }, TEX_CONCRETE, (Color){ 40, 30, 28, 255 }, 1.0f);
+        } else if (u->kind == USE_CANDLE) {
+            gfx_box((Vector3){ u->pos.x, u->pos.y + 0.2f, u->pos.z }, (Vector3){ 0.05f, 0.2f, 0.05f }, TEX_SKIN, (Color){ 36, 30, 30, 255 }, 1.0f);
+            gfx_box((Vector3){ u->pos.x, u->pos.y + 0.003f, u->pos.z }, (Vector3){ 0.25f, 0.003f, 0.25f }, TEX_SLUDGE, (Color){ 40, 34, 30, 255 }, 1.0f);
+        }
+    }
     for (int i = 0; i < L.effigies.size; i++) {
         const Effigy *e = &L.effigies.data[i];
         if (Vector3Distance(eye, e->pos) > cull + 2) continue;
@@ -428,8 +461,16 @@ static void draw_scene(Camera3D cam, float time) {
         gfx_glow(b->pos, (Vector3){ s * 0.38f, 0.025f, s }, pc);
         gfx_glow(b->pos, (Vector3){ s * 0.27f, 0.04f, s * 0.27f }, (Color){ 255, 230, 160, 255 });
     }
+    for (int i = 0; i < L.uses.size; i++) {
+        const Use *u = &L.uses.data[i];
+        if (u->kind == USE_CANDLE && u->done) gfx_glow((Vector3){ u->pos.x, u->pos.y + 0.46f + sinf(time * 13 + i) * 0.006f, u->pos.z }, (Vector3){ 0.02f, 0.05f, 0.02f }, (Color){ 255, 160, 70, 255 });
+    }
     // soft glow around everything bright
     gfx_begin_glow();
+    for (int i = 0; i < L.uses.size; i++) {
+        const Use *u = &L.uses.data[i];
+        if (u->kind == USE_CANDLE && u->done) gfx_halo((Vector3){ u->pos.x, u->pos.y + 0.47f, u->pos.z }, 1.6f + sinf(time * 9 + i) * 0.1f, (Color){ 255, 150, 70, 255 }, 0.5f);
+    }
     for (int i = 0; i < L.boxes.size; i++) {
         const Box *b = &L.boxes.data[i];
         if (!(b->flags & F_EMIT)) continue;
@@ -566,6 +607,29 @@ static void draw_hud(float time) {
         unsigned char a = (unsigned char)(fminf(1.0f, nameT) * 255);
         text_c(L.name, RT_H / 2 - 70, 20, (Color){ 220, 210, 190, a });
     }
+    if (useHint && reading < 0) text_c(useHint, cy + 10, 10, (Color){ 190, 180, 160, 200 });
+    if (reading >= 0) {
+        DrawRectangle(0, 0, RT_W, RT_H, (Color){ 0, 0, 0, 170 });
+        DrawRectangle(60, 34, RT_W - 120, RT_H - 68, (Color){ 150, 140, 118, 240 });
+        DrawRectangleLines(64, 38, RT_W - 128, RT_H - 76, (Color){ 96, 80, 64, 255 });
+        // word wrap, keeping the line breaks the writer put in
+        const char *t = NOTES[reading];
+        int y = 52, maxw = RT_W - 160;
+        char line[160] = "";
+        while (*t) {
+            int n = 0;
+            while (t[n] && t[n] != ' ' && t[n] != '\n') n++;
+            char tryl[160];
+            snprintf(tryl, sizeof tryl, "%s%s%.*s", line, line[0] ? " " : "", n, t);
+            if (line[0] && MeasureText(tryl, 10) > maxw) { DrawText(line, 80, y, 10, (Color){ 34, 22, 18, 255 }); y += 13; snprintf(line, sizeof line, "%.*s", n, t); }
+            else snprintf(line, sizeof line, "%s", tryl);
+            t += n;
+            if (*t == '\n') { DrawText(line, 80, y, 10, (Color){ 34, 22, 18, 255 }); y += 13; line[0] = 0; }
+            if (*t) t++;
+        }
+        if (line[0]) DrawText(line, 80, y, 10, (Color){ 34, 22, 18, 255 });
+        DrawText("E", RT_W - 82, RT_H - 50, 10, (Color){ 90, 70, 60, 255 });
+    }
     if (msgT > 0) text_c(msg, RT_H - 34, 10, (Color){ 210, 200, 180, (unsigned char)(fminf(1.0f, msgT) * 255) });
     if (L.sludge && L.sludgeArmed) {
         float gap = P.pos.y - L.sludgeY;
@@ -584,6 +648,11 @@ static const char *END_LINES[] = {
     "",
     "NEMA",
 };
+
+static void use_thing(Use *u) {
+    u->done = true;
+    if (u->kind == USE_CANDLE) { audio_play_ex(SFX_GRAB, 0.4f, 0.6f); play_from(SFX_PRAYER, u->pos, 0.4f, 0.9f); }
+}
 
 // ---------------------------------------------------------------- dev bot (MURK_BOT=climb|walk|jump)
 static const char *bot;
@@ -664,10 +733,31 @@ static void frame(void) {
             if (P.jumped) { audio_play(SFX_JUMP); P.jumped = false; }
             if (P.grounded) {
                 stepDist += Vector3Length((Vector3){ P.vel.x, 0, P.vel.z }) * frameDt;
-                if (stepDist > 2.0f) { stepDist = 0; audio_play(SFX_STEP); }
+                if (stepDist > 2.0f) { stepDist = 0; audio_play_ex(SFX_STEP, 0.15f + 0.4f * P.noise, 0.85f + 0.2f * (GetRandomValue(0, 100) / 100.0f)); }
             }
 
             if (!tr.on) {
+                // things you can use: whichever one you are looking at, close enough to touch
+                Use *near = NULL;
+                {
+                    Vector3 eye = player_eye(&P), fwd = player_forward(&P);
+                    float best = 0.8f;
+                    for (int i = 0; i < L.uses.size; i++) {
+                        Use *u = &L.uses.data[i];
+                        if (u->done && u->kind != USE_NOTE) continue;
+                        Vector3 d = Vector3Subtract(u->pos, eye);
+                        float len = Vector3Length(d);
+                        if (len > 2.2f) continue;
+                        float dot = Vector3DotProduct(Vector3Scale(d, 1.0f / len), fwd);
+                        if (dot > best) { best = dot; near = u; }
+                    }
+                }
+                useHint = near ? (near->kind == USE_NOTE ? "E  read" : "E  light it") : NULL;
+                if (reading >= 0 && (IsKeyPressed(KEY_E) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || P.speedMeter > 4.5f)) reading = -1;
+                else if (near && IsKeyPressed(KEY_E)) {
+                    if (near->kind == USE_NOTE) { reading = near->arg; near->done = true; audio_play_ex(SFX_CREAK, 0.25f, 1.6f); }
+                    else use_thing(near);
+                }
                 // pickups
                 for (int i = 0; i < L.pickups.size; i++) {
                     Pickup *pk = &L.pickups.data[i];
@@ -782,7 +872,7 @@ static void frame(void) {
             const char *memo = g_launches >= 6 ? "it kept your place." : g_launches >= 2 ? "you came back." : "";
             if (msgT > 0) text_c(msg, 172, 10, (Color){ 210, 200, 180, (unsigned char)(fminf(1.0f, msgT) * 255) });
             if (memo[0]) text_c(memo, 156, 10, (Color){ 130, 40, 34, (unsigned char)(150 + 60 * sinf(time * 2.0f)) });
-            text_c("WASD · SHIFT · SPACE · hold LMB to grip · F lamp · R wake up · [ ] mouse sensitivity", RT_H - 18, 10, (Color){ 90, 85, 75, 255 });
+            text_c("WASD · SHIFT run · C kneel · E use · hold LMB to grip · F lamp · R wake up · [ ] mouse", RT_H - 18, 10, (Color){ 90, 85, 75, 255 });
         } else {
             Vector3 eye = player_eye(&P), fwd = player_forward(&P);
             Camera3D cam = { 0 };

@@ -83,6 +83,10 @@ static void add_chair(Level *L, Vector3 p, float yaw) {
     Vector3 back = { p.x - fx * 0.2f, 0.78f, p.z - fz * 0.2f };
     add_box(L, back, alongZ ? (Vector3){ 0.22f, 0.32f, 0.025f } : (Vector3){ 0.025f, 0.32f, 0.22f }, TEX_WOOD, c, 1.0f, F_NOCOLLIDE);
 }
+static void add_note(Level *L, Vector3 p, int id) {
+    Use u = { p, USE_NOTE, id, false };
+    Uses_push(&L->uses, u);
+}
 static void add_effigy(Level *L, FigKind k, Vector3 p, float yaw, float tilt) {
     Effigy e = { (int)k, p, yaw, tilt, 0, false };
     Effigies_push(&L->effigies, e);
@@ -161,6 +165,8 @@ static void build_hub(Level *L, int seed) {
         add_box(L, (Vector3){ dx, 0.45f, dz }, (Vector3){ 1.2f, 0.45f, 0.6f }, TEX_WOOD, (Color){ 140, 110, 90, 255 }, 1.0f, 0);
         add_box(L, (Vector3){ dx, 1.2f, dz }, (Vector3){ 0.5f, 0.35f, 0.4f }, TEX_CONCRETE, (Color){ 50, 50, 46, 255 }, 1.0f, F_NOCOLLIDE);
         add_box(L, (Vector3){ dx, 1.2f, dz + 0.41f * sg }, (Vector3){ 0.4f, 0.27f, 0.02f }, TEX_STATIC, (Color){ 150, 170, 160, 255 }, 1.0f, F_NOCOLLIDE);
+        static const int HUBNOTE[] = { NOTE_VIGIL, NOTE_DAY9, NOTE_DOORS, NOTE_GARDEN, NOTE_FAMILY, NOTE_AWAKE };
+        add_note(L, (Vector3){ dx + 0.75f, 0.91f, dz + 0.1f * sg }, HUBNOTE[(seed - 1) % 6]);
     }
     // pillars, a half wall: different cover every time
     int npil = GetRandomValue(0, 3);
@@ -341,6 +347,7 @@ static void build_shaft(Level *L, int seed) {
               ((w + 1) % 4) == 0 ? 1 : ((w + 1) % 4) == 1 ? -1 : ((w + 1) % 4) == 2 ? -1 : 1, 0.3f, BLOOD);
     // spawn facing the first grip strip (wall 1, +X)
     L->spawn = (Vector3){ W - 2.0f, 0.05f, -W / 2 };
+    add_note(L, (Vector3){ W - 2.6f, 0.01f, -W / 2 + 1.0f }, NOTE_CLIMB);
     L->spawnYaw = 90;
 }
 
@@ -476,6 +483,7 @@ static void build_drains(Level *L, int seed) {
         }
     }
     L->spawn = CELLC(0); L->spawn.y = 0.05f;
+    { Vector3 np = CELLC(0); add_note(L, (Vector3){ np.x - 1.6f, 0.02f, np.z + 1.2f }, NOTE_CANDLES); }
     L->spawnYaw = 90;
     Vector3 pc = CELLC(best); pc.y = 1.1f;
     Pickup pk = { pc, FX_LAMP, false };
@@ -516,6 +524,7 @@ static void build_void(Level *L, int seed) {
     add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ phx, 0.5f, phz }, TEX_CONCRETE, tint, 2.0f, 0);
     L->spawn = (Vector3){ 0, 0.05f, 0 };
     L->spawnYaw = 0;
+    add_note(L, (Vector3){ 1.3f, 0.01f, -1.4f }, NOTE_EYE);
     add_box(L, (Vector3){ 0, 2.5f, 5.0f }, (Vector3){ 1.3f, 2.5f, 0.12f }, TEX_CONCRETE, (Color){ 40, 36, 44, 255 }, 2.0f, F_NOCOLLIDE);
     add_decal(L, "HE FELL TOO", (Vector3){ 0, 3.0f, 4.88f }, 2, -1, 0.3f, CHALK);
     const int COUNT = 30;
@@ -689,6 +698,7 @@ static void build_garden(Level *L, int seed) {
     add_decal(L, "TAKE IT. HE WILL KNOW", (Vector3){ 0, 1.2f, MZ + 9.6f }, 2, 1, 0.22f, BLOOD);
     L->spawn = (Vector3){ 0, 0.05f, 42 };
     L->spawnYaw = 0;
+    add_note(L, (Vector3){ 1.4f, 0.01f, 40.0f }, NOTE_FLOWERS);
     // fruit trees: tall dark trunks hung with lanterns
     static const Color FRUIT[4] = { { 200, 120, 70, 255 }, { 170, 90, 60, 255 }, { 210, 160, 90, 255 }, { 150, 60, 50, 255 } };
     for (int i = 0; i < 46; i++) {
@@ -790,7 +800,7 @@ void level_build(Level *L, WorldId id, int seed) {
 void level_free(Level *L) {
     if (b3World_IsValid(L->phys)) b3DestroyWorld(L->phys);
     Boxes_drop(&L->boxes); Pickups_drop(&L->pickups); Portals_drop(&L->portals);
-    Watchers_drop(&L->watchers); Motes_drop(&L->motes); Blooms_drop(&L->blooms); Props_drop(&L->props); Effigies_drop(&L->effigies);
+    Watchers_drop(&L->watchers); Motes_drop(&L->motes); Blooms_drop(&L->blooms); Props_drop(&L->props); Effigies_drop(&L->effigies); Uses_drop(&L->uses);
     free(L->open); free(L->dist);
     memset(L, 0, sizeof *L);
 }

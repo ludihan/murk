@@ -22,6 +22,7 @@ typedef struct Level {
     Motes motes;
     Props props;
     Effigies effigies;
+    Uses uses;
     Blooms blooms;
     Sky sky;
     Color moteCol;          // dust / pollen / embers
@@ -56,6 +57,8 @@ typedef struct Level {
 } Level;
 
 extern int g_launches, g_wakes;   // persisted between runs: the game remembers you
+// the pages left lying around. 0 .. NOTE_COUNT-1
+enum { NOTE_VIGIL, NOTE_DAY9, NOTE_DOORS, NOTE_GARDEN, NOTE_DRAINS, NOTE_CLIMB, NOTE_EYE, NOTE_FLOWERS, NOTE_CANDLES, NOTE_FAMILY, NOTE_AWAKE, NOTE_BELL, NOTE_COUNT };
 void level_build(Level *L, WorldId id, int seed);
 void level_free(Level *L);
 void level_step(Level *L, float dt, Vector3 player);
