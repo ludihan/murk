@@ -1,6 +1,7 @@
 #include "figure.h"
 #include "gfx.h"
 #include <math.h>
+#include <rlgl.h>
 
 // a local frame: origin, right, up, forward. up may be scaled to squash a body flat against a wall
 typedef struct { Vector3 o, r, u, f; } Frame;
@@ -271,6 +272,18 @@ static void sleeper(const Fig *f, const Frame *F) {
 }
 
 void figure_draw(const Fig *f) {
+    if (f->scale > 0 && f->kind != FIG_TALL) {   // a giant: the whole body scaled, not just stretched
+        Fig g = *f;
+        g.pos = (Vector3){ 0, 0, 0 };
+        g.lookAt = Vector3Scale(Vector3Subtract(f->lookAt, f->pos), 1.0f / f->scale);
+        g.scale = 0;
+        rlPushMatrix();
+        rlTranslatef(f->pos.x, f->pos.y, f->pos.z);
+        rlScalef(f->scale, f->scale, f->scale);
+        figure_draw(&g);
+        rlPopMatrix();
+        return;
+    }
     Frame F;
     F.o = f->pos;
     if (f->kind == FIG_CLIMBER) {

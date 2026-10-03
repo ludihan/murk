@@ -30,7 +30,6 @@ typedef struct Level {
     bool water; float waterY, waterHalf; Vector3 waterC;
     bool moteGlow;
     bool rain;              // the motes are rain, falling hard
-    bool creepers;          // watchers that only move when unseen (open levels)
 
     Color fog;
     float fogDensity;
@@ -66,7 +65,7 @@ extern int g_launches, g_wakes;   // persisted between runs: the game remembers 
 extern int g_secret;
 extern int g_wardLoop;            // how many times you have walked the ward corridor this visit              // you knelt in the circle and were told who is asleep
 // the pages left lying around. 0 .. NOTE_COUNT-1
-enum { NOTE_VIGIL, NOTE_DAY9, NOTE_DOORS, NOTE_GARDEN, NOTE_DRAINS, NOTE_CLIMB, NOTE_EYE, NOTE_FLOWERS, NOTE_CANDLES, NOTE_FAMILY, NOTE_AWAKE, NOTE_BELL, NOTE_SLEEPER, NOTE_WARD, NOTE_STATIC, NOTE_WOMB, NOTE_CITY, NOTE_COUNT };
+enum { NOTE_VIGIL, NOTE_DAY9, NOTE_DOORS, NOTE_NURSERY, NOTE_DRAINS, NOTE_CLIMB, NOTE_EYE, NOTE_GIANT, NOTE_CANDLES, NOTE_FAMILY, NOTE_AWAKE, NOTE_BELL, NOTE_SLEEPER, NOTE_WARD, NOTE_STATIC, NOTE_WOMB, NOTE_CITY, NOTE_COUNT };
 void level_build(Level *L, WorldId id, int seed);
 void level_free(Level *L);
 void level_step(Level *L, float dt, Vector3 player);

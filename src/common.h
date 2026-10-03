@@ -26,15 +26,15 @@ typedef enum { FX_LAMP, FX_GLOVES, FX_BOOTS, FX_FEATHER, FX_VEIL, FX_COUNT } Eff
 
 typedef struct Pickup  { Vector3 pos; EffectId fx; bool taken, locked; } Pickup;
 // the house, the five dreams its doors open on, and the deeper ones you only reach from inside those
-typedef enum { W_HUB, W_SHAFT, W_DRAINS, W_VOID, W_GARDEN, W_CHAPEL, W_WARD, W_STATIC, W_DINNER, W_WOMB, W_CITY, W_END, W_COUNT } WorldId;
+typedef enum { W_HUB, W_SHAFT, W_DRAINS, W_VOID, W_NURSERY, W_CHAPEL, W_WARD, W_STATIC, W_DINNER, W_WOMB, W_CITY, W_END, W_COUNT } WorldId;
 typedef struct Portal  { Vector3 pos; float radius; WorldId to; int needs; Color col; const char *label; } Portal;
 typedef struct Watcher { Vector3 pos, goal; float phase, stride, timer, sense; int state; bool seen; } Watcher;
 typedef struct Mote    { Vector3 pos, vel; float life; } Mote;
 typedef struct Bloom   { Vector3 pos; Color col; float size, yaw; } Bloom;   // a flower that watches you
 typedef struct Prop    { b3BodyId body; Vector3 h; TexId tex; Color tint; } Prop;
-typedef enum { USE_NOTE, USE_CANDLE, USE_LILY, USE_LINK, USE_SIT, USE_FACE } UseKind;   // USE_FACE: his face, at the bottom of everything   // USE_LINK: touch it and you are somewhere else
+typedef enum { USE_NOTE, USE_CANDLE, USE_LINK, USE_SIT, USE_FACE } UseKind;   // USE_FACE: his face, at the bottom of everything   // USE_LINK: touch it and you are somewhere else
 typedef struct Use     { Vector3 pos; int kind, arg; bool done; } Use;   // something you can press E on
-typedef struct Effigy  { int kind; Vector3 pos; float yaw, tilt, look; bool seen; } Effigy;   // a figure that stays where it was put (mostly)
+typedef struct Effigy  { int kind; Vector3 pos; float yaw, tilt, look; bool seen; float scale; } Effigy;   // a figure that stays where it was put (mostly)
 
 #define i_type Boxes,    Box
 #include <stc/vec.h>

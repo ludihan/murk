@@ -31,8 +31,7 @@ static float blackout, nextBlackout = 25, glitch;
 static float freezeT, nextFreeze = 70, phantomT = 15, stepGap, titleT;
 static int phantomLeft;
 static float sens = 0.085f;   // degrees per mouse count; [ and ] change it
-static float nextEvent = 30, eyesOpenT;
-static bool gardenCaught;
+static float nextEvent = 30;
 
 // eyes that hang in the fog at the edge of sight and are gone when you face them
 typedef struct { Vector3 pos; float life, seenT; bool on; } Lurker;
@@ -55,11 +54,11 @@ static const char *NOTES[NOTE_COUNT] = {
     [NOTE_VIGIL] = "PARISH NOTICE.\nThe vigil continues in shifts. Kneel when the bell is rung.\nDo not speak to him if he speaks. Do not let him see your faces.\nWhatever he asks for, do not wake him.",
     [NOTE_DAY9] = "Day 9.\nHe sleeps through the day now. Father A. says that is good.\nHe says the sleep is where the door is, and that every door\nin the house must be left open.",
     [NOTE_DOORS] = "I counted the doors in his room tonight. There were four.\nWhen I came back up with the candles there were five.\nI did not tell Father A. I think he already knows.",
-    [NOTE_GARDEN] = "He talked in his sleep again. He described a garden.\nHe said the flowers were all looking at him and that he\ndid not want to pick any of them.\nFather A. wrote down every word.",
+    [NOTE_NURSERY] = "He talked in his sleep again. He described his old room, but the room was enormous\nand he was very small in it, and his mother was looking for him.\nFather A. wrote down every word.",
     [NOTE_DRAINS] = "Do not go down to the drains after dark.\nBrother M. went down to see what was drinking from the water.\nWe hear him sometimes when we are quiet. Tapping.",
     [NOTE_CLIMB] = "It climbs the way you do. It has learned your hands.\nWhen you climb, it climbs. When you stop, it stops.\nDo not stop for long. The water is coming up behind it.",
     [NOTE_EYE] = "There is an eye above the steps.\nIt does not see what does not move. When it opens, be still,\nor be behind the old stones. It closes again. It always closes again.",
-    [NOTE_FLOWERS] = "The flowers are its eyes and the gardeners are its hands.\nA flower that sees you will call them to where you stood.\nKeep low. Keep to where the petals are closed.",
+    [NOTE_GIANT] = "When she comes in to see him, get under something. She sees everything on the open floor.\nDon't run. She hears the floorboards.\nAnd don't wake him. If he cries, she comes at once.",
     [NOTE_CANDLES] = "Light the three black candles down here and the grate\nover the lamp will open.\nThe one who lives in the drains is blind. It hunts by the sound of you. Walk softly. Kneel if it is close. Do not run.",
     [NOTE_FAMILY] = "To the family.\nThank you for your son. He will sleep for as long as we need him to.\nYou may visit on Sundays. Please do not bring anything that rings.\n\n- the Congregation of the Lower Church",
     [NOTE_AWAKE] = "If you are reading this then you are awake.\nYou are not supposed to be awake.\nLie back down.",
@@ -75,7 +74,9 @@ static const char *useHint;
 // the shaft: something on the wall below you that climbs when you climb, and only while you aren't looking at it
 static struct { bool on, seen; float y, lastPY, scrapeT; Vector3 pos, n; } climber;
 static float radioT, wardFollow;
-static struct { bool bang, cried, ran; float s, shown, stepT, strobeT, stare; } mom;   // the woman in the ward   // the ward's radio, and how far along the thing that follows you is
+static struct { bool bang, cried, ran; float s, shown, stepT, strobeT, stare; } mom;   // the woman in the ward
+// the nursery's mother: outside, coming in, looking, leaving, or coming for you
+static struct { int state; float t, stepT, seeT, lostT, shake, pause, cryT; Vector3 pos, face, target; int wp; bool cried, heard; } giant;   // the ward's radio, and how far along the thing that follows you is
 static struct { int phase; float t, noticed, lift; bool warned; } gaze;
 // the lower church: three tolls, then everyone kneels and he counts them
 static struct { int phase, tolls; float t, tollT, stare; bool warned; } mass;
@@ -165,6 +166,7 @@ static void load_world(WorldId id, bool wake) {
     memset(&mass, 0, sizeof mass); mass.t = frand_(18, 24);
     memset(&grey, 0, sizeof grey); grey.t = frand_(40, 70);
     memset(&dinner, 0, sizeof dinner);
+    memset(&giant, 0, sizeof giant); giant.t = frand_(26, 36);
     memset(&tallm, 0, sizeof tallm); tallm.t = frand_(50, 80); tallm.dist = 46; ringT = frand_(20, 40);
     ghost.on = id != W_HUB && ghostN[id] > 40 && dreams >= 3 && GetRandomValue(0, 3) == 0; ghost.noticed = false; ghost.t = -frand_(30, 60);
     level_build(&L, id, ++dreams);
@@ -234,7 +236,7 @@ static const char *WHISPERS[W_COUNT][4] = {
     { "don't look down.", "it climbs when you climb.", "your hands are not yours.", "it was a long way down for him too." },
     { "it can hear your heart.", "walk softly.", "something is drinking from the water.", "the walls are wet. they are always wet." },
     { "the eye was here first.", "there is no floor. there never was.", "you are falling very slowly.", "hold still and it looks past you." },
-    { "the flowers were people.", "someone planted you here.", "it is so quiet. why is it so quiet.", "don't pick anything." },
+    { "she comes in to look at him every night.", "the floor is so far down.", "everything in here is too big.", "don't wake him." },
     { "they know all the words.", "someone in the back is weeping.", "he has counted to the same number every week.", "your place in the pew is warm." },
     { "visiting hours are over.", "the radio is tuned to nothing.", "this corridor is longer than it was.", "don't stop walking." },
     { "nothing is on.", "it is so quiet you can hear the screens.", "the grey man doesn't mean any harm.", "every channel is the same channel." },
@@ -250,14 +252,12 @@ static void director(float dt) {
     if (nextEvent > 0) return;
     nextEvent = frand_(70, 120);
     int kind = GetRandomValue(0, 2);
-    if (kind == 0 || L.id != W_GARDEN || L.t < 60) {
+    (void)kind;
+    {
         if (GetRandomValue(0, 2) == 0) say(WHISPERS[L.id][GetRandomValue(0, 3)], 4.0f);
         static const Sfx AMB[] = { SFX_KNOCK, SFX_BELL, SFX_CHANT, SFX_PRAYER, SFX_HUM, SFX_CREAK, SFX_SCRAPE };
         Sfx a = AMB[GetRandomValue(0, 6)];
         play_behind(a, a == SFX_HUM || a == SFX_PRAYER ? 0.35f : 0.5f, frand_(0.85f, 1.0f));
-    } else if (L.id == W_GARDEN) {
-        eyesOpenT = 5.0f; audio_play(SFX_SWELL);
-        say("every flower opens its eyes.", 4.0f);
     }
 }
 
@@ -324,63 +324,6 @@ static bool update_gaze(float dt) {
         if (gaze.noticed >= 1.0f) { gaze.lift = 0.001f; say("it saw you.", 4); audio_play_ex(SFX_CHANT, 0.8f, 0.7f); }
     } else gaze.noticed = fmaxf(0, gaze.noticed - dt * 0.4f);
     return false;
-}
-
-// the orchard: the flowers are its eyes and the gardeners are its hands. the gardeners are blind; a flower
-// that sees you standing calls them to where you were. in the long grass, kneeling, the flowers can't see you
-static bool flower_open(int i, float t) { return eyesOpenT > 0 || (t > 25 && sinf(t * 0.4f + i * 3.1f) > 0.2f); }   // they wake up a while after you arrive
-static bool flower_has_eye(const Bloom *b, int i) { return b->yaw <= 0.5f && i % 4 == 0; }
-static void garden_update(float dt, Vector3 eye) {
-    static float spotted;
-    bool seen = false; Vector3 from = { 0 };
-    bool veil = P.fx & (1u << FX_VEIL);
-    float range = P.crouch > 0.5f ? (P.speedMeter > 0.5f && !veil ? 3.5f : 0.0f) : 11.0f;
-    for (int i = 0; i < L.blooms.size && range > 0; i++) {
-        const Bloom *b = &L.blooms.data[i];
-        if (!flower_has_eye(b, i) || !flower_open(i, L.t)) continue;
-        if (Vector3Distance(b->pos, eye) > range || !ray_clear(b->pos, eye)) continue;
-        seen = true; from = b->pos; break;
-    }
-    if (spotted < 0) spotted = fminf(0.0f, spotted + dt);   // it has just called; give them a moment
-    else spotted = seen ? spotted + dt : fmaxf(0.0f, spotted - dt);
-    if (spotted > 0.8f) {   // it calls them: the two nearest come to where you were standing
-        spotted = -3.0f;
-        play_from(SFX_PICKUP, from, 0.5f, 0.55f);
-        play_from(SFX_HUM, from, 0.35f, 0.8f);
-        for (int k = 0; k < 2; k++) {
-            Watcher *best = NULL; float bd = 1e9f;
-            for (int i = 0; i < L.watchers.size; i++) {
-                Watcher *w = &L.watchers.data[i];
-                float d = Vector3Distance(w->pos, P.pos);
-                if (w->state != 1 && d < bd) { bd = d; best = w; }
-            }
-            if (best) { best->state = 1; best->goal = (Vector3){ P.pos.x, 0, P.pos.z }; best->timer = 7; }
-        }
-    }
-    float nearest = 99;
-    int dn = dreams > 8 ? 8 : dreams;
-    for (int i = 0; i < L.watchers.size; i++) {
-        Watcher *w = &L.watchers.data[i];
-        w->phase += dt;
-        float d = Vector3Distance((Vector3){ w->pos.x, 0, w->pos.z }, (Vector3){ P.pos.x, 0, P.pos.z });
-        if (d < nearest) nearest = d;
-        if (d < 3.2f && (P.noise > 0.15f || P.crouch < 0.5f)) { w->state = 2; w->goal = (Vector3){ P.pos.x, 0, P.pos.z }; w->timer = 3; }   // close enough to feel you
-        if (d < 1.1f) gardenCaught = true;
-        Vector3 to = Vector3Subtract(w->goal, w->pos); to.y = 0;
-        float len = Vector3Length(to), sp = w->state == 0 ? 0.7f : w->state == 1 ? 1.8f + 0.1f * dn : 2.5f + 0.1f * dn;
-        if (len < 0.5f) {
-            if (w->state > 0) { w->timer -= dt; if (w->timer <= 0) w->state = 0; }
-            if (w->state == 0) {
-                w->goal = (Vector3){ Clamp(w->pos.x + frand_(-14, 14), -46, 46), 0, Clamp(w->pos.z + frand_(-14, 14), -46, 46) };
-                if (fabsf(w->goal.x) < 16 && fabsf(w->goal.z) < 16) w->goal.x = w->goal.x < 0 ? -17 : 17;   // not into the pond
-            }
-        } else {
-            float step = fminf(len, sp * dt);
-            w->pos = Vector3Add(w->pos, Vector3Scale(to, step / len));
-            w->stride += step * 2.2f;
-        }
-    }
-    L.nearest = nearest;
 }
 
 static const Effigy *priest_of(void) {
@@ -535,6 +478,79 @@ static bool grey_update(float dt) {
     return false;
 }
 
+static bool giant_walk(Vector3 to, float speed, float dt) {
+    Vector3 d = Vector3Subtract(to, giant.pos); d.y = 0;
+    float len = Vector3Length(d);
+    if (len < 0.3f) return true;
+    giant.face = Vector3Scale(d, 1.0f / len);
+    giant.pos = Vector3Add(giant.pos, Vector3Scale(giant.face, fminf(len, speed * dt)));
+    giant.stepT -= dt;
+    if (giant.stepT <= 0) {   // every step shakes the floor
+        giant.stepT = speed > 3 ? 0.65f : 1.35f;
+        float near = Vector3Distance(giant.pos, P.pos);
+        play_from(SFX_GIANT, giant.pos, 1.0f, frand_(0.85f, 1.0f));
+        giant.shake = fmaxf(giant.shake, Clamp(1.2f - near / 30.0f, 0.15f, 1.0f));
+    }
+    return false;
+}
+static bool nursery_update(float dt, Vector3 eye) {
+    if (L.id != W_NURSERY) return false;
+    static const Vector3 WP[] = { { 2, 0, -11 }, { -4, 0, -4 }, { -14, 0, -4 }, { -17, 0, 4 }, { -6, 0, 8 }, { 4, 0, 10 }, { 12, 0, 4 }, { 18, 0, -6 }, { 6, 0, -2 }, { -2, 0, 14 } };
+    const int NW = (int)(sizeof WP / sizeof *WP);
+    giant.shake = fmaxf(0, giant.shake - dt * 1.6f);
+    bool took = false;
+    for (int i = 0; i < L.pickups.size; i++) if (L.pickups.data[i].taken) took = true;
+    if (took && !giant.cried) {   // you took it off his pillow, and he woke
+        giant.cried = true; giant.cryT = 0;
+        if (giant.state == 0) { giant.state = 1; giant.pos = L.bed; audio_play_ex(SFX_DOOR, 1.0f, 0.4f); }
+        giant.heard = true;
+    }
+    if (giant.cried) { giant.cryT -= dt; if (giant.cryT <= 0) { giant.cryT = 2.6f; play_from(SFX_CRY, (Vector3){ -14, 6, -13 }, 1.0f, 0.55f); } }
+    Vector3 chest = { P.pos.x, P.pos.y + 1.1f, P.pos.z }, head = { giant.pos.x, 14.5f, giant.pos.z };
+    float d = Vector3Distance((Vector3){ giant.pos.x, 0, giant.pos.z }, (Vector3){ P.pos.x, 0, P.pos.z });
+    bool clear = giant.state > 0 && ray_clear(head, chest);
+    switch (giant.state) {
+    case 0:   // outside: first you hear her coming along the landing
+        giant.t -= dt;
+        if (giant.t < 7 && giant.t + dt >= 7) say("something very heavy is coming along the landing.", 4);
+        if (giant.t < 7) { giant.stepT -= dt; if (giant.stepT <= 0) { giant.stepT = 1.4f; play_from(SFX_GIANT, L.bed, 0.4f + 0.08f * (7 - giant.t), 0.9f); } }
+        if (giant.t <= 0) { giant.state = 1; giant.pos = L.bed; giant.face = (Vector3){ 0, 0, 1 }; audio_play_ex(SFX_DOOR, 1.0f, 0.4f); }
+        return false;
+    case 1:   // coming in
+        if (giant_walk((Vector3){ 2.6f, 0, -13 }, 1.6f, dt)) { giant.state = giant.heard ? 4 : 2; giant.t = frand_(35, 50); giant.wp = GetRandomValue(0, NW - 1); }
+        break;
+    case 2:   // looking: from place to place, stopping to turn her head
+        giant.t -= dt;
+        if (giant.pause > 0) {
+            giant.pause -= dt;
+            float a = sinf(giant.pause * 0.8f) * 0.9f;
+            giant.face = Vector3Normalize((Vector3){ giant.face.x * cosf(a * dt) - giant.face.z * sinf(a * dt), 0, giant.face.x * sinf(a * dt) + giant.face.z * cosf(a * dt) });
+        } else if (giant_walk(WP[giant.wp], 1.5f, dt)) { giant.pause = frand_(2, 4); giant.wp = (giant.wp + 1 + GetRandomValue(0, NW - 2)) % NW; }
+        if (giant.t <= 0) giant.state = 3;
+        break;
+    case 3:   // leaving
+        if (giant_walk((Vector3){ 2.6f, 0, -17 }, 1.6f, dt)) { giant.state = 0; giant.t = frand_(35, 55); giant.pos = L.bed; giant.seeT = 0; }
+        break;
+    case 4:   // she knows where you are
+        if (clear) { giant.target = P.pos; giant.lostT = 0; } else giant.lostT += dt;
+        giant_walk(giant.target, 5.2f, dt);
+        if (giant.lostT > 5) { giant.state = 2; giant.t = frand_(20, 30); giant.pause = 3; giant.heard = false; }
+        if (d < 3.2f && clear) return true;
+        return false;
+    }
+    // what she notices: anything out on the open floor in front of her, or anyone running
+    Vector3 to = Vector3Normalize((Vector3){ P.pos.x - giant.pos.x, 0, P.pos.z - giant.pos.z });
+    bool inView = d < 30 && Vector3DotProduct(to, giant.face) > 0.35f && clear;
+    giant.seeT = inView ? giant.seeT + dt * (P.crouch > 0.5f ? 0.5f : 1.0f) : fmaxf(0, giant.seeT - dt * 0.5f);
+    if (P.noise > 0.6f && d < 24) giant.heard = true;
+    if (giant.seeT > 0.7f || giant.heard) {
+        giant.state = 4; giant.target = P.pos; giant.lostT = 0; giant.heard = true;
+        madness = 1; play_from(SFX_GIANT, giant.pos, 1.0f, 0.6f); giant.shake = 1;
+    }
+    (void)eye;
+    return false;
+}
+
 static bool dinner_update(float dt, Vector3 eye, Vector3 fwd) {
     if (L.id != W_DINNER) return false;
     if (dinner.sitT > 0) {   // every head at the table turns to you. then the meal begins
@@ -655,7 +671,6 @@ static void scare_update(float dt) {
             audio_play(SFX_KNOCK);
         }
     }
-    if (L.id == W_GARDEN) garden_update(dt, eye);
     director(dt);
     // ---- your own path, walked by someone else
     recT += dt;
@@ -778,7 +793,7 @@ static void draw_scene(Camera3D cam, float time) {
     for (int i = 0; i < L.watchers.size; i++) {
         const Watcher *w = &L.watchers.data[i];
         if (Vector3Distance(eye, w->pos) > cull + 2) continue;
-        Fig f = { (L.id == W_DRAINS || L.id == W_WOMB) ? FIG_CRAWLER : L.creepers ? FIG_GARDENER : FIG_PENITENT, w->pos,
+        Fig f = { (L.id == W_DRAINS || L.id == W_WOMB) ? FIG_CRAWLER : FIG_PENITENT, w->pos,
                   atan2f(P.pos.x - w->pos.x, -(P.pos.z - w->pos.z)), w->stride, eye, 0.7f, sinf(i * 1.7f) * 0.35f, w->phase, { 0, 0, 1 }, { 0 }, 0 };
         if (w->state < 0) {   // asleep on the ceiling, spread flat
             f.kind = FIG_CLIMBER; f.pos.y = 3.12f; f.wallN = (Vector3){ 0, -1, 0 }; f.yaw = w->phase; f.stride = 0;
@@ -794,14 +809,6 @@ static void draw_scene(Camera3D cam, float time) {
             gfx_box((Vector3){ u->pos.x, u->pos.y + 0.004f, u->pos.z }, (Vector3){ 0.13f, 0.004f, 0.18f }, TEX_SKIN, u->done ? (Color){ 150, 140, 120, 255 } : (Color){ 235, 225, 196, 255 }, 1.0f);
             for (int k = 0; k < 5; k++)   // lines of handwriting
                 gfx_box((Vector3){ u->pos.x - 0.01f * (k & 1), u->pos.y + 0.009f, u->pos.z - 0.12f + k * 0.055f }, (Vector3){ 0.09f - 0.02f * (k == 4), 0.001f, 0.006f }, TEX_CONCRETE, (Color){ 40, 30, 28, 255 }, 1.0f);
-        } else if (u->kind == USE_LILY && !u->done) {   // a white lily, the only white thing out here
-            gfx_limb(u->pos, (Vector3){ u->pos.x, u->pos.y + 0.7f, u->pos.z }, 0.015f, 0.01f, TEX_GRASS, (Color){ 80, 120, 90, 255 });
-            Vector3 c = { u->pos.x, u->pos.y + 0.74f, u->pos.z };
-            for (int k = 0; k < 6; k++) {
-                float a = k * 1.0472f + i;
-                Vector3 d = { sinf(a), 0.55f, cosf(a) }, pp = { cosf(a), 0, -sinf(a) };
-                gfx_ellipsoid(Vector3Add(c, Vector3Scale(d, 0.09f)), Vector3Scale(d, 0.1f), Vector3Scale(pp, 0.035f), (Vector3){ 0, 0.01f, 0 }, TEX_SKIN, (Color){ 250, 248, 240, 255 });
-            }
         } else if (u->kind == USE_CANDLE) {
             gfx_box((Vector3){ u->pos.x, u->pos.y + 0.2f, u->pos.z }, (Vector3){ 0.05f, 0.2f, 0.05f }, TEX_SKIN, (Color){ 36, 30, 30, 255 }, 1.0f);
             gfx_box((Vector3){ u->pos.x, u->pos.y + 0.003f, u->pos.z }, (Vector3){ 0.25f, 0.003f, 0.25f }, TEX_SLUDGE, (Color){ 40, 34, 30, 255 }, 1.0f);
@@ -811,7 +818,7 @@ static void draw_scene(Camera3D cam, float time) {
         const Effigy *e = &L.effigies.data[i];
         Vector3 ep = wp(e->pos, eye);
         if (Vector3Distance(eye, ep) > cull + 2) continue;
-        Fig f = { (FigKind)e->kind, ep, e->yaw, 0, eye, e->look * 0.9f, e->tilt, time + i, { 0, 0, 1 }, { 0 }, 0 };
+        Fig f = { (FigKind)e->kind, ep, e->yaw, 0, eye, e->look * 0.9f, e->tilt, time + i, { 0, 0, 1 }, { 0 }, e->scale };
         if (L.id == W_CHAPEL) {   // the congregation stands, and kneels on the third bell; the priest only looks up to count
             bool taken = veil_taken();
             if (f.kind != FIG_PRIEST) { f.kind = mass.phase == 2 ? FIG_KNEELER : FIG_PENITENT; f.look = taken ? 1.0f : e->look * 0.5f; }
@@ -829,6 +836,28 @@ static void draw_scene(Camera3D cam, float time) {
         Vector3 hp = wp(dinner.host, eye); hp.y = 0;
         Fig f = { FIG_GARDENER, hp, atan2f(eye.x - hp.x, -(eye.z - hp.z)), dinner.hostStride, eye, 1.0f, 0.2f, time, { 0, 0, 1 }, (Color){ 70, 30, 30, 255 }, 0 };
         figure_draw(&f);
+    }
+    if (L.id == W_NURSERY) {
+        if (giant.state > 0) {   // sixteen metres of her, her head bent over against the ceiling
+            float jt = floorf(time * 5.0f) / 5.0f;
+            Fig f = { FIG_MOTHER, giant.pos, atan2f(giant.face.x, -giant.face.z), 0, eye, giant.state == 4 ? 0.8f : 0.2f, 1.1f + 0.1f * sinf(jt * 7.0f), jt, { 0, 0, 1 }, { 0 }, 8.0f };
+            gfx_set_light(0.55f, 0, 0.3f, 6, 0);   // pale in the moonlight, however dark the room
+            figure_draw(&f);
+            gfx_set_light(L.ambient, lampOn > 0.5f ? 2.6f : 0.5f, lampOn > 0.5f ? 0.42f : 0.32f, lampOn > 0.5f ? 11.0f : 3.5f, lampOn > 0.5f ? 0.3f : 0.45f);
+        }
+        float rock = sinf(time * 1.1f) * 0.16f;   // the rocking chair, rocking with nobody in it
+        Quaternion q = QuaternionFromAxisAngle((Vector3){ 1, 0, 0 }, rock);
+        Vector3 c = L.heart;
+        gfx_box_rot((Vector3){ c.x, 3.2f, c.z }, (Vector3){ 2.2f, 0.25f, 2.0f }, q, TEX_WOOD, (Color){ 110, 80, 60, 255 }, 3.0f);
+        gfx_box_rot(Vector3Add((Vector3){ c.x, 6.4f, c.z }, Vector3RotateByQuaternion((Vector3){ 0, 0, 1.9f }, q)), (Vector3){ 2.2f, 3.0f, 0.25f }, q, TEX_WOOD, (Color){ 110, 80, 60, 255 }, 3.0f);
+        for (int s = -1; s <= 1; s += 2) gfx_box_rot((Vector3){ c.x + s * 1.9f, 0.9f, c.z }, (Vector3){ 0.18f, 0.18f, 2.6f }, q, TEX_WOOD, (Color){ 90, 64, 48, 255 }, 3.0f);
+        Vector3 hub = { -14, 16.5f, -13 };   // the mobile over the crib, turning
+        for (int k = 0; k < 5; k++) {
+            float a = time * 0.25f + k * 1.2566f;
+            Vector3 hp = { hub.x + sinf(a) * 2.2f, 13.0f + (k % 2) * 0.8f, hub.z + cosf(a) * 2.2f };
+            gfx_limb((Vector3){ hp.x, 24.0f, hp.z }, hp, 0.02f, 0.02f, TEX_CLOTH, (Color){ 40, 40, 40, 255 });
+            gfx_ellipsoid((Vector3){ hp.x, hp.y - 0.5f, hp.z }, (Vector3){ 0.5f, 0, 0 }, (Vector3){ 0, 0.5f, 0 }, (Vector3){ 0, 0, 0.12f }, TEX_SKIN, k % 2 ? (Color){ 200, 190, 140, 255 } : (Color){ 150, 160, 190, 255 });
+        }
     }
     if (L.id == W_CITY && tallm.on) {
         Vector3 hp = wp(tallm.pos, eye);
@@ -872,16 +901,6 @@ static void draw_scene(Camera3D cam, float time) {
         Fig f = { FIG_PENITENT, { k->pos.x, k->pos.y - 2.0f, k->pos.z }, atan2f(eye.x - k->pos.x, -(eye.z - k->pos.z)), 0, eye, 0.9f, 0.5f * sinf(i * 2.3f), time, { 0, 0, 1 }, (Color){ 12, 10, 12, 255 }, 0 };
         figure_draw(&f);
     }
-    for (int i = 0; i < L.blooms.size; i++) {   // some of the flowers have an eye in them, and it is turned toward you
-        const Bloom *b = &L.blooms.data[i];
-        if (!flower_has_eye(b, i) || !flower_open(i, L.t)) continue;
-        if (Vector3Distance(b->pos, eye) > 30) continue;
-        float s = b->size;
-        Vector3 to = Vector3Normalize(Vector3Subtract(eye, b->pos)), r = Vector3Normalize(Vector3CrossProduct(to, (Vector3){ 0, 1, 0 })), u = Vector3CrossProduct(r, to);
-        Vector3 ec = Vector3Add(b->pos, Vector3Scale(to, s * 0.12f));
-        gfx_ellipsoid(ec, Vector3Scale(r, s * 0.2f), Vector3Scale(u, s * 0.2f), Vector3Scale(to, s * 0.14f), TEX_SKIN, (Color){ 250, 244, 236, 255 });
-        gfx_ellipsoid(Vector3Add(ec, Vector3Scale(to, s * 0.13f)), Vector3Scale(r, s * 0.07f), Vector3Scale(u, s * 0.09f), Vector3Scale(to, s * 0.02f), TEX_CONCRETE, (Color){ 4, 2, 3, 255 });
-    }
     for (int i = 0; i < L.pickups.size; i++) {   // a grate over anything you have not earned yet
         const Pickup *pk = &L.pickups.data[i];
         if (pk->taken || !pk->locked) continue;
@@ -924,18 +943,6 @@ static void draw_scene(Camera3D cam, float time) {
         if (L.rain) gfx_glow(m->pos, (Vector3){ 0.005f, 0.16f, 0.005f }, scale_col(L.moteCol, 0.5f));
         else if (!L.moteGlow) gfx_glow(m->pos, (Vector3){ sz, sz, sz }, scale_col(L.moteCol, a));
     }
-    // the flowers that watch
-    for (int i = 0; i < L.blooms.size; i++) {
-        const Bloom *b = &L.blooms.data[i];
-        float d = Vector3Distance(b->pos, eye);
-        if (d > 55) continue;
-        if (b->yaw > 0.5f) { gfx_glow(b->pos, (Vector3){ b->size, b->size, b->size }, b->col); continue; }
-        float s = b->size, br = 0.85f + 0.15f * sinf(time * 1.5f + i);
-        Color pc = scale_col(b->col, br);
-        gfx_glow(b->pos, (Vector3){ s, 0.025f, s * 0.38f }, pc);
-        gfx_glow(b->pos, (Vector3){ s * 0.38f, 0.025f, s }, pc);
-        gfx_glow(b->pos, (Vector3){ s * 0.27f, 0.04f, s * 0.27f }, (Color){ 255, 230, 160, 255 });
-    }
     for (int i = 0; i < L.uses.size; i++) {
         const Use *u = &L.uses.data[i];
         Vector3 up = wp(u->pos, eye);
@@ -954,7 +961,6 @@ static void draw_scene(Camera3D cam, float time) {
     for (int i = 0; i < L.uses.size; i++) {
         const Use *u = &L.uses.data[i];
         if (u->kind == USE_CANDLE && u->done) gfx_halo((Vector3){ u->pos.x, u->pos.y + 0.47f, u->pos.z }, 1.6f + sinf(time * 9 + i) * 0.1f, (Color){ 255, 150, 70, 255 }, 0.5f);
-        if (u->kind == USE_LILY && !u->done) gfx_halo((Vector3){ u->pos.x, u->pos.y + 0.78f, u->pos.z }, 0.9f, (Color){ 220, 225, 235, 255 }, 0.3f);
     }
     for (int i = 0; i < L.boxes.size; i++) {
         const Box *b = &L.boxes.data[i];
@@ -971,11 +977,6 @@ static void draw_scene(Camera3D cam, float time) {
     for (int i = 0; i < L.pickups.size; i++) {
         const Pickup *pk = &L.pickups.data[i];
         if (!pk->taken) gfx_halo(pk->pos, 2.6f + sinf(time * 3) * 0.3f, fx_color(pk->fx), 0.9f);
-    }
-    for (int i = 0; i < L.blooms.size; i++) {
-        const Bloom *b = &L.blooms.data[i];
-        if (Vector3Distance(b->pos, eye) > 45) continue;
-        gfx_halo(b->pos, b->yaw > 0.5f ? 1.0f : b->size * 3.5f, b->col, b->yaw > 0.5f ? 0.55f : 0.4f);
     }
     if (L.moteGlow) for (int i = 0; i < L.motes.size; i++) {
         const Mote *m = &L.motes.data[i];
@@ -1150,7 +1151,7 @@ static const char *END_LINES_KNOWN[] = {
 
 // touch the wrong thing and you are somewhere else: any dream but this one, the shallow ones or the deep
 static void link_random(void) {
-    static const WorldId DEST[] = { W_SHAFT, W_DRAINS, W_VOID, W_GARDEN, W_CHAPEL, W_WARD, W_STATIC, W_DINNER, W_WOMB, W_CITY };
+    static const WorldId DEST[] = { W_SHAFT, W_DRAINS, W_VOID, W_NURSERY, W_CHAPEL, W_WARD, W_STATIC, W_DINNER, W_WOMB, W_CITY };
     int n = (int)(sizeof DEST / sizeof *DEST);
     WorldId to;
     do to = DEST[GetRandomValue(0, n - 1)]; while (to == L.id);
@@ -1180,18 +1181,6 @@ static void use_thing(Use *u) {
         return;
     }
     u->done = true;
-    if (u->kind == USE_LILY) {   // you were told not to pick anything
-        eyesOpenT = 4.5f;
-        audio_play_ex(SFX_SWELL, 0.6f, 1.1f);
-        int got = 0, all = 0;
-        for (int i = 0; i < L.uses.size; i++) if (L.uses.data[i].kind == USE_LILY) { all++; got += L.uses.data[i].done; }
-        if (got < all) say("every flower opens its eyes.", 3);
-        else {
-            for (int i = 0; i < L.pickups.size; i++) L.pickups.data[i].locked = false;
-            audio_play_ex(SFX_BELL, 0.5f, 0.9f);
-            say("every flower opens its eyes. up on the mound, something comes loose.", 5);
-        }
-    }
     if (u->kind == USE_CANDLE) {
         audio_play_ex(SFX_GRAB, 0.4f, 0.6f); play_from(SFX_PRAYER, u->pos, 0.4f, 0.9f);
         P.noise = 1.0f;   // the match is loud. it heard that
@@ -1311,7 +1300,7 @@ static void frame(void) {
                         if (dot > best) { best = dot; near = u; }
                     }
                 }
-                static const char *HINT[] = { [USE_NOTE] = "E  read", [USE_CANDLE] = "E  light it", [USE_LILY] = "E  pick it", [USE_LINK] = "E  touch the screen", [USE_SIT] = "E  sit down", [USE_FACE] = "E  touch his face" };
+                static const char *HINT[] = { [USE_NOTE] = "E  read", [USE_CANDLE] = "E  light it", [USE_LINK] = "E  touch the screen", [USE_SIT] = "E  sit down", [USE_FACE] = "E  touch his face" };
                 useHint = near ? HINT[near->kind] : NULL;
                 if (reading >= 0 && (IsKeyPressed(KEY_E) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || P.speedMeter > 4.5f)) reading = -1;
                 else if (near && IsKeyPressed(KEY_E)) {
@@ -1322,7 +1311,7 @@ static void frame(void) {
                 for (int i = 0; i < L.pickups.size; i++) {
                     Pickup *pk = &L.pickups.data[i];
                     if (!pk->taken && pk->locked && Vector3Distance(Vector3Add(P.pos, (Vector3){ 0, 1, 0 }), pk->pos) < 1.6f) {
-                        if (msgT < 0.5f) say(L.id == W_GARDEN ? "it is caged in. somewhere out there, three white lilies." : "there is a grate over it. somewhere, three black candles.", 3);
+                        if (msgT < 0.5f) say("there is a grate over it. somewhere, three black candles.", 3);
                         continue;
                     }
                     if (!pk->taken && Vector3Distance(Vector3Add(P.pos, (Vector3){ 0, 1, 0 }), pk->pos) < 1.3f) {
@@ -1376,6 +1365,7 @@ static void frame(void) {
                     }
                 }
                 if (P.slipped) { P.slipped = false; audio_play(SFX_KNOCK); }
+                if (nursery_update(frameDt, player_eye(&P))) caught(FIG_MOTHER, (Color){ 0 }, 8.0f, "she found you.", false);
                 if (city_update(frameDt, player_eye(&P), fwd)) caught(FIG_TALL, (Color){ 0 }, 2.7f, "he was always that tall.", false);
                 if (dinner_update(frameDt, player_eye(&P), fwd)) caught(FIG_GARDENER, (Color){ 70, 30, 30, 255 }, 0, "it is rude to leave the table.", false);
                 if (grey_update(frameDt)) caught(FIG_PENITENT, (Color){ 104, 104, 104, 255 }, 0, "you forget something.", true);
@@ -1383,7 +1373,6 @@ static void frame(void) {
                 if (update_mass(frameDt, player_eye(&P))) caught(FIG_PRIEST, (Color){ 0 }, 0, "he counted one too many.", false);
                 if (update_climber(player_eye(&P), fwd)) caught(FIG_CRAWLER, (Color){ 0 }, 0, "it had your hands.", false);
                 scare_update(frameDt);
-                if (gardenCaught) { gardenCaught = false; caught(FIG_GARDENER, (Color){ 0 }, 0, "it only wanted to hold you.", false); }
                 if (dead) go(W_HUB, true);
             }
 
@@ -1395,7 +1384,6 @@ static void frame(void) {
             }
 
             if (L.sky.eye && !tr.on && update_gaze(frameDt)) go(W_HUB, true);
-            if (eyesOpenT > 0) eyesOpenT -= frameDt;
             // mood
             float m = 0.04f;
             if (gaze.phase == 2) m += 0.25f + gaze.noticed * 0.7f;
@@ -1410,8 +1398,8 @@ static void frame(void) {
             if (m > 1) m = 1;
             madness += (m - madness) * fminf(1, frameDt * 3);
             tension = madness;
-            float tone = L.id == W_HUB ? 1.0f : L.id == W_SHAFT ? 0.75f : L.id == W_DRAINS ? 0.9f : L.id == W_VOID ? 1.4f : L.id == W_GARDEN ? 1.15f : L.id == W_CHAPEL ? 0.8f : L.id == W_WARD ? 1.25f : L.id == W_STATIC ? 0.6f : L.id == W_DINNER ? 0.85f : L.id == W_WOMB ? 0.55f : L.id == W_CITY ? 0.7f : L.id == W_END ? 2.0f : 1.0f;
-            float mus = L.id == W_DINNER ? 0.6f : L.id == W_GARDEN ? 0.8f : L.id == W_VOID ? 0.5f : L.id == W_END ? 0.8f : L.id == W_HUB ? 0.4f : 0.0f;
+            float tone = L.id == W_HUB ? 1.0f : L.id == W_SHAFT ? 0.75f : L.id == W_DRAINS ? 0.9f : L.id == W_VOID ? 1.4f : L.id == W_NURSERY ? 1.15f : L.id == W_CHAPEL ? 0.8f : L.id == W_WARD ? 1.25f : L.id == W_STATIC ? 0.6f : L.id == W_DINNER ? 0.85f : L.id == W_NURSERY ? 0.7f : L.id == W_WOMB ? 0.55f : L.id == W_CITY ? 0.7f : L.id == W_END ? 2.0f : 1.0f;
+            float mus = L.id == W_DINNER ? 0.6f : L.id == W_NURSERY ? 0.8f : L.id == W_VOID ? 0.5f : L.id == W_END ? 0.8f : L.id == W_HUB ? 0.4f : 0.0f;
             bool home = L.id == W_HUB;   // the house: a music box in tune, a low warm hum, nothing else
             if (home) tension = madness = 0;
             if (L.id == W_WOMB) tension = L.heart.y > -50 ? fmaxf(tension, 0.65f) : 0.0f;   // the heart is everywhere down here, until it stops
@@ -1465,6 +1453,7 @@ static void frame(void) {
         } else {
             Vector3 eye = player_eye(&P), fwd = player_forward(&P);
             Camera3D cam = { 0 };
+            if (giant.shake > 0 && L.id == W_NURSERY) eye.y += sinf(time * 47.0f) * 0.05f * giant.shake;   // the floor shakes under her
             cam.position = eye;
             cam.target = Vector3Add(eye, fwd);
             cam.up = Vector3RotateByAxisAngle((Vector3){ 0, 1, 0 }, fwd, P.roll * DEG2RAD);
