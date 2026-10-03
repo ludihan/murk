@@ -14,6 +14,8 @@ typedef enum {
     FIG_COCOON,     // someone wrapped up and hung from the ceiling by a cord. the face presses through
     FIG_TALL,       // a thin man in a dark suit, much too tall, with a face like an egg
     FIG_MOTHER,     // a woman in a stained nightgown, head bent too far over, hair hanging over her face
+    FIG_HAND,       // a forearm and hand coming up out of something, fingers slowly closing
+    FIG_FACE,       // a face in a wall, eyes following you, mouth working
     FIG_COUNT
 } FigKind;
 

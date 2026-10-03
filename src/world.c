@@ -438,6 +438,19 @@ static void build_shaft(Level *L, int seed) {
         wall_box(L, w, 0.0f, sMid, cur, y1, 0.25f, TEX_RUST, rust, F_GRIP);
     }
     float top = yk[LEVELS], STEP = 4.5f;
+    // people hung down the middle of the shaft on long ropes, turning slowly
+    for (int i = 0; i < 6; i++) {
+        float hx = frand(-W + 1.8f, W - 1.8f), hz = frand(-W + 1.8f, W - 1.8f), hy = frand(9, top - 4);
+        add_box(L, (Vector3){ hx, (hy + TOP) / 2, hz }, (Vector3){ 0.02f, (TOP - hy) / 2, 0.02f }, TEX_CLOTH, (Color){ 60, 50, 40, 255 }, 1.0f, F_NOCOLLIDE);
+        add_effigy(L, FIG_COCOON, (Vector3){ hx, hy, hz }, frand(0, 6.28f), 0);
+    }
+    // and faces in the walls, here and there, that watch you climb past
+    static const Vector3 INW[4] = { { 0, 0, 1 }, { -1, 0, 0 }, { 0, 0, -1 }, { 1, 0, 0 } };
+    for (int i = 0; i < 10; i++) {
+        int fw = GetRandomValue(0, 3);
+        Vector3 fp = wall_pt(fw, frand(0.8f, 2 * W - 0.8f), frand(3, top), 0.08f);
+        add_effigy(L, FIG_FACE, fp, atan2f(INW[fw].x, -INW[fw].z), 0);
+    }
     // the very top: a landing with the effect on a plinth
     int w = (LEVELS + 1) % 4;
     wall_box(L, w, 0.0f, sEnd, top + STEP - 0.4f, top + STEP, 4.0f, TEX_FLESH, (Color){ 190, 160, 160, 255 }, 0);
@@ -558,12 +571,12 @@ static float support(float hx, float hz, float dx, float dz) { return hx * fabsf
 static void build_void(Level *L, int seed) {
     L->ambient = 0.75f;
     L->name = "THE STEPS";
-    L->fog = (Color){ 52, 20, 70, 255 };
-    L->fogDensity = 0.024f;
-    L->light = 1.35f;
-    L->sky = (Sky){ true, { 6, 2, 22, 255 }, { 52, 20, 70, 255 }, { 52, 20, 70, 255 }, 1.0f, false, { 0, 0, 0, 0 }, { 0, 0, 0 }, { 80, 255, 190, 255 }, 1.0f, true, 0.7f };
-    L->gradeLo = (Color){ 116, 118, 160, 255 }; L->gradeHi = (Color){ 160, 124, 138, 255 };
-    L->moteCol = (Color){ 200, 150, 255, 255 }; L->moteGlow = true;
+    L->fog = (Color){ 18, 6, 14, 255 };
+    L->fogDensity = 0.028f;
+    L->light = 1.1f;
+    L->sky = (Sky){ true, { 2, 0, 3, 255 }, { 18, 6, 14, 255 }, { 18, 6, 14, 255 }, 0.25f, false, { 0, 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0, 0 }, 0.0f, true, 0.7f };
+    L->gradeLo = (Color){ 120, 112, 128, 255 }; L->gradeHi = (Color){ 158, 120, 116, 255 };
+    L->moteCol = (Color){ 140, 60, 50, 255 }; L->moteGlow = true;
     L->killY = -35;
     SetRandomSeed(seed * 104729 + 7);
     const Color tint = { 150, 130, 170, 255 };
@@ -658,7 +671,7 @@ static void build_void(Level *L, int seed) {
                 add_box(L, (Vector3){ c.x + ex * nh * 0.5f, c.y + 1.4f, c.z + ez * nh * 0.5f }, (Vector3){ 0.45f, 1.4f, 0.45f }, TEX_CONCRETE, (Color){ 110, 96, 120, 255 }, 1.5f, 0);
             }
             {   // a glowing seam around the rim: you can see where the edge is
-                static const Color TR[3] = { { 90, 240, 255, 255 }, { 255, 90, 200, 255 }, { 190, 150, 255, 255 } };
+                static const Color TR[3] = { { 120, 20, 20, 255 }, { 90, 14, 18, 255 }, { 140, 40, 30, 255 } };
                 Color tc = TR[i % 3];
                 add_box(L, (Vector3){ c.x, c.y + 0.015f, c.z - nh + 0.08f }, (Vector3){ nh, 0.015f, 0.06f }, TEX_CONCRETE, tc, 1.0f, F_EMIT | F_NOCOLLIDE);
                 add_box(L, (Vector3){ c.x, c.y + 0.015f, c.z + nh - 0.08f }, (Vector3){ nh, 0.015f, 0.06f }, TEX_CONCRETE, tc, 1.0f, F_EMIT | F_NOCOLLIDE);
@@ -671,6 +684,13 @@ static void build_void(Level *L, int seed) {
         // spires hanging under it, unreachable decoration
         add_box(L, (Vector3){ c.x, c.y - 4.0f, c.z }, (Vector3){ fmaxf(nhx, nhz) * 0.25f, 3.2f, fmaxf(nhx, nhz) * 0.25f }, TEX_CONCRETE, (Color){ 90, 70, 110, 255 }, 2.0f, F_NOCOLLIDE);
         p = c; phx = nhx; phz = nhz;
+        // and every few steps, an arm the size of a tower rising out of the nothing beside you
+        if (i % 4 == 2) {
+            float side = GetRandomValue(0, 1) ? 1.0f : -1.0f, off = frand(6, 10);
+            Vector3 hp = { c.x - dz * off * side, c.y - 10.0f, c.z + dx * off * side };
+            add_effigy(L, FIG_HAND, hp, atan2f(c.x - hp.x, -(c.z - hp.z)), 0);
+            L->effigies.data[L->effigies.size - 1].scale = frand(3.6f, 5.0f);
+        }
         // drifting rubble, simulated but weightless
         if (i % 2 == 0)
             add_prop(L, (Vector3){ p.x + frand(-6, 6), p.y + frand(1, 6), p.z + frand(-6, 6) }, (Vector3){ frand(0.3f, 0.9f), frand(0.3f, 0.9f), frand(0.3f, 0.9f) },

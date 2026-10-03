@@ -121,6 +121,44 @@ static void mother(const Fig *f, const Frame *F) {
     }
 }
 
+static void hand(const Fig *f, const Frame *F) {
+    Color skin = tint_or(f, (Color){ 176, 168, 160, 255 });
+    gfx_limb(W(F, 0, -1.5f, 0), W(F, 0, 0, 0), 0.2f, 0.18f, TEX_SKIN, skin);
+    gfx_limb(W(F, 0, 0, 0), W(F, 0, 2.2f, 0.1f), 0.18f, 0.14f, TEX_SKIN, skin);
+    Vector3 palm = W(F, 0, 2.55f, 0.12f);
+    gfx_ellipsoid(palm, Vector3Scale(F->r, 0.26f), Vector3Scale(F->u, 0.32f), Vector3Scale(F->f, 0.1f), TEX_SKIN, skin);
+    float close = 0.5f + 0.5f * sinf(f->t * 0.45f);
+    for (int k = 0; k < 5; k++) {   // four fingers and a thumb, curling in toward whatever is in front of it
+        bool thumb = k == 4;
+        Vector3 base = thumb ? W(F, -0.26f, 2.4f, 0.16f) : W(F, -0.18f + k * 0.12f, 2.85f, 0.12f);
+        Vector3 up = thumb ? Vector3Normalize(Vector3Add(Vector3Scale(F->r, -0.7f), F->u)) : Vector3Normalize(F->u);
+        float a = 0.25f + close * (0.6f + 0.1f * k) + 0.06f * sinf(f->t * 1.7f + k);
+        static const float LEN[3] = { 0.42f, 0.3f, 0.22f };
+        Vector3 p = base;
+        for (int s = 0; s < 3; s++) {
+            float ang = a * (s + 1);
+            Vector3 dir = Vector3Normalize(Vector3Add(Vector3Scale(up, cosf(ang)), Vector3Scale(Vector3Normalize(F->f), sinf(ang))));
+            Vector3 q = Vector3Add(p, Vector3Scale(dir, LEN[s] * (thumb ? 0.8f : 1.0f)));
+            gfx_limb(p, q, 0.06f - s * 0.012f, 0.05f - s * 0.014f, TEX_SKIN, skin);
+            p = q;
+        }
+    }
+}
+static void face(const Fig *f, const Frame *F) {
+    Color skin = tint_or(f, (Color){ 196, 184, 176, 255 });
+    Vector3 c = f->pos, n = Vector3Normalize(F->f);
+    gfx_ellipsoid(c, Vector3Scale(F->r, 0.34f), Vector3Scale(F->u, 0.46f), Vector3Scale(n, 0.16f), TEX_SKIN, skin);
+    Vector3 to = Vector3Subtract(f->lookAt, c);
+    float ex = Clamp(Vector3DotProduct(to, Vector3Normalize(F->r)) * 0.02f, -0.03f, 0.03f), ey = Clamp(Vector3DotProduct(to, Vector3Normalize(F->u)) * 0.02f, -0.025f, 0.025f);
+    for (int s = -1; s <= 1; s += 2) {   // the sockets, and in them the eyes, following you
+        Vector3 sc = W(F, s * 0.12f, 0.1f, 0.12f);
+        gfx_ellipsoid(sc, Vector3Scale(F->r, 0.075f), Vector3Scale(F->u, 0.055f), Vector3Scale(n, 0.04f), TEX_CONCRETE, (Color){ 6, 3, 3, 255 });
+        gfx_ellipsoid(add3(sc, Vector3Scale(n, 0.035f), Vector3Add(Vector3Scale(Vector3Normalize(F->r), ex), Vector3Scale(Vector3Normalize(F->u), ey))), Vector3Scale(F->r, 0.022f), Vector3Scale(F->u, 0.022f), Vector3Scale(n, 0.01f), TEX_SKIN, (Color){ 230, 226, 214, 255 });
+    }
+    float open = 0.4f + 0.6f * fabsf(sinf(f->t * 0.9f));
+    gfx_ellipsoid(W(F, 0, -0.2f, 0.12f), Vector3Scale(F->r, 0.09f), Vector3Scale(F->u, 0.03f + 0.08f * open), Vector3Scale(n, 0.04f), TEX_CONCRETE, (Color){ 6, 2, 2, 255 });
+}
+
 static void penitent(const Fig *f, const Frame *F, bool kneel) {
     Color robe = tint_or(f, (Color){ 30, 26, 28, 255 }), skin = { 150, 138, 136, 255 };
     float sway = sinf(f->t * 0.7f) * 0.02f, top = kneel ? 1.12f : 1.72f;
@@ -307,6 +345,8 @@ void figure_draw(const Fig *f) {
     case FIG_COCOON:   cocoon(f, &F); break;
     case FIG_TALL:     tall(f, &F); break;
     case FIG_MOTHER:   mother(f, &F); break;
+    case FIG_HAND:     hand(f, &F); break;
+    case FIG_FACE:     face(f, &F); break;
     case FIG_COUNT:    break;
     }
 }

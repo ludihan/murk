@@ -858,6 +858,8 @@ static void scare_update(float dt) {
         Effigy *e = &L.effigies.data[i];
         e->seen = level_seen(&L, eye, fwd, e->pos);
         if (!e->seen && Vector3Distance(e->pos, P.pos) < 10) e->look = fminf(1.0f, e->look + dt * 0.6f);
+        if (L.id == W_CHAPEL && e->kind == FIG_PENITENT && !e->seen && e->yaw < 1.0f && GetRandomValue(0, 100000) < (int)(dt * 100000 * fminf(0.02f, L.t * 0.0002f)))
+            e->yaw = 3.14159f;   // when you look again, this one is facing the back of the church. facing you
     }
     // ---- lurkers
     if (L.id != W_END && L.id != W_SHAFT) {
@@ -982,9 +984,10 @@ static void draw_scene(Camera3D cam, float time) {
         Vector3 ep = wp(e->pos, eye);
         if (Vector3Distance(eye, ep) > cull + 2) continue;
         Fig f = { (FigKind)e->kind, ep, e->yaw, 0, eye, e->look * 0.9f, e->tilt, time + i, { 0, 0, 1 }, { 0 }, e->scale };
+        if (f.kind == FIG_HAND) f.pos.y += sinf(time * 0.13f + i) * 2.0f + (gaze.phase == 2 ? gaze.noticed * 3.0f : 0);   // and higher, the more the eye has noticed
         if (L.id == W_CHAPEL) {   // the congregation stands, and kneels on the third bell; the priest only looks up to count
             bool taken = veil_taken();
-            if (f.kind != FIG_PRIEST) { f.kind = mass.phase == 2 ? FIG_KNEELER : FIG_PENITENT; f.look = taken ? 1.0f : e->look * 0.5f; }
+            if (f.kind != FIG_PRIEST) { f.kind = mass.phase == 2 ? FIG_KNEELER : FIG_PENITENT; f.look = (taken || mass.phase == 2) ? 1.0f : e->look * 0.5f; }
             else f.look = (mass.phase == 2 || taken) ? 1.0f : 0.0f;
         }
         figure_draw(&f);
@@ -1073,11 +1076,11 @@ static void draw_scene(Camera3D cam, float time) {
     }
     if (catchS.on) {   // it comes straight at your face
         static const float HY[FIG_COUNT] = { [FIG_PENITENT] = 2.02f, [FIG_KNEELER] = 1.7f, [FIG_CRAWLER] = 0.5f, [FIG_CLIMBER] = 0.5f, [FIG_GARDENER] = 3.4f, [FIG_PRIEST] = 2.25f,
-                                    [FIG_SLEEPER] = 0.6f, [FIG_SEATED] = 1.66f, [FIG_COCOON] = 0.0f, [FIG_TALL] = 2.36f, [FIG_MOTHER] = 1.8f };
+                                    [FIG_SLEEPER] = 0.6f, [FIG_SEATED] = 1.66f, [FIG_COCOON] = 0.0f, [FIG_TALL] = 2.36f, [FIG_MOTHER] = 1.8f, [FIG_HAND] = 2.55f };
         static const float HZ[FIG_COUNT] = { [FIG_PENITENT] = 0.15f, [FIG_CRAWLER] = 0.66f, [FIG_GARDENER] = 0.1f, [FIG_PRIEST] = 0.1f, [FIG_SEATED] = 0.13f, [FIG_TALL] = 0.03f, [FIG_MOTHER] = 0.07f };
         float s = catchS.scale > 0 ? catchS.scale : 1.0f, t = catchS.t;
         float k = t / 0.28f; k = k > 1 ? 1 : k * k * (3 - 2 * k);
-        static const float END[FIG_COUNT] = { [FIG_PENITENT] = 0.5f, [FIG_CRAWLER] = 0.45f, [FIG_GARDENER] = 0.7f, [FIG_PRIEST] = 1.0f, [FIG_TALL] = 0.6f, [FIG_SEATED] = 0.5f, [FIG_MOTHER] = 0.6f };
+        static const float END[FIG_COUNT] = { [FIG_PENITENT] = 0.5f, [FIG_CRAWLER] = 0.45f, [FIG_GARDENER] = 0.7f, [FIG_PRIEST] = 1.0f, [FIG_TALL] = 0.6f, [FIG_SEATED] = 0.5f, [FIG_MOTHER] = 0.6f, [FIG_HAND] = 1.6f };
         float end = END[catchS.kind] > 0 ? END[catchS.kind] : 0.55f;
         float dist = end + 2.9f * (1.0f - k);
         Vector3 f = player_forward(&P); f.y = 0; f = Vector3Normalize(f);
@@ -1451,8 +1454,10 @@ static void frame(void) {
                 }
                 level_step(&L, DT, P.pos);
             }
-            if (P.gripping && !wasGrip) audio_play(SFX_GRAB);
-            if (P.jumped) { audio_play(SFX_JUMP); P.jumped = false; }
+            static float mimicT; static Sfx mimicS;
+            if (P.gripping && !wasGrip) { audio_play(SFX_GRAB); mimicS = SFX_GRAB; mimicT = 0.8f; }
+            if (P.jumped) { audio_play(SFX_JUMP); P.jumped = false; mimicS = SFX_JUMP; mimicT = 0.8f; }
+            if (mimicT > 0) { mimicT -= frameDt; if (mimicT <= 0 && L.id == W_SHAFT && climber.on) play_from(mimicS, climber.pos, 0.9f, 0.85f); }   // below you, something does the same
             if (P.grounded) {
                 stepDist += Vector3Length((Vector3){ P.vel.x, 0, P.vel.z }) * frameDt;
                 if (stepDist > 2.0f) { stepDist = 0; audio_play_ex(SFX_STEP, 0.15f + 0.4f * P.noise, 0.85f + 0.2f * (GetRandomValue(0, 100) / 100.0f)); }
@@ -1546,7 +1551,7 @@ static void frame(void) {
                 if (tr.t >= 1.3f) tr.on = false;
             }
 
-            if (L.sky.eye && !tr.on && update_gaze(frameDt)) go(W_HUB, true);
+            if (L.sky.eye && !tr.on && !catchS.on && update_gaze(frameDt)) caught(FIG_HAND, (Color){ 0 }, 1.6f, "it saw you, and it took you up.", false);
             // mood
             float m = 0.04f;
             if (gaze.phase == 2) m += 0.25f + gaze.noticed * 0.7f;
