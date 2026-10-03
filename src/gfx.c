@@ -152,6 +152,23 @@ static Color texel(TexId id, int x, int y) {
         if (k < 0.03f || k2 < 0.025f) c = mix(c, (Color){ 140, 230, 255, 255 }, 0.8f);
         return shade(c, 0.9f + 0.2f * grain);
     }
+    case TEX_SKIN: {   // skin that has not seen the sun: grey, mottled, bruised, blue at the veins
+        float m = fbm(u + 0.2f * fbm(v, u, 3, 301), v, 4, 302);
+        Color c = mix((Color){ 120, 112, 108, 255 }, (Color){ 214, 206, 196, 255 }, m);
+        float bruise = fbm(u, v, 2, 303);
+        if (bruise > 0.6f) c = mix(c, (Color){ 96, 74, 96, 255 }, (bruise - 0.6f) * 2.5f);
+        float vein = fabsf(fbm(u, v, 5, 304) - 0.5f);
+        if (vein < 0.02f) c = mix(c, (Color){ 70, 84, 120, 255 }, 0.6f);
+        return shade(c, 0.92f + 0.16f * grain);
+    }
+    case TEX_CLOTH: {  // coarse wool, hanging in folds, stiff with something at the hem
+        float fold = 0.5f + 0.5f * sinf(u * 6.2831853f * 5.0f + 2.0f * fbm(u, v, 2, 311));
+        Color c = mix((Color){ 40, 36, 38, 255 }, (Color){ 96, 90, 88, 255 }, 0.35f * n + 0.65f * fold);
+        if (((x + y) & 3) == 0 || ((x - y) & 3) == 0) c = shade(c, 0.85f);   // weave
+        float stain = fbm(u, v, 3, 312) * (v * 1.4f);
+        if (stain > 0.55f) c = mix(c, (Color){ 30, 12, 10, 255 }, (stain - 0.55f) * 2.0f);
+        return shade(c, 0.9f + 0.2f * grain);
+    }
     default: {
         uint8_t g = (uint8_t)(rnd(x, y, 1000) * 255);
         return (Color){ g, g, g, 255 };
@@ -461,6 +478,76 @@ void gfx_box(Vector3 c, Vector3 h, TexId id, Color tint, float scale) {
     rlEnd();
     rlSetTexture(0);
     rlPopMatrix();
+}
+
+// ---------------------------------------------------------------- organic shapes for the things that live here
+static const Vector3 LIGHT = { 0.32f, 0.86f, 0.40f };
+static void lit_vertex(Vector3 p, Vector3 n, float u, float v, Color t, float k) {
+    float l = (0.42f + 0.58f * fmaxf(0.0f, Vector3DotProduct(n, LIGHT))) * k;
+    Color c = shade(t, l);
+    rlColor4ub(c.r, c.g, c.b, 255); rlTexCoord2f(u, v); rlVertex3f(p.x, p.y, p.z);
+}
+static void basis_of(Vector3 u, Vector3 *p, Vector3 *q) {
+    Vector3 ref = fabsf(u.y) < 0.9f ? (Vector3){ 0, 1, 0 } : (Vector3){ 1, 0, 0 };
+    *p = Vector3Normalize(Vector3CrossProduct(u, ref));
+    *q = Vector3CrossProduct(u, *p);
+}
+void gfx_limb(Vector3 a, Vector3 b, float ra, float rb, TexId id, Color tint) {
+    Vector3 ax = Vector3Subtract(b, a);
+    float len = Vector3Length(ax);
+    if (len < 1e-4f) return;
+    Vector3 u = Vector3Scale(ax, 1.0f / len), p, q;
+    basis_of(u, &p, &q);
+    const int N = 6;
+    rlCheckRenderBatchLimit(N * 4 * 3 + 8);
+    rlSetTexture(tex[id].id);
+    rlBegin(RL_QUADS);
+    float slope = (ra - rb) / len;
+    for (int i = 0; i < N; i++) {
+        float t0 = i * 6.2831853f / N, t1 = (i + 1) * 6.2831853f / N;
+        Vector3 d0 = Vector3Add(Vector3Scale(p, cosf(t0)), Vector3Scale(q, sinf(t0)));
+        Vector3 d1 = Vector3Add(Vector3Scale(p, cosf(t1)), Vector3Scale(q, sinf(t1)));
+        Vector3 n0 = Vector3Normalize(Vector3Add(d0, Vector3Scale(u, slope))), n1 = Vector3Normalize(Vector3Add(d1, Vector3Scale(u, slope)));
+        float u0 = (float)i / N, u1 = (float)(i + 1) / N, vl = len * 1.5f;
+        lit_vertex(Vector3Add(a, Vector3Scale(d0, ra)), n0, u0, 0, tint, 1.0f);
+        lit_vertex(Vector3Add(a, Vector3Scale(d1, ra)), n1, u1, 0, tint, 1.0f);
+        lit_vertex(Vector3Add(b, Vector3Scale(d1, rb)), n1, u1, vl, tint, 1.0f);
+        lit_vertex(Vector3Add(b, Vector3Scale(d0, rb)), n0, u0, vl, tint, 1.0f);
+    }
+    for (int e = 0; e < 2; e++) {   // end caps as fans of quads
+        Vector3 c = e ? b : a, n = e ? u : Vector3Negate(u);
+        float r = e ? rb : ra;
+        for (int i = 0; i < N; i += 2) {
+            Vector3 v[3];
+            for (int k = 0; k < 3; k++) { float t = (i + k) * 6.2831853f / N; v[k] = Vector3Add(c, Vector3Add(Vector3Scale(p, cosf(t) * r), Vector3Scale(q, sinf(t) * r))); }
+            lit_vertex(c, n, 0.5f, 0.5f, tint, 0.9f);
+            lit_vertex(v[e ? 0 : 2], n, 0, 0, tint, 0.9f);
+            lit_vertex(v[1], n, 1, 0, tint, 0.9f);
+            lit_vertex(v[e ? 2 : 0], n, 1, 1, tint, 0.9f);
+        }
+    }
+    rlEnd();
+    rlSetTexture(0);
+}
+void gfx_ellipsoid(Vector3 c, Vector3 ax, Vector3 ay, Vector3 az, TexId id, Color tint) {
+    const int RINGS = 6, SEG = 8;
+    rlCheckRenderBatchLimit(RINGS * SEG * 4 + 8);
+    rlSetTexture(tex[id].id);
+    rlBegin(RL_QUADS);
+    float lx = Vector3Length(ax), ly = Vector3Length(ay), lz = Vector3Length(az);
+    for (int r = 0; r < RINGS; r++) for (int sgi = 0; sgi < SEG; sgi++) {
+        int idx[4][2] = { { r, sgi }, { r, sgi + 1 }, { r + 1, sgi + 1 }, { r + 1, sgi } };
+        for (int k = 3; k >= 0; k--) {
+            float th = idx[k][0] * 3.14159265f / RINGS, ph = idx[k][1] * 6.2831853f / SEG;
+            float sx = sinf(th) * cosf(ph), sy = -cosf(th), sz = sinf(th) * sinf(ph);
+            Vector3 pnt = Vector3Add(c, Vector3Add(Vector3Scale(ax, sx), Vector3Add(Vector3Scale(ay, sy), Vector3Scale(az, sz))));
+            // normal of an ellipsoid: divide by the squared radii along each axis
+            Vector3 n = Vector3Normalize(Vector3Add(Vector3Scale(ax, sx / (lx * lx + 1e-6f)), Vector3Add(Vector3Scale(ay, sy / (ly * ly + 1e-6f)), Vector3Scale(az, sz / (lz * lz + 1e-6f)))));
+            lit_vertex(pnt, n, (float)idx[k][1] / SEG, (float)idx[k][0] / RINGS, tint, 1.0f);
+        }
+    }
+    rlEnd();
+    rlSetTexture(0);
 }
 
 void gfx_glow(Vector3 c, Vector3 h, Color col) {

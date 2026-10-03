@@ -12,6 +12,10 @@ void gfx_end_scene(void);
 void gfx_box(Vector3 c, Vector3 h, TexId tex, Color tint, float scale);
 void gfx_box_rot(Vector3 c, Vector3 h, Quaternion q, TexId tex, Color tint, float scale);
 void gfx_set_emit(bool on);   // flushes; while on, gfx_glow boxes are unlit and fog-free
+// a tapered six-sided limb from a (radius ra) to b (radius rb), shaded by a fixed key light
+void gfx_limb(Vector3 a, Vector3 b, float ra, float rb, TexId tex, Color tint);
+// ellipsoid with three (scaled) semi-axes
+void gfx_ellipsoid(Vector3 c, Vector3 ax, Vector3 ay, Vector3 az, TexId tex, Color tint);
 // glowing box (call between gfx_set_emit(true/false))
 void gfx_glow(Vector3 c, Vector3 h, Color col);
 // scrolling horizontal slab (sludge/water)

@@ -3,6 +3,7 @@
 #include "world.h"
 #include "player.h"
 #include "audio.h"
+#include "figure.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -239,7 +240,11 @@ static void scare_update(float dt) {
             float len = Vector3Length(d);
             if (len < nearest) nearest = len;
             float sp = L.id == W_GARDEN ? 1.1f + 0.1f * (dreams > 8 ? 8 : dreams) : 0.55f;
-            if (!seen && len > 0.01f) w->pos = Vector3Add(w->pos, Vector3Scale(d, (blackout > 0 ? sp * 3.3f : sp) * dt / len));
+            if (!seen && len > 0.01f) {
+                float step = (blackout > 0 ? sp * 3.3f : sp) * dt;
+                w->pos = Vector3Add(w->pos, Vector3Scale(d, step / len));
+                w->stride += step * 3.0f;
+            }
             if (len < 1.1f && L.id == W_GARDEN) { gardenCaught = true; say("it only wanted to hold you.", 4); }
             else if (len < 1.1f) {
                 audio_play(SFX_BREATH); flash = 1;
@@ -251,7 +256,7 @@ static void scare_update(float dt) {
     }
     director(dt);
     // ---- lurkers
-    if (L.id != W_END) {
+    if (L.id != W_END && L.id != W_SHAFT) {
         for (int i = 0; i < 3; i++) {
             Lurker *k = &lurk[i];
             if (!k->on) continue;
@@ -268,7 +273,7 @@ static void scare_update(float dt) {
                 for (int tries = 0; tries < 8; tries++) {
                     float a = (P.yaw + (GetRandomValue(0, 1) ? 1 : -1) * frand_(35, 120)) * DEG2RAD;
                     float d = (L.id == W_HUB) ? frand_(5, 9) : frand_(9, 18);
-                    Vector3 p = { eye.x + sinf(a) * d, frand_(1.6f, 2.5f), eye.z - cosf(a) * d };
+                    Vector3 p = { eye.x + sinf(a) * d, 2.0f, eye.z - cosf(a) * d };
                     if (L.id == W_VOID) p.y = eye.y + frand_(-1, 2);
                     if (!ray_clear(eye, p)) continue;
                     lurk[i] = (Lurker){ p, frand_(5, 9), 0, true };
@@ -325,16 +330,29 @@ static void draw_scene(Camera3D cam, float time) {
     }
     for (int i = 0; i < L.watchers.size; i++) {
         const Watcher *w = &L.watchers.data[i];
-        if (L.creepers) {   // a gardener: pale, too tall, and its head is a flower
-            float sway = sinf(w->phase * 1.1f) * 0.06f;
-            gfx_box((Vector3){ w->pos.x + sway, 1.5f, w->pos.z }, (Vector3){ 0.13f, 1.5f, 0.1f }, TEX_FLESH, (Color){ 215, 200, 210, 255 }, 1.0f);
-            gfx_box((Vector3){ w->pos.x - 0.25f + sway, 1.8f, w->pos.z }, (Vector3){ 0.04f, 1.1f, 0.04f }, TEX_FLESH, (Color){ 200, 185, 195, 255 }, 1.0f);
-            gfx_box((Vector3){ w->pos.x + 0.25f + sway, 1.8f, w->pos.z }, (Vector3){ 0.04f, 1.1f, 0.04f }, TEX_FLESH, (Color){ 200, 185, 195, 255 }, 1.0f);
-            continue;
-        }
-        Vector3 c = { w->pos.x + sinf(w->phase * 1.3f) * 0.04f, 1.45f, w->pos.z };
-        gfx_box(c, (Vector3){ 0.2f, 1.45f, 0.2f }, TEX_CONCRETE, (Color){ 14, 14, 16, 255 }, 1.0f);
-        gfx_box((Vector3){ c.x, 3.05f, c.z }, (Vector3){ 0.16f, 0.2f, 0.16f }, TEX_CONCRETE, (Color){ 20, 20, 22, 255 }, 1.0f);
+        if (Vector3Distance(eye, w->pos) > cull + 2) continue;
+        Fig f = { L.id == W_DRAINS ? FIG_CRAWLER : L.creepers ? FIG_GARDENER : FIG_PENITENT, w->pos,
+                  atan2f(P.pos.x - w->pos.x, -(P.pos.z - w->pos.z)), w->stride, eye, 0.7f, sinf(i * 1.7f) * 0.35f, w->phase, { 0, 0, 1 }, { 0 } };
+        figure_draw(&f);
+    }
+    // lurkers: someone standing very still at the edge of the fog
+    for (int i = 0; i < 3; i++) {
+        const Lurker *k = &lurk[i];
+        if (!k->on) continue;
+        Fig f = { FIG_PENITENT, { k->pos.x, k->pos.y - 2.0f, k->pos.z }, atan2f(eye.x - k->pos.x, -(eye.z - k->pos.z)), 0, eye, 0.9f, 0.5f * sinf(i * 2.3f), time, { 0, 0, 1 }, (Color){ 12, 10, 12, 255 } };
+        figure_draw(&f);
+    }
+    for (int i = 0; i < L.blooms.size; i++) {   // some of the flowers have an eye in them, and it is turned toward you
+        const Bloom *b = &L.blooms.data[i];
+        if (b->yaw > 0.5f || i % 4) continue;
+        float d = Vector3Distance(b->pos, eye);
+        if (d > 18 && eyesOpenT <= 0) continue;
+        if (eyesOpenT <= 0 && sinf(time * 0.4f + i * 3.1f) < 0.2f) continue;
+        float s = b->size;
+        Vector3 to = Vector3Normalize(Vector3Subtract(eye, b->pos)), r = Vector3Normalize(Vector3CrossProduct(to, (Vector3){ 0, 1, 0 })), u = Vector3CrossProduct(r, to);
+        Vector3 ec = Vector3Add(b->pos, Vector3Scale(to, s * 0.12f));
+        gfx_ellipsoid(ec, Vector3Scale(r, s * 0.2f), Vector3Scale(u, s * 0.2f), Vector3Scale(to, s * 0.14f), TEX_SKIN, (Color){ 250, 244, 236, 255 });
+        gfx_ellipsoid(Vector3Add(ec, Vector3Scale(to, s * 0.13f)), Vector3Scale(r, s * 0.07f), Vector3Scale(u, s * 0.09f), Vector3Scale(to, s * 0.02f), TEX_CONCRETE, (Color){ 4, 2, 3, 255 });
     }
     if (L.sludge) gfx_slab(L.sludgeY, 6.0f, TEX_SLUDGE, (Color){ 140, 160, 90, 255 }, time * 12.0f);
     if (L.water) gfx_slab(L.waterY, L.waterHalf, TEX_WATER, (Color){ 150, 190, 255, 255 }, time * 3.0f);
@@ -353,43 +371,13 @@ static void draw_scene(Camera3D cam, float time) {
         Quaternion q = QuaternionMultiply(QuaternionFromAxisAngle((Vector3){ 0, 1, 0 }, time * 1.4f), QuaternionFromAxisAngle((Vector3){ 1, 0, 0 }, 0.6f));
         gfx_box_rot(c, (Vector3){ 0.22f, 0.22f, 0.22f }, q, TEX_CONCRETE, fx_color(pk->fx), 100.0f);
     }
-    for (int i = 0; i < L.watchers.size; i++) {
-        const Watcher *w = &L.watchers.data[i];
-        Vector3 to = { P.pos.x - w->pos.x, 0, P.pos.z - w->pos.z };
-        to = Vector3Normalize(to);
-        Vector3 perp = { -to.z, 0, to.x };
-        Vector3 e = { w->pos.x + to.x * 0.22f, 2.5f, w->pos.z + to.z * 0.22f };
-        gfx_glow(Vector3Add(e, Vector3Scale(perp, 0.07f)), (Vector3){ 0.03f, 0.05f, 0.03f }, (Color){ 235, 230, 200, 255 });
-        gfx_glow(Vector3Subtract(e, Vector3Scale(perp, 0.07f)), (Vector3){ 0.03f, 0.05f, 0.03f }, (Color){ 235, 230, 200, 255 });
-    }
-    for (int i = 0; i < 3; i++) {
-        const Lurker *k = &lurk[i];
-        if (!k->on || sinf(time * 2.7f + i * 5.0f) > 0.96f) continue;     // they blink
-        Vector3 to = Vector3Normalize((Vector3){ cam.position.x - k->pos.x, 0, cam.position.z - k->pos.z });
-        Vector3 perp = { -to.z, 0, to.x };
-        Color c = (i % 2) ? (Color){ 230, 40, 30, 255 } : (Color){ 235, 235, 205, 255 };
-        gfx_glow(Vector3Add(k->pos, Vector3Scale(perp, 0.11f)), (Vector3){ 0.035f, 0.02f, 0.035f }, c);
-        gfx_glow(Vector3Subtract(k->pos, Vector3Scale(perp, 0.11f)), (Vector3){ 0.035f, 0.02f, 0.035f }, c);
-    }
     for (int i = 0; i < L.motes.size; i++) {
         const Mote *m = &L.motes.data[i];
         float a = sinf(fminf(m->life, 1.0f) * 3.14159f);
         float sz = L.moteGlow ? 0.03f : 0.012f;
         if (!L.moteGlow) gfx_glow(m->pos, (Vector3){ sz, sz, sz }, scale_col(L.moteCol, a));
     }
-    // gardeners' heads and the flowers that watch
-    for (int i = 0; i < L.watchers.size && L.creepers; i++) {
-        const Watcher *w = &L.watchers.data[i];
-        Vector3 hc = { w->pos.x, 3.35f, w->pos.z };
-        Vector3 to = Vector3Normalize((Vector3){ P.pos.x - w->pos.x, 0, P.pos.z - w->pos.z });
-        float pulse = 0.9f + 0.1f * sinf(time * 3 + i);
-        gfx_glow(hc, (Vector3){ 0.55f * pulse, 0.03f, 0.16f }, (Color){ 255, 120, 190, 255 });
-        gfx_glow(hc, (Vector3){ 0.16f, 0.03f, 0.55f * pulse }, (Color){ 255, 120, 190, 255 });
-        gfx_glow(hc, (Vector3){ 0.3f, 0.035f, 0.3f }, (Color){ 255, 220, 150, 255 });
-        Vector3 ec = Vector3Add(hc, (Vector3){ to.x * 0.22f, 0.02f, to.z * 0.22f });
-        gfx_glow(ec, (Vector3){ 0.13f, 0.13f, 0.13f }, (Color){ 240, 236, 220, 255 });
-        gfx_glow(Vector3Add(ec, Vector3Scale(to, 0.1f)), (Vector3){ 0.05f, 0.07f, 0.05f }, (Color){ 4, 2, 4, 255 });
-    }
+    // the flowers that watch
     for (int i = 0; i < L.blooms.size; i++) {
         const Bloom *b = &L.blooms.data[i];
         float d = Vector3Distance(b->pos, eye);
@@ -400,13 +388,6 @@ static void draw_scene(Camera3D cam, float time) {
         gfx_glow(b->pos, (Vector3){ s, 0.025f, s * 0.38f }, pc);
         gfx_glow(b->pos, (Vector3){ s * 0.38f, 0.025f, s }, pc);
         gfx_glow(b->pos, (Vector3){ s * 0.27f, 0.04f, s * 0.27f }, (Color){ 255, 230, 160, 255 });
-        bool open = eyesOpenT > 0 || (d < 22 && sinf(time * 0.9f + i * 3.1f) > -0.85f);
-        if (open) {   // an eye on the flower, turned toward you
-            Vector3 to = Vector3Normalize((Vector3){ cam.position.x - b->pos.x, 0.25f, cam.position.z - b->pos.z });
-            Vector3 ec = Vector3Add(b->pos, Vector3Scale(to, s * 0.3f));
-            gfx_glow(ec, (Vector3){ s * 0.2f, s * 0.2f, s * 0.2f }, (Color){ 240, 236, 220, 255 });
-            gfx_glow(Vector3Add(ec, Vector3Scale(to, s * 0.14f)), (Vector3){ s * 0.09f, s * 0.12f, s * 0.09f }, (Color){ 4, 2, 4, 255 });
-        }
     }
     // soft glow around everything bright
     gfx_begin_glow();
@@ -428,16 +409,6 @@ static void draw_scene(Camera3D cam, float time) {
         const Bloom *b = &L.blooms.data[i];
         if (Vector3Distance(b->pos, eye) > 45) continue;
         gfx_halo(b->pos, b->yaw > 0.5f ? 1.0f : b->size * 3.5f, b->col, b->yaw > 0.5f ? 0.55f : 0.4f);
-    }
-    for (int i = 0; i < L.watchers.size; i++) {
-        const Watcher *w = &L.watchers.data[i];
-        if (L.creepers) gfx_halo((Vector3){ w->pos.x, 3.35f, w->pos.z }, 2.4f, (Color){ 255, 90, 160, 255 }, 0.6f);
-        else gfx_halo((Vector3){ w->pos.x, 2.5f, w->pos.z }, 0.6f, (Color){ 255, 230, 200, 255 }, 0.4f);
-    }
-    for (int i = 0; i < 3; i++) {
-        const Lurker *k = &lurk[i];
-        if (!k->on) continue;
-        gfx_halo(k->pos, 0.8f, (i % 2) ? (Color){ 255, 50, 30, 255 } : (Color){ 235, 235, 205, 255 }, 0.5f);
     }
     if (L.moteGlow) for (int i = 0; i < L.motes.size; i++) {
         const Mote *m = &L.motes.data[i];
@@ -826,6 +797,7 @@ int main(void) {
     if (env && !strncmp(env, "title", 5)) { shotWorld = 99; shotFrames = 30; snprintf(shotPath, sizeof shotPath, "%s", env + 6); }
     else if (env && sscanf(env, "%d,%f,%f,%f,%f,%f,%d,%d,%255s", &shotWorld, &sx, &sy, &sz, &syaw, &spit, &sfxmask, &shotFrames, shotPath) == 9) {
         new_game();
+        if (getenv("MURK_DREAMS")) dreams = atoi(getenv("MURK_DREAMS"));   // how deep the shot is taken
         P.fx = sfxmask;
         load_world((WorldId)shotWorld, false);
         P.pos = (Vector3){ sx, sy, sz }; P.yaw = syaw; P.pitch = spit;

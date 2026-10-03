@@ -176,7 +176,7 @@ static void build_hub(Level *L, int seed) {
     if (visitors > 3) visitors = 3;
     for (int i = 0; i < visitors; i++) {
         float a = frand(0, 6.2831f);
-        Watcher w = { { sinf(a) * 6.5f, 0, cosf(a) * 6.5f }, frand(0, 6), false };
+        Watcher w = { { sinf(a) * 6.5f, 0, cosf(a) * 6.5f }, frand(0, 6), 0, false };
         Watchers_push(&L->watchers, w);
     }
     // junk you can shove around (this is what Box3D is for in here)
@@ -433,7 +433,7 @@ static void build_drains(Level *L, int seed) {
     for (int tries = 0; tries < 200 && placed < 4; tries++) {
         int i = GetRandomValue(0, N * N - 1);
         if (far[i] < 6 && i != best) continue;
-        Watcher w = { CELLC(i), frand(0, 6), false };
+        Watcher w = { CELLC(i), frand(0, 6), 0, false };
         Watchers_push(&L->watchers, w);
         placed++;
     }
@@ -673,7 +673,7 @@ static void build_garden(Level *L, int seed) {
     for (int i = 0; i < n; i++) {
         float x = frand(-E + 6, E - 6), z = frand(-E + 6, 10);
         if (fabsf(x) < P + 2 && fabsf(z) < P + 2) { x = (x < 0 ? -1 : 1) * (P + 4); }
-        Watcher w = { { x, 0, z }, frand(0, 6), false };
+        Watcher w = { { x, 0, z }, frand(0, 6), 0, false };
         Watchers_push(&L->watchers, w);
     }
 }
@@ -816,7 +816,11 @@ bool level_watchers(Level *L, Vector3 eye, Vector3 fwd, Vector3 feet, float dt, 
             if (best >= 0) target = (Vector3){ ox + (best % L->mazeN + 0.5f) * L->cell, 0, ox + (best / L->mazeN + 0.5f) * L->cell };
         }
         Vector3 dir = Vector3Subtract(target, w->pos); dir.y = 0;
-        if (Vector3Length(dir) > 0.05f) w->pos = Vector3Add(w->pos, Vector3Scale(Vector3Normalize(dir), (blind ? speed * 1.4f : speed) * dt));
+        if (Vector3Length(dir) > 0.05f) {
+            float step = (blind ? speed * 1.4f : speed) * dt;
+            w->pos = Vector3Add(w->pos, Vector3Scale(Vector3Normalize(dir), step));
+            w->stride += step * 5.0f;
+        }
     }
     return false;
 }

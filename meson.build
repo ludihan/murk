@@ -46,7 +46,7 @@ if is_web
 endif
 
 executable('murk',
-  ['src/main.c', 'src/world.c', 'src/gfx.c', 'src/player.c', 'src/audio.c'],
+  ['src/main.c', 'src/world.c', 'src/gfx.c', 'src/player.c', 'src/audio.c', 'src/figure.c'],
   dependencies: [raylib_dep, box3d_dep, stc_dep, m_dep],
   c_args: is_web ? ['-sUSE_GLFW=3'] : [],
   link_args: web_args,
