@@ -17,7 +17,8 @@ static Shader obj, post;
 static Texture2D haloTex, moonTex, scleraTex, irisTex;
 static Vector3 camPos, camR, camU, camF;
 static Color gradeLo = { 128, 128, 128, 255 }, gradeHi = { 128, 128, 128, 255 };
-static int p_glo, p_ghi;
+static int p_glo, p_ghi, p_fcol;
+static Color fadeCol = { 0, 0, 0, 255 };
 static int u_fog, u_dens, u_flick, u_emit, u_amb, u_torch;
 static int p_time, p_mad, p_fade, p_flash, p_res, p_glitch;
 
@@ -255,7 +256,7 @@ static const char *POST_FS =
 GLSL_HEAD
 "in vec2 fragTexCoord; out vec4 finalColor;\n"
 "uniform sampler2D texture0;\n"
-"uniform float time; uniform float madness; uniform float fade; uniform float flash; uniform float glitch; uniform vec2 res; uniform vec3 gLo; uniform vec3 gHi;\n"
+"uniform float time; uniform float madness; uniform float fade; uniform float flash; uniform float glitch; uniform vec2 res; uniform vec3 gLo; uniform vec3 gHi; uniform vec3 fadeCol;\n"
 "float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }\n"
 "void main(){\n"
 "  vec2 uv = fragTexCoord; vec2 c = uv - 0.5; float r2 = dot(c,c);\n"
@@ -279,7 +280,7 @@ GLSL_HEAD
 "  float q = 64.0;\n"
 "  col = floor(col*q + hash(floor(uv*res))*0.9)/q;\n"
 "  col = mix(col, vec3(0.0), flash*0.6);\n"
-"  col *= (1.0 - fade);\n"
+"  col = mix(col, fadeCol, fade);\n"
 "  finalColor = vec4(col, 1.0); }\n";
 
 static Texture2D sprite(int w, int h, Color (*fn)(int, int, int, int)) {
@@ -354,6 +355,7 @@ void gfx_init(void) {
     p_res = GetShaderLocation(post, "res");
     p_glitch = GetShaderLocation(post, "glitch");
     p_glo = GetShaderLocation(post, "gLo");
+    p_fcol = GetShaderLocation(post, "fadeCol");
     p_ghi = GetShaderLocation(post, "gHi");
     make_sprites();
     float res[2] = { RT_W, RT_H };
@@ -656,6 +658,8 @@ void gfx_present(float time, float madness, float fade, float flash, float glitc
     float lo[3] = { gradeLo.r / 128.f, gradeLo.g / 128.f, gradeLo.b / 128.f }, hi[3] = { gradeHi.r / 128.f, gradeHi.g / 128.f, gradeHi.b / 128.f };
     SetShaderValue(post, p_glo, lo, SHADER_UNIFORM_VEC3);
     SetShaderValue(post, p_ghi, hi, SHADER_UNIFORM_VEC3);
+    float fc[3] = { fadeCol.r / 255.f, fadeCol.g / 255.f, fadeCol.b / 255.f };
+    SetShaderValue(post, p_fcol, fc, SHADER_UNIFORM_VEC3);
     float sw = GetScreenWidth(), sh = GetScreenHeight();
     float k = fminf(sw / RT_W, sh / RT_H);
     Rectangle dst = { (sw - RT_W * k) / 2, (sh - RT_H * k) / 2, RT_W * k, RT_H * k };
@@ -666,6 +670,7 @@ void gfx_present(float time, float madness, float fade, float flash, float glitc
 
 
 void gfx_grade(Color lo, Color hi) { gradeLo = lo; gradeHi = hi; }
+void gfx_fade_color(Color c) { fadeCol = c; }
 
 // ---------------------------------------------------------------- glow, sky
 void gfx_begin_glow(void) {

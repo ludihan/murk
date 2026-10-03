@@ -42,5 +42,7 @@ void gfx_end_glow(void);
 void gfx_sky(const Sky *sk, float time, Vector3 playerPos);
 // colour grade of the post pass: 128 = neutral
 void gfx_grade(Color lo, Color hi);
+// what the screen fades to (black unless something else is covering your eyes)
+void gfx_fade_color(Color c);
 
 extern RenderTexture2D gfx_rt;

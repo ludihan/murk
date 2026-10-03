@@ -4,6 +4,7 @@
 #include "player.h"
 #include "audio.h"
 #include "figure.h"
+#include <rlgl.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -101,14 +102,38 @@ static struct { bool on; float t; Vector3 pos; float stride; } grey;
 
 
 static void use_thing(Use *u);
-// when one of them gets you: it comes at your face, there is a roar, then black and nothing, then you wake
-static struct { bool on, quiet; float t; FigKind kind; Color tint; float scale; char line[96]; } catchS;
-static void caught(FigKind k, Color tint, float scale, const char *line, bool quiet) {
+// when one of them gets you. each of them does it its own way
+typedef enum { CS_POUNCE, CS_DROWN, CS_ARMS, CS_MOTHER, CS_GIANT, CS_PRIEST, CS_TALL, CS_HOST, CS_HAND, CS_SHEET, CS_PUPPET, CS_GREY, CS_FALL } CatchStyle;
+static struct { bool on; float t; CatchStyle style; FigKind kind; Color tint; float scale; char line[96]; } catchS;
+// when the screen is gone, what colour it is gone to, and where you are made to look
+static const struct { float black; Color fade; float pitch; } CATCH[] = {
+    [CS_POUNCE] = { 0.95f, { 0, 0, 0, 255 }, 0 },          [CS_DROWN] = { 1.7f, { 3, 16, 20, 255 }, -15 },
+    [CS_ARMS] = { 1.15f, { 0, 0, 0, 255 }, 0 },            [CS_MOTHER] = { 1.3f, { 0, 0, 0, 255 }, 0 },
+    [CS_GIANT] = { 1.5f, { 0, 0, 0, 255 }, 62 },           [CS_PRIEST] = { 1.7f, { 0, 0, 0, 255 }, 4 },
+    [CS_TALL] = { 1.8f, { 0, 0, 0, 255 }, 68 },            [CS_HOST] = { 1.6f, { 0, 0, 0, 255 }, 28 },
+    [CS_HAND] = { 1.6f, { 40, 4, 6, 255 }, -50 },          [CS_SHEET] = { 1.05f, { 198, 202, 204, 255 }, 0 },
+    [CS_PUPPET] = { 1.25f, { 0, 0, 0, 255 }, 0 },          [CS_GREY] = { 2.2f, { 112, 112, 112, 255 }, 0 },
+    [CS_FALL] = { 1.45f, { 0, 0, 0, 255 }, -72 },
+};
+static void caught(CatchStyle style, FigKind k, Color tint, float scale, const char *line) {
     if (catchS.on) return;
-    catchS.on = true; catchS.t = 0; catchS.kind = k; catchS.tint = tint; catchS.scale = scale; catchS.quiet = quiet;
+    catchS.on = true; catchS.t = 0; catchS.style = style; catchS.kind = k; catchS.tint = tint; catchS.scale = scale;
     snprintf(catchS.line, sizeof catchS.line, "%s", line);
     reading = -1;
-    if (!quiet) audio_play_ex(SFX_ROAR, 1.0f, 0.9f + 0.2f * (GetRandomValue(0, 100) / 100.0f));
+    switch (style) {   // what you hear at the moment it has you
+    case CS_POUNCE: audio_play_ex(SFX_CLICK, 1.0f, 1.3f); break;
+    case CS_DROWN:  audio_play_ex(SFX_SWELL, 0.8f, 0.5f); audio_play_ex(SFX_BREATH, 0.7f, 0.5f); break;
+    case CS_ARMS:   audio_play_ex(SFX_BREATH, 0.9f, 0.8f); break;
+    case CS_GIANT:  audio_play_ex(SFX_GIANT, 1.0f, 0.7f); break;
+    case CS_PRIEST: audio_play_ex(SFX_CHANT, 1.0f, 0.9f); break;
+    case CS_TALL:   audio_play_ex(SFX_SWELL, 1.0f, 0.4f); break;
+    case CS_HOST:   audio_play_ex(SFX_BELL, 1.0f, 1.0f); break;
+    case CS_HAND:   audio_play_ex(SFX_ROAR, 0.9f, 0.5f); break;
+    case CS_SHEET:  audio_play_ex(SFX_BREATH, 1.0f, 1.1f); break;
+    case CS_PUPPET: audio_play_ex(SFX_BELL, 0.9f, 1.5f); break;
+    case CS_FALL:   audio_play_ex(SFX_CLICK, 1.0f, 0.9f); break;
+    default: break;   // the mother and the grey man: nothing at all, at first
+    }
 }
 
 static const char *FX_NAME[FX_COUNT] = { "LAMP", "GLOVES", "BOOTS", "FEATHER", "VEIL" };
@@ -991,6 +1016,140 @@ static Color scale_col(Color c, float k) {
     return (Color){ (unsigned char)fminf(255, c.r * k), (unsigned char)fminf(255, c.g * k), (unsigned char)fminf(255, c.b * k), 255 };
 }
 
+// ---------------------------------------------------------------- each of them, at the moment it has you
+static float smooth01(float x) { x = Clamp(x, 0, 1); return x * x * (3 - 2 * x); }
+static void draw_at_pivot(const Fig *f, Vector3 pivot, Vector3 axis, float deg) {   // a figure turned about some point: bending down over you, or hanging upside down
+    rlPushMatrix();
+    rlTranslatef(pivot.x, pivot.y, pivot.z);
+    rlRotatef(deg, axis.x, axis.y, axis.z);
+    rlTranslatef(-pivot.x, -pivot.y, -pivot.z);
+    figure_draw(f);
+    rlPopMatrix();
+}
+static void draw_catch(Vector3 eye, float time) {
+    float t = catchS.t;
+    Vector3 f = player_forward(&P); f.y = 0; f = Vector3Normalize(f);
+    Vector3 r = { -f.z, 0, f.x }, floor = { eye.x, eye.y - 1.58f, eye.z };
+    float yawToEye = atan2f(-f.x, f.z);   // facing back at you
+    // somewhere `dist` in front of you, with its head `headY` above or below your eyes
+    #define AT(dist, headY, hy, hz) ((Vector3){ eye.x + f.x * ((dist) + (hz)), eye.y + (headY) - (hy), eye.z + f.z * ((dist) + (hz)) })
+    Fig g = { catchS.kind, eye, yawToEye, t * 8.0f, eye, 1.0f, 0.25f, t * 3.0f, { 0, 0, 1 }, catchS.tint, catchS.scale };
+    switch (catchS.style) {
+    case CS_POUNCE: {   // a moment of nothing but clicking, then it comes up off the floor at you
+        float k = smooth01((t - 0.32f) / 0.15f);
+        g.pos = AT(1.6f - 1.15f * k, -1.4f + 1.4f * k, 0.5f, 0.66f);
+        g.tilt = 0.4f + sinf(t * 40) * 0.25f * k;
+        gfx_set_light(0.9f, 0, 0.3f, 6, 0);
+        figure_draw(&g);
+        break;
+    }
+    case CS_DROWN: {    // you go down, and a pale face comes up toward you through the dark water
+        float k = smooth01((t - 0.55f) / 0.8f);
+        g.pos = AT(1.3f - 0.85f * k, -1.0f + 0.95f * k, 0.5f, 0.66f);
+        gfx_set_light(0.75f, 0, 0.3f, 6, 0);
+        figure_draw(&g);
+        break;
+    }
+    case CS_ARMS: {     // arms out of the walls, closing in from every side until they cover your eyes
+        Vector3 u = { 0, 1, 0 };
+        float k = smooth01(t / 0.95f);
+        gfx_set_light(0.8f, 0, 0.3f, 6, 0);
+        for (int i = 0; i < 12; i++) {
+            float a = i * 0.5236f + 0.2f;
+            Vector3 dir = Vector3Add(Vector3Scale(r, cosf(a)), Vector3Scale(u, sinf(a) * 0.8f));
+            Vector3 root = Vector3Add(Vector3Add(eye, Vector3Scale(dir, 1.7f)), Vector3Scale(f, 0.9f));
+            Vector3 tip = Vector3Add(Vector3Add(eye, Vector3Scale(dir, 0.9f * (1 - k) + 0.04f)), Vector3Scale(f, 0.55f - 0.25f * k));
+            Vector3 el = Vector3Add(Vector3Lerp(root, tip, 0.5f), Vector3Scale(f, 0.2f));
+            Color sk = { 196, 170, 166, 255 };
+            gfx_limb(root, el, 0.07f, 0.055f, TEX_SKIN, sk);
+            gfx_limb(el, tip, 0.055f, 0.04f, TEX_SKIN, sk);
+            for (int j = 0; j < 4; j++) gfx_limb(tip, Vector3Add(tip, Vector3Add(Vector3Scale(dir, -0.18f), Vector3Scale(u, (j - 1.5f) * 0.04f))), 0.014f, 0.006f, TEX_SKIN, sk);
+        }
+        break;
+    }
+    case CS_MOTHER: {   // she is already there, a hand's width away, head bent right over, not moving. then her head comes up
+        float k = smooth01((t - 0.95f) / 0.2f);
+        g.pos = AT(0.65f - 0.3f * k, 0, 1.8f, 0.07f);
+        g.tilt = 1.3f * (1 - k) + sinf(t * 50) * 0.08f * k;
+        g.t = floorf(t * 6) / 6;
+        gfx_set_light(0.7f, 0, 0.3f, 6, 0);
+        figure_draw(&g);
+        break;
+    }
+    case CS_GIANT: {    // you look up at her, and her hand comes down over you
+        Fig m = g; m.pos = (Vector3){ floor.x + f.x * 6, floor.y, floor.z + f.z * 6 }; m.look = 1;
+        gfx_set_light(0.6f, 0, 0.3f, 6, 0);
+        figure_draw(&m);
+        float k = smooth01((t - 0.25f) / 1.0f);
+        Vector3 hp = { eye.x + f.x * 1.1f, eye.y + 16.0f - 9.2f * k, eye.z + f.z * 1.1f };
+        Fig h = { FIG_HAND, hp, yawToEye, 0, eye, 0, 0, -3.49f + k * 6.98f, { 0, 0, 1 }, { 0 }, 2.4f };
+        draw_at_pivot(&h, hp, r, 180);
+        break;
+    }
+    case CS_PRIEST: {   // the skull comes down to you, slowly
+        float k = smooth01(t / 1.4f);
+        g.pos = AT(1.2f - 0.65f * k, 0.1f, 2.25f, 0.1f);
+        g.look = 1;
+        gfx_set_light(0.8f, 0, 0.3f, 6, 0);
+        figure_draw(&g);
+        break;
+    }
+    case CS_TALL: {     // he is right over you, and he bends down, a very long way, until his face is in yours
+        float k = smooth01(t / 1.55f);
+        g.pos = (Vector3){ floor.x + f.x * 6.6f, floor.y, floor.z + f.z * 6.6f };   // far enough off that, bending, his face comes all the way down to yours
+        g.look = 0;
+        gfx_set_light(0.75f, 0, 0.3f, 6, 0);
+        draw_at_pivot(&g, g.pos, r, 76.0f * k);
+        break;
+    }
+    case CS_HOST: {     // you are in a chair, and he leans over you, and the eye in the flower opens
+        float k = smooth01(t / 1.3f);
+        g.pos = (Vector3){ floor.x + f.x * 3.6f, floor.y + 0.7f, floor.z + f.z * 3.6f };   // (you are sitting: the floor is further down than your eyes think)
+        g.look = 0;
+        gfx_set_light(0.7f, 0, 0.3f, 6, 0);
+        draw_at_pivot(&g, g.pos, r, 73 * k);
+        break;
+    }
+    case CS_HAND: {     // a hand round you, lifting you off the steps, closing
+        float k = smooth01(t / 1.5f);
+        Vector3 hp = { eye.x + f.x * 0.5f, eye.y - 2.55f * catchS.scale - 1.3f, eye.z + f.z * 0.5f };
+        g.pos = hp; g.t = -3.49f + k * 6.98f;
+        gfx_set_light(0.7f, 0, 0.3f, 6, 0);
+        figure_draw(&g);
+        break;
+    }
+    case CS_SHEET:      // its face, through the sheet, right in front of you
+        g.pos = AT(0.55f, -0.05f, 1.78f, 0.04f);
+        g.tilt = 0.15f + sinf(t * 2) * 0.05f;
+        gfx_set_light(0.85f, 0, 0.3f, 6, 0);
+        figure_draw(&g);
+        break;
+    case CS_PUPPET:     // the light snaps on, and it is right there, its head jerking on the strings
+        g.pos = AT(0.5f, 0, 1.86f, 0.04f);
+        g.t = floorf(time * 14) * 0.9f;
+        g.tilt = sinf(floorf(time * 14) * 2.7f) * 0.6f;
+        gfx_set_light(1.4f, 0, 0.3f, 6, 0);
+        figure_draw(&g);
+        break;
+    case CS_GREY:       // he just stands there, and looks at you
+        g.pos = AT(0.85f, 0, 2.02f, 0.15f);
+        g.tilt = 0;
+        gfx_set_light(0.8f, 0, 0.3f, 6, 0);
+        figure_draw(&g);
+        break;
+    case CS_FALL: {     // you look down and it is coming up the wall at your hands. then you are falling
+        float k = smooth01(t / 0.3f);
+        Fig c = g; c.kind = FIG_CLIMBER; c.wallN = Vector3Negate(f);
+        c.pos = (Vector3){ eye.x + f.x * 0.7f, eye.y - 2.6f + 2.0f * k, eye.z + f.z * 0.7f };
+        c.stride = t * 30;
+        gfx_set_light(0.8f, 0, 0.3f, 6, 0);
+        figure_draw(&c);
+        break;
+    }
+    }
+    #undef AT
+}
+
 static void draw_scene(Camera3D cam, float time) {
     float dens = L.fogDensity * (lampOn > 0.5f ? 0.55f : 1.0f);
     float light = L.light * (L.id == W_HUB ? 1.0f : flicker(time, 0.15f)) * (lampOn > 0.5f ? 1.2f : 1.0f);
@@ -1167,23 +1326,7 @@ static void draw_scene(Camera3D cam, float time) {
         Fig f = { FIG_PENITENT, ghost.pos, ghost.yaw, ghost.t * 3, eye, ghost.noticed ? 1.0f : 0.0f, 0.0f, time, { 0, 0, 1 }, (Color){ 18, 16, 18, 255 }, 0 };
         figure_draw(&f);
     }
-    if (catchS.on) {   // it comes straight at your face
-        static const float HY[FIG_COUNT] = { [FIG_PENITENT] = 2.02f, [FIG_KNEELER] = 1.7f, [FIG_CRAWLER] = 0.5f, [FIG_CLIMBER] = 0.5f, [FIG_GARDENER] = 3.4f, [FIG_PRIEST] = 2.25f,
-                                    [FIG_SLEEPER] = 0.6f, [FIG_SEATED] = 1.66f, [FIG_COCOON] = 0.0f, [FIG_TALL] = 2.36f, [FIG_MOTHER] = 1.8f, [FIG_HAND] = 2.55f, [FIG_SHEET] = 1.78f, [FIG_PUPPET] = 1.86f };
-        static const float HZ[FIG_COUNT] = { [FIG_PENITENT] = 0.15f, [FIG_CRAWLER] = 0.66f, [FIG_GARDENER] = 0.1f, [FIG_PRIEST] = 0.1f, [FIG_SEATED] = 0.13f, [FIG_TALL] = 0.03f, [FIG_MOTHER] = 0.07f };
-        float s = catchS.scale > 0 ? catchS.scale : 1.0f, t = catchS.t;
-        float k = t / 0.28f; k = k > 1 ? 1 : k * k * (3 - 2 * k);
-        static const float END[FIG_COUNT] = { [FIG_PENITENT] = 0.5f, [FIG_CRAWLER] = 0.45f, [FIG_GARDENER] = 0.7f, [FIG_PRIEST] = 1.0f, [FIG_TALL] = 0.6f, [FIG_SEATED] = 0.5f, [FIG_MOTHER] = 0.6f, [FIG_HAND] = 1.6f, [FIG_SHEET] = 0.5f, [FIG_PUPPET] = 0.55f };
-        float end = END[catchS.kind] > 0 ? END[catchS.kind] : 0.55f;
-        float dist = end + 2.9f * (1.0f - k);
-        Vector3 f = player_forward(&P); f.y = 0; f = Vector3Normalize(f);
-        Vector3 r = { -f.z, 0, f.x };
-        float shake = sinf(t * 71.0f) * 0.025f * k;
-        Vector3 pos = { eye.x + f.x * (dist + HZ[catchS.kind] * s) + r.x * shake, eye.y - HY[catchS.kind] * s + 0.05f, eye.z + f.z * (dist + HZ[catchS.kind] * s) + r.z * shake };
-        Fig fg = { catchS.kind, pos, atan2f(eye.x - pos.x, -(eye.z - pos.z)), t * 8.0f, eye, 1.0f, 0.25f + sinf(t * 23.0f) * 0.15f * k, t * 3.0f, { 0, 0, 1 }, catchS.tint, catchS.scale };
-        gfx_set_light(1.0f, 0, 0.3f, 6, 0);   // you see it clearly, whatever the dark
-        figure_draw(&fg);
-    }
+    if (catchS.on) draw_catch(eye, time);
     // lurkers: someone standing very still at the edge of the fog
     for (int i = 0; i < 3; i++) {
         const Lurker *k = &lurk[i];
@@ -1559,10 +1702,28 @@ static void frame(void) {
             }
 
             if (catchS.on) {   // it has you
+                float before = catchS.t, black = CATCH[catchS.style].black;
                 catchS.t += frameDt;
-                P.pitch *= 1.0f - fminf(1.0f, frameDt * 10.0f);
-                madness = 1;
-                if (catchS.t > 2.1f) { catchS.on = false; go(W_HUB, true); say(catchS.line, 4); }
+                #define CUE(x) (before < (x) && catchS.t >= (x))
+                float aim = CATCH[catchS.style].pitch;
+                if (catchS.style == CS_TALL) aim *= 1.0f - Clamp(catchS.t / 1.55f, 0, 1);   // your eyes follow him down
+                if (catchS.style == CS_HOST) aim *= 1.0f - Clamp(catchS.t / 1.3f, 0, 1);
+                P.pitch += (aim - P.pitch) * fminf(1.0f, frameDt * 6.0f);
+                madness = catchS.style == CS_GREY ? 0.2f : 1.0f;
+                switch (catchS.style) {
+                case CS_POUNCE: if (CUE(0.32f)) audio_play_ex(SFX_ROAR, 1.0f, 1.0f); break;
+                case CS_ARMS:   if (CUE(0.4f)) audio_play_ex(SFX_CREAK, 1.0f, 0.5f); if (CUE(0.75f)) audio_play_ex(SFX_SCREECH, 0.7f, 0.4f); break;
+                case CS_MOTHER: if (CUE(0.95f)) { audio_play_ex(SFX_CRY, 1.0f, 0.6f); audio_play_ex(SFX_ROAR, 0.9f, 0.8f); } break;
+                case CS_GIANT:  if (CUE(0.6f)) audio_play_ex(SFX_ROAR, 1.0f, 0.45f); if (CUE(0.25f)) audio_play_ex(SFX_GIANT, 1.0f, 0.6f); break;
+                case CS_PRIEST: if (CUE(0.8f)) audio_play_ex(SFX_BELL, 1.0f, 0.8f); break;
+                case CS_TALL:   if (CUE(0.9f)) audio_play_ex(SFX_SCREECH, 0.8f, 0.35f); break;
+                case CS_HOST:   if (CUE(0.6f)) audio_play_ex(SFX_CHANT, 1.0f, 0.8f); break;
+                case CS_SHEET:  if (CUE(0.55f)) audio_play_ex(SFX_SCREECH, 0.9f, 0.9f); break;
+                case CS_FALL:   if (CUE(0.22f)) audio_play_ex(SFX_ROAR, 1.0f, 1.1f); if (CUE(0.6f)) audio_play_ex(SFX_WAKE, 0.8f, 0.6f); break;
+                default: break;
+                }
+                #undef CUE
+                if (catchS.t > black + 1.1f) { catchS.on = false; go(W_HUB, true); say(catchS.line, 4); }
             }
             if (!tr.on && !catchS.on) {
                 // things you can use: whichever one you are looking at, close enough to touch
@@ -1626,17 +1787,17 @@ static void frame(void) {
                 if (L.sludge && P.pos.y + 0.6f < L.sludgeY) { dead = true; say("it takes you.", 4); }
                 Vector3 fwd = player_forward(&P);
                 if (P.slipped) { P.slipped = false; audio_play(SFX_KNOCK); }
-                if (morgue_update(frameDt, player_eye(&P), fwd)) caught(FIG_SHEET, (Color){ 0 }, 0, "it got down in the dark.", false);
-                if (theatre_update(frameDt)) caught(FIG_PUPPET, (Color){ 0 }, 0, "you left your seat in the dark.", false);
-                if (below_update(frameDt)) caught(FIG_CRAWLER, below.state == 2 ? (Color){ 0 } : (Color){ 190, 110, 110, 255 }, 0, below.state == 2 ? "it was faster than you." : "they wanted to keep you.", false);
-                if (baths_update(frameDt, player_eye(&P))) caught(FIG_CRAWLER, (Color){ 0 }, 0, swim.state == 0 ? "something under the water had you." : "it heard you on the tiles.", false);
-                if (nursery_update(frameDt, player_eye(&P))) caught(FIG_MOTHER, (Color){ 0 }, 8.0f, "she found you.", false);
-                if (city_update(frameDt, player_eye(&P), fwd)) caught(FIG_TALL, (Color){ 0 }, 2.7f, "he was always that tall.", false);
-                if (dinner_update(frameDt, player_eye(&P), fwd)) caught(FIG_GARDENER, (Color){ 70, 30, 30, 255 }, 0, "it is rude to leave the table.", false);
-                if (grey_update(frameDt)) caught(FIG_PENITENT, (Color){ 104, 104, 104, 255 }, 0, "you forget something.", true);
-                if (ward_update(frameDt, player_eye(&P))) caught(FIG_MOTHER, (Color){ 0 }, 0, g_wardLoop >= 4 ? "you looked." : "she was always in the corridor.", false);
-                if (update_mass(frameDt, player_eye(&P))) caught(FIG_PRIEST, (Color){ 0 }, 0, "he counted one too many.", false);
-                if (update_climber(player_eye(&P), fwd)) caught(FIG_CRAWLER, (Color){ 0 }, 0, "it had your hands.", false);
+                if (morgue_update(frameDt, player_eye(&P), fwd)) caught(CS_SHEET, FIG_SHEET, (Color){ 0 }, 0, "it got down in the dark.");
+                if (theatre_update(frameDt)) caught(CS_PUPPET, FIG_PUPPET, (Color){ 0 }, 0, "you left your seat in the dark.");
+                if (below_update(frameDt)) caught(below.state == 2 ? CS_POUNCE : CS_ARMS, FIG_CRAWLER, (Color){ 0 }, 0, below.state == 2 ? "it was faster than you." : "they wanted to keep you.");
+                if (baths_update(frameDt, player_eye(&P))) caught(swim.state == 0 ? CS_DROWN : CS_POUNCE, FIG_CRAWLER, (Color){ 190, 196, 190, 255 }, 0, swim.state == 0 ? "something under the water had you." : "it heard you on the tiles.");
+                if (nursery_update(frameDt, player_eye(&P))) caught(CS_GIANT, FIG_MOTHER, (Color){ 0 }, 8.0f, "she found you.");
+                if (city_update(frameDt, player_eye(&P), fwd)) caught(CS_TALL, FIG_TALL, (Color){ 0 }, 2.7f, "he was always that tall.");
+                if (dinner_update(frameDt, player_eye(&P), fwd)) caught(CS_HOST, FIG_GARDENER, (Color){ 70, 30, 30, 255 }, 0, "it is rude to leave the table.");
+                if (grey_update(frameDt)) caught(CS_GREY, FIG_PENITENT, (Color){ 104, 104, 104, 255 }, 0, "you forget something.");
+                if (ward_update(frameDt, player_eye(&P))) caught(CS_MOTHER, FIG_MOTHER, (Color){ 0 }, 0, g_wardLoop >= 4 ? "you looked." : "she was always in the corridor.");
+                if (update_mass(frameDt, player_eye(&P))) caught(CS_PRIEST, FIG_PRIEST, (Color){ 0 }, 0, "he counted one too many.");
+                if (update_climber(player_eye(&P), fwd)) caught(CS_FALL, FIG_CLIMBER, (Color){ 0 }, 0, "it had your hands.");
                 scare_update(frameDt);
                 if (dead) go(W_HUB, true);
             }
@@ -1648,7 +1809,7 @@ static void frame(void) {
                 if (tr.t >= 1.3f) tr.on = false;
             }
 
-            if (L.sky.eye && !tr.on && !catchS.on && update_gaze(frameDt)) caught(FIG_HAND, (Color){ 0 }, 1.6f, "it saw you, and it took you up.", false);
+            if (L.sky.eye && !tr.on && !catchS.on && update_gaze(frameDt)) caught(CS_HAND, FIG_HAND, (Color){ 0 }, 1.4f, "it saw you, and it took you up.");
             // mood
             float m = 0.04f;
             if (gaze.phase == 2) m += 0.25f + gaze.noticed * 0.7f;
@@ -1672,7 +1833,9 @@ static void frame(void) {
             float whisper = L.nearest < 18 ? 1.0f - L.nearest / 18.0f : 0.0f;
             if (L.id == W_STATIC) whisper = fmaxf(whisper, 0.35f);   // the hiss of the screens
             if (home) whisper = 0;
-            bool hush = catchS.on && catchS.t > 1.0f;   // and then nothing at all
+            bool hush = catchS.on && (catchS.t > CATCH[catchS.style].black || (catchS.style == CS_MOTHER && catchS.t < 0.95f));   // nothing at all
+            if (catchS.on && catchS.style == CS_PUPPET && catchS.t < 1.0f) audio_music(1.0f, 0.0f);   // the music box, right in your ear
+            if (catchS.on && catchS.style == CS_GREY) whisper = 0.8f;   // and the hiss of a screen with nothing on it
             if (hush) { audio_music(0, 0); whisper = 0; }
             if (!frozen) audio_set(tone, tension, whisper, hush ? 0.0f : tr.on ? 0.3f : L.id == W_STATIC ? 0.25f : home ? 0.45f : 0.9f);
             {   // the mass behind the walls gets louder the deeper you go; something breathes when one of them is close
@@ -1700,7 +1863,18 @@ static void frame(void) {
         float fade = 0;
         if (tr.on) fade = tr.t < 0.6f ? tr.t / 0.6f : fmaxf(0, 1.0f - (tr.t - 0.6f) / 0.7f);
         if (state == S_ENDING) fade = fminf(1.0f, endT / 3.0f) * 0.92f;
-        if (catchS.on && catchS.t > 0.95f) fade = 1;
+        gfx_fade_color((Color){ 0, 0, 0, 255 });
+        if (catchS.on) {
+            float b = CATCH[catchS.style].black, t = catchS.t, k;
+            switch (catchS.style) {
+            case CS_DROWN: k = (t - 0.3f) / (b - 0.3f); break;    // the water closes over you
+            case CS_GREY:  k = t / b; break;                      // everything slowly goes grey
+            case CS_SHEET: k = (t - 0.6f) / (b - 0.6f); break;    // a sheet over your face
+            default:       k = (t - (b - 0.12f)) / 0.12f; break;  // then nothing
+            }
+            fade = fmaxf(fade, Clamp(k, 0, 1));
+            gfx_fade_color(CATCH[catchS.style].fade);
+        }
 
         BeginTextureMode(gfx_rt);
         if (state == S_TITLE || !levelLoaded) {
@@ -1721,7 +1895,21 @@ static void frame(void) {
             if (giant.shake > 0 && L.id == W_NURSERY) eye.y += sinf(time * 47.0f) * 0.05f * giant.shake;   // the floor shakes under her
             cam.position = eye;
             cam.target = Vector3Add(eye, fwd);
-            cam.up = Vector3RotateByAxisAngle((Vector3){ 0, 1, 0 }, fwd, P.roll * DEG2RAD);
+            float roll = P.roll;
+            if (catchS.on) {
+                float t = catchS.t, k;
+                switch (catchS.style) {
+                case CS_DROWN: k = fminf(1, t / 0.9f); cam.position.y -= 1.6f * k; roll += 18 * k; break;
+                case CS_HOST:  cam.position.y -= 0.7f * fminf(1, t / 0.3f); break;
+                case CS_HAND:  k = fminf(1, t / 1.5f); cam.position.y += 8.0f * k * k * (3 - 2 * k); roll += sinf(t * 3) * 6; break;
+                case CS_FALL:  if (t > 0.55f) { k = (t - 0.55f) / 0.9f; cam.position.y -= 10.0f * k * k; roll += (t - 0.55f) * 320; } break;
+                case CS_GIANT: cam.position.y += sinf(t * 45) * 0.06f * fmaxf(0, 1 - t * 2); break;
+                case CS_POUNCE: if (t > 0.45f) cam.position.y += sinf(t * 60) * 0.03f; break;
+                default: break;
+                }
+                cam.target = Vector3Add(cam.position, fwd);
+            }
+            cam.up = Vector3RotateByAxisAngle((Vector3){ 0, 1, 0 }, fwd, roll * DEG2RAD);
             cam.fovy = 70.0f + fminf(8.0f, P.speedMeter) * 0.7f + madness * 8.0f;
             cam.projection = CAMERA_PERSPECTIVE;
             if (state == S_ENDING) { cam.position = (Vector3){ 0, 1.0f, -6.5f }; cam.target = (Vector3){ 0, 0.8f, -11 }; cam.up = (Vector3){ 0, 1, 0 }; }
