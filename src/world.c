@@ -743,6 +743,10 @@ static void build_void(Level *L, int seed) {
             float d = support(phx, phz, dx, dz) + support(nh, nh, dx, dz) + gap;
             c = (Vector3){ p.x + dx * d, p.y + frand(-0.3f, 1.0f), p.z + dz * d };
             add_box(L, (Vector3){ c.x, c.y - 0.5f, c.z }, (Vector3){ nh, 0.5f, nh }, tx, tint, 2.0f, 0);
+            if (i != COUNT && GetRandomValue(0, 99) < 65) {   // a standing stone on the side facing the eye: shelter
+                float ex = -0.342f, ez = 0.94f;
+                add_box(L, (Vector3){ c.x + ex * nh * 0.5f, c.y + 1.4f, c.z + ez * nh * 0.5f }, (Vector3){ 0.45f, 1.4f, 0.45f }, TEX_CONCRETE, (Color){ 110, 96, 120, 255 }, 1.5f, 0);
+            }
             {   // a glowing seam around the rim: you can see where the edge is
                 static const Color TR[3] = { { 90, 240, 255, 255 }, { 255, 90, 200, 255 }, { 190, 150, 255, 255 } };
                 Color tc = TR[i % 3];

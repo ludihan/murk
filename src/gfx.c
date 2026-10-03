@@ -768,8 +768,7 @@ void gfx_sky(const Sky *sk, float time, Vector3 playerPos) {
         Vector3 c = dome(az, el, R * 0.95f), r, u;
         dome_basis(c, &r, &u);
         Vector3 d = Vector3Normalize(Vector3Subtract(c, camPos));
-        float blink = fmaxf(0.0f, 1.0f - fabsf(fmodf(time, 8.3f) - 0.15f) * 6.0f);       // lids come down for a moment
-        float open = sk->eyeAmt * (1.0f - blink * 0.95f);
+        float open = sk->eyeAmt;
         float facing = fmaxf(0.0f, (Vector3DotProduct(camF, d) - 0.7f) / 0.3f);
         float wx = sinf(time * 0.37f) * 0.35f * (1 - facing), wy = sinf(time * 0.53f) * 0.15f;
         // the eye tracks you: iris slides toward the way you are standing relative to it

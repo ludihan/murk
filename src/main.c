@@ -31,7 +31,7 @@ static float blackout, nextBlackout = 25, glitch;
 static float freezeT, nextFreeze = 70, phantomT = 15, stepGap, titleT;
 static int phantomLeft;
 static float sens = 0.085f;   // degrees per mouse count; [ and ] change it
-static float stareT, nextEvent = 30, eyesOpenT, eyeBoost;
+static float nextEvent = 30, eyesOpenT;
 static bool gardenCaught;
 
 // eyes that hang in the fog at the edge of sight and are gone when you face them
@@ -69,6 +69,8 @@ static int reading = -1;   // the note on screen, or -1
 static const char *useHint;
 // the shaft: something on the wall below you that climbs when you climb, and only while you aren't looking at it
 static struct { bool on, seen; float y, lastPY, scrapeT; Vector3 pos, n; } climber;
+static struct { int phase; float t, noticed, lift; bool warned; } gaze;
+
 static void use_thing(Use *u);
 
 static const char *FX_NAME[FX_COUNT] = { "LAMP", "GLOVES", "BOOTS", "FEATHER" };
@@ -122,6 +124,7 @@ static void load_world(WorldId id, bool wake) {
     }
     recN = 0; recT = 0;
     memset(&climber, 0, sizeof climber);
+    memset(&gaze, 0, sizeof gaze); gaze.t = 7.0f;
     ghost.on = ghostN[id] > 40 && dreams >= 2 && GetRandomValue(0, 2) > 0; ghost.noticed = false; ghost.t = -frand_(4, 9);
     level_build(&L, id, ++dreams);
     levelLoaded = true;
@@ -194,7 +197,7 @@ static void director(float dt) {
     if (nextEvent > 0) return;
     nextEvent = frand_(22, 45);
     int kind = GetRandomValue(0, 2);
-    if (kind == 0 || (L.id != W_GARDEN && L.id != W_VOID)) {
+    if (kind == 0 || L.id != W_GARDEN) {
         say(WHISPERS[L.id][GetRandomValue(0, 3)], 4.0f);
         static const Sfx AMB[] = { SFX_KNOCK, SFX_BELL, SFX_CHANT, SFX_PRAYER, SFX_HUM, SFX_CREAK, SFX_SCRAPE };
         Sfx a = AMB[GetRandomValue(0, 6)];
@@ -202,9 +205,6 @@ static void director(float dt) {
     } else if (L.id == W_GARDEN) {
         eyesOpenT = 5.0f; audio_play(SFX_SWELL);
         say("every flower opens its eyes.", 4.0f);
-    } else {
-        eyeBoost = 5.0f; audio_play(SFX_SWELL); madness = fminf(1.0f, madness + 0.3f);
-        say("the eye opens all the way.", 4.0f);
     }
 }
 
@@ -295,6 +295,38 @@ static bool update_climber(Vector3 eye, Vector3 fwd) {
     p.y = climber.y;
     climber.pos = p;
     return Vector3Distance(Vector3Add(p, (Vector3){ 0, 0.8f, 0 }), (Vector3){ P.pos.x, P.pos.y + 0.6f, P.pos.z }) < 1.4f;
+}
+
+// the eye above the steps keeps a slow rhythm: shut, opening, open, closing. while it is open it sees
+// anything that moves out in the open. be still, or put stone between you and it
+static bool update_gaze(float dt) {
+    static const Vector3 ED = { -0.2962f, 0.5f, 0.8138f };   // toward the eye: azimuth 200, elevation 30
+    gaze.t -= dt;
+    if (gaze.phase == 0 && gaze.t <= 0) { gaze.phase = 1; gaze.t = 2.2f; audio_play_ex(SFX_SWELL, 0.7f, 0.8f); }
+    else if (gaze.phase == 1 && gaze.t <= 0) {
+        gaze.phase = 2; gaze.t = frand_(4.5f, 7.0f);
+        if (!gaze.warned) { gaze.warned = true; say("be still.", 3); }
+    }
+    else if (gaze.phase == 2 && gaze.t <= 0) { gaze.phase = 3; gaze.t = 1.2f; }
+    else if (gaze.phase == 3 && gaze.t <= 0) { gaze.phase = 0; gaze.t = frand_(9, 15) * fmaxf(0.55f, 1.0f - dreams * 0.04f); }
+    float open = gaze.phase == 0 ? 0.04f : gaze.phase == 1 ? 0.04f + 0.96f * (1.0f - gaze.t / 2.2f) : gaze.phase == 2 ? 1.0f : 0.04f + 0.96f * (gaze.t / 1.2f);
+    L.sky.eyeAmt = open;
+    if (gaze.lift > 0) {   // it has you. up, off the steps, into it
+        gaze.lift += dt;
+        P.vel.y = fmaxf(P.vel.y, 10.0f);
+        madness = 1;
+        return gaze.lift > 2.0f;
+    }
+    if (gaze.phase == 2) {
+        Vector3 chest = { P.pos.x, P.pos.y + 1.1f - P.crouch * 0.5f, P.pos.z };
+        b3RayResult r = b3World_CastRayClosest(L.phys, b3v(chest), b3v(Vector3Scale(ED, 40.0f)), b3DefaultQueryFilter());
+        bool covered = r.hit;
+        bool moving = P.speedMeter > 0.6f || !P.grounded || P.gripping;
+        if (!covered && moving) gaze.noticed += dt * (P.crouch > 0.5f ? 0.45f : 0.9f);
+        else gaze.noticed = fmaxf(0, gaze.noticed - dt * 0.25f);
+        if (gaze.noticed >= 1.0f) { gaze.lift = 0.001f; say("it saw you.", 4); audio_play_ex(SFX_CHANT, 0.8f, 0.7f); }
+    } else gaze.noticed = fmaxf(0, gaze.noticed - dt * 0.4f);
+    return false;
 }
 
 static void scare_update(float dt) {
@@ -938,17 +970,11 @@ static void frame(void) {
                 if (tr.t >= 1.3f) tr.on = false;
             }
 
-            // the eye in the sky: it grows the longer you look back
-            if (L.sky.eye) {
-                Vector3 ed = { sinf(200 * DEG2RAD) * cosf(30 * DEG2RAD), sinf(30 * DEG2RAD), -cosf(200 * DEG2RAD) * cosf(30 * DEG2RAD) };
-                if (Vector3DotProduct(player_forward(&P), ed) > 0.8f) stareT = fminf(8, stareT + frameDt); else stareT = fmaxf(0, stareT - frameDt * 0.7f);
-                if (eyeBoost > 0) eyeBoost -= frameDt;
-                L.sky.eyeAmt = fminf(1.0f, 0.5f + stareT * 0.07f + (eyeBoost > 0 ? 0.5f : 0.0f) + 0.02f * (dreams > 10 ? 10 : dreams));
-            }
+            if (L.sky.eye && !tr.on && update_gaze(frameDt)) go(W_HUB, true);
             if (eyesOpenT > 0) eyesOpenT -= frameDt;
             // mood
             float m = 0.04f;
-            if (stareT > 1.5f) m += (stareT - 1.5f) * 0.08f;
+            if (gaze.phase == 2) m += 0.25f + gaze.noticed * 0.7f;
             if (P.gripping) m += (1.0f - P.grip) * 0.6f;
             if (P.grip < 0.25f) m += (0.25f - P.grip) * 2.0f;
             if (L.sludge && L.sludgeArmed) { float g = P.pos.y - L.sludgeY; if (g < 9) m += (9 - g) / 9.0f * 0.6f; }
