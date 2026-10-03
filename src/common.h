@@ -27,7 +27,7 @@ typedef enum { FX_LAMP, FX_GLOVES, FX_BOOTS, FX_FEATHER, FX_COUNT } EffectId;
 typedef struct Pickup  { Vector3 pos; EffectId fx; bool taken; } Pickup;
 typedef enum { W_HUB, W_SHAFT, W_DRAINS, W_VOID, W_GARDEN, W_END, W_COUNT } WorldId;
 typedef struct Portal  { Vector3 pos; float radius; WorldId to; int needs; Color col; const char *label; } Portal;
-typedef struct Watcher { Vector3 pos; float phase, stride; bool seen; } Watcher;
+typedef struct Watcher { Vector3 pos; float phase, stride, timer; int state; bool seen; } Watcher;
 typedef struct Mote    { Vector3 pos, vel; float life; } Mote;
 typedef struct Bloom   { Vector3 pos; Color col; float size, yaw; } Bloom;   // a flower that watches you
 typedef struct Prop    { b3BodyId body; Vector3 h; TexId tex; Color tint; } Prop;

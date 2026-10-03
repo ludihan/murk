@@ -124,8 +124,8 @@ static void load_world(WorldId id, bool wake) {
     levelLoaded = true;
     player_spawn(&P, &L);
     if (id == W_HUB && wake) {
-        P.pos = (Vector3){ -3.9f, 0.05f, -4.4f };
-        P.yaw = 250;
+        P.pos = L.wakePos;
+        P.yaw = L.wakeYaw;
     }
     nameT = 3.5f;
     blackout = 0; nextBlackout = 14 + GetRandomValue(0, 12); phantomLeft = 0;
@@ -205,6 +205,62 @@ static void director(float dt) {
     }
 }
 
+// the visitors in the house never walk where you can see. they are just somewhere else when you look again,
+// a little closer each time, and in the end they are standing at your back
+static Vector3 behind_you(void) {
+    Vector3 f = player_forward(&P); f.y = 0; f = Vector3Normalize(f);
+    return (Vector3){ P.pos.x - f.x * 1.25f, P.pos.y, P.pos.z - f.z * 1.25f };
+}
+static void hub_visitors(float dt, Vector3 eye, Vector3 fwd) {
+    float nearest = 99;
+    for (int i = 0; i < L.watchers.size; i++) {
+        Watcher *w = &L.watchers.data[i];
+        bool seen = blackout <= 0 && level_seen(&L, eye, fwd, w->pos);
+        w->phase += dt;
+        float d = Vector3Distance(w->pos, P.pos);
+        if (w->state == 1) {           // at your back
+            Vector3 b = behind_you();
+            if (!seen) {
+                if (ray_clear((Vector3){ P.pos.x, P.pos.y + 1.2f, P.pos.z }, (Vector3){ b.x, b.y + 1.2f, b.z })) w->pos = b;
+                w->timer += dt;
+                if (w->timer > 14) { w->state = 0; w->timer = frand_(6, 10); w->pos = L.spots[GetRandomValue(0, L.nspots - 1)]; }
+            } else { w->state = 2; w->timer = 0; }
+        } else if (w->state == 2) {    // you turned round, and it is right there. then the light goes
+            w->timer += dt;
+            if (w->timer > 0.8f) {
+                blackout = 2.6f; madness = fminf(1.0f, madness + 0.5f);
+                int far = 0; float fd = 0;
+                for (int k = 0; k < L.nspots; k++) { float sd = Vector3Distance(L.spots[k], P.pos); if (sd > fd) { fd = sd; far = k; } }
+                w->pos = L.spots[far]; w->state = 0; w->timer = frand_(8, 14);
+                say("it only wanted to be near you.", 4);
+            }
+        } else {
+            if (seen && !w->seen) audio_play_ex(SFX_SWELL, 0.3f, 0.9f);
+            w->timer -= dt;
+            if (w->timer <= 0 && !seen) {
+                w->timer = frand_(5, 10) * fmaxf(0.45f, 1.0f - dreams * 0.05f);
+                int best = -1; float bd = d - 1.0f;
+                for (int k = 0; k < L.nspots; k++) {
+                    Vector3 sp = L.spots[k];
+                    if (Vector3Distance(sp, w->pos) > 12) continue;
+                    float ds = Vector3Distance(sp, P.pos);
+                    if (ds < bd && ds > 2.5f && !level_seen(&L, eye, fwd, sp)) { bd = ds; best = k; }
+                }
+                Vector3 b = behind_you();
+                if (best >= 0) {
+                    w->pos = L.spots[best];
+                    if (GetRandomValue(0, 2) == 0) play_from(SFX_CREAK, w->pos, 0.5f, frand_(0.75f, 0.95f));
+                } else if (d < 7 && !level_seen(&L, eye, fwd, b) && ray_clear((Vector3){ P.pos.x, P.pos.y + 1.2f, P.pos.z }, (Vector3){ b.x, b.y + 1.2f, b.z })) {
+                    w->pos = b; w->state = 1; w->timer = 0;
+                }
+            }
+        }
+        w->seen = seen;
+        if (d < nearest) nearest = d;
+    }
+    L.nearest = nearest;
+}
+
 static void scare_update(float dt) {
     Vector3 eye = player_eye(&P), fwd = player_forward(&P);
     // ---- the game hitches: everything stops and the sound drops out, then it all lurches back
@@ -230,7 +286,7 @@ static void scare_update(float dt) {
     bool haunted = (L.id == W_DRAINS) || (creeping && L.watchers.size > 0);
     if (blackout > 0) {
         blackout -= dt;
-        if (blackout <= 0 && creeping) {
+        if (blackout <= 0 && L.creepers) {
             for (int i = 0; i < L.watchers.size; i++) {
                 Watcher *w = &L.watchers.data[i];
                 Vector3 d = { P.pos.x - w->pos.x, 0, P.pos.z - w->pos.z };
@@ -247,8 +303,9 @@ static void scare_update(float dt) {
             audio_play(SFX_KNOCK);
         }
     }
-    // ---- hub visitors and gardeners creep whenever you aren't looking
-    if (creeping) {
+    if (L.id == W_HUB) hub_visitors(dt, eye, fwd);
+    // ---- gardeners creep whenever you aren't looking
+    if (L.creepers) {
         float nearest = 99;
         for (int i = 0; i < L.watchers.size; i++) {
             Watcher *w = &L.watchers.data[i];
@@ -265,14 +322,7 @@ static void scare_update(float dt) {
                 w->pos = Vector3Add(w->pos, Vector3Scale(d, step / len));
                 w->stride += step * 3.0f;
             }
-            if (len < 1.1f && L.id == W_GARDEN) { gardenCaught = true; say("it only wanted to hold you.", 4); }
-            else if (len < 1.1f) {   // it touches you. the light goes. when it comes back it is in a corner with its back to you
-                audio_play_ex(SFX_BREATH, 0.6f, 0.8f);
-                float cx = P.pos.x > 0 ? -7.3f : 7.3f, cz = P.pos.z > 0 ? -7.3f : 7.3f;
-                w->pos = (Vector3){ cx, 0, cz };
-                blackout = 3.0f; madness = fminf(1.0f, madness + 0.5f);
-                say("it only wanted to be near you.", 4);
-            }
+            if (len < 1.1f) { gardenCaught = true; say("it only wanted to hold you.", 4); }
         }
         L.nearest = nearest;
     }
@@ -323,9 +373,10 @@ static void scare_update(float dt) {
                 for (int tries = 0; tries < 8; tries++) {
                     float a = (P.yaw + (GetRandomValue(0, 1) ? 1 : -1) * frand_(35, 120)) * DEG2RAD;
                     float d = (L.id == W_HUB) ? frand_(5, 9) : frand_(9, 18);
-                    Vector3 p = { eye.x + sinf(a) * d, 2.0f, eye.z - cosf(a) * d };
-                    if (L.id == W_VOID) p.y = eye.y + frand_(-1, 2);
+                    Vector3 p = { eye.x + sinf(a) * d, eye.y + 0.4f, eye.z - cosf(a) * d };
                     if (!ray_clear(eye, p)) continue;
+                    b3RayResult fl = b3World_CastRayClosest(L.phys, b3v(p), (b3Vec3){ 0, -6, 0 }, b3DefaultQueryFilter());
+                    if (fl.hit) p.y = fl.point.y + 2.0f;
                     lurk[i] = (Lurker){ p, frand_(5, 9), 0, true };
                     if (GetRandomValue(0, 2) == 0) play_from(SFX_CREAK, p, 0.5f, frand_(0.7f, 0.9f));
                     break;
@@ -479,7 +530,8 @@ static void draw_scene(Camera3D cam, float time) {
         if (dist_to_box(eye, b) > cull) continue;
         float k = ((L.id == W_HUB || L.id == W_DRAINS) && b->h.y < 0.2f) ? flicker(time + i, 0.4f) : 1.0f;
         Vector3 ho = Vector3Add(b->c, Vector3Scale(Vector3Normalize(Vector3Subtract(eye, b->c)), 0.45f));   // pull it off the wall it hangs on
-        gfx_halo(ho, 0.9f + mx * 2.6f, b->tint, 0.55f * k);
+        if (mx < 0.06f) gfx_halo(ho, 0.45f, b->tint, 0.28f * k);   // a candle flame: a small warm smudge, not a bloom
+        else gfx_halo(ho, 0.9f + mx * 2.6f, b->tint, 0.55f * k);
     }
     for (int i = 0; i < L.pickups.size; i++) {
         const Pickup *pk = &L.pickups.data[i];

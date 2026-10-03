@@ -78,9 +78,9 @@ static void add_chair(Level *L, Vector3 p, float yaw) {
     Color c = { 120, 96, 76, 255 };
     bool alongZ = fabsf(sinf(yaw)) < 0.7f;
     float fx = sinf(yaw), fz = -cosf(yaw);
-    add_box(L, (Vector3){ p.x, 0.45f, p.z }, (Vector3){ 0.22f, 0.03f, 0.22f }, TEX_WOOD, c, 1.0f, 0);
-    for (int i = 0; i < 4; i++) add_box(L, (Vector3){ p.x + (i & 1 ? 0.18f : -0.18f), 0.21f, p.z + (i & 2 ? 0.18f : -0.18f) }, (Vector3){ 0.02f, 0.21f, 0.02f }, TEX_WOOD, c, 1.0f, F_NOCOLLIDE);
-    Vector3 back = { p.x - fx * 0.2f, 0.78f, p.z - fz * 0.2f };
+    add_box(L, (Vector3){ p.x, p.y + 0.45f, p.z }, (Vector3){ 0.22f, 0.03f, 0.22f }, TEX_WOOD, c, 1.0f, 0);
+    for (int i = 0; i < 4; i++) add_box(L, (Vector3){ p.x + (i & 1 ? 0.18f : -0.18f), p.y + 0.21f, p.z + (i & 2 ? 0.18f : -0.18f) }, (Vector3){ 0.02f, 0.21f, 0.02f }, TEX_WOOD, c, 1.0f, F_NOCOLLIDE);
+    Vector3 back = { p.x - fx * 0.2f, p.y + 0.78f, p.z - fz * 0.2f };
     add_box(L, back, alongZ ? (Vector3){ 0.22f, 0.32f, 0.025f } : (Vector3){ 0.025f, 0.32f, 0.22f }, TEX_WOOD, c, 1.0f, F_NOCOLLIDE);
 }
 static void add_note(Level *L, Vector3 p, int id) {
@@ -115,135 +115,254 @@ static void add_portal(Level *L, Vector3 pos, WorldId to, int needs, Color col, 
     Portals_push(&L->portals, p);
 }
 
-// ---------------------------------------------------------------- HUB: the room
+// ---------------------------------------------------------------- HUB: the house
+// a bedroom, a hallway with a bathroom and a linen cupboard off it, stairs going down a long way, and a parlour
+// set out for a service. the doors to the dreams are closed, and light comes round their edges.
+#define WT 0.15f   // half thickness of an interior wall
+static void wall_x(Level *L, float x, float z0, float z1, float y0, float y1, TexId t, Color c) {
+    if (z1 - z0 > 0.01f && y1 - y0 > 0.01f) add_box(L, (Vector3){ x, (y0 + y1) / 2, (z0 + z1) / 2 }, (Vector3){ WT, (y1 - y0) / 2, (z1 - z0) / 2 }, t, c, 2.0f, 0);
+}
+static void wall_z(Level *L, float z, float x0, float x1, float y0, float y1, TexId t, Color c) {
+    if (x1 - x0 > 0.01f && y1 - y0 > 0.01f) add_box(L, (Vector3){ (x0 + x1) / 2, (y0 + y1) / 2, z }, (Vector3){ (x1 - x0) / 2, (y1 - y0) / 2, WT }, t, c, 2.0f, 0);
+}
+// a wall with a doorway in it from d0 to d1, open up to dtop
+static void wall_x_door(Level *L, float x, float z0, float z1, float y0, float y1, float d0, float d1, float dtop, TexId t, Color c) {
+    wall_x(L, x, z0, d0, y0, y1, t, c); wall_x(L, x, d1, z1, y0, y1, t, c); wall_x(L, x, d0, d1, dtop, y1, t, c);
+}
+static void wall_z_door(Level *L, float z, float x0, float x1, float y0, float y1, float d0, float d1, float dtop, TexId t, Color c) {
+    wall_z(L, z, x0, d0, y0, y1, t, c); wall_z(L, z, d1, x1, y0, y1, t, c); wall_z(L, z, d0, d1, dtop, y1, t, c);
+}
+static void slab(Level *L, float x0, float x1, float z0, float z1, float y, float th, TexId t, Color c, float sc) {
+    add_box(L, (Vector3){ (x0 + x1) / 2, y - th / 2, (z0 + z1) / 2 }, (Vector3){ (x1 - x0) / 2, th / 2, (z1 - z0) / 2 }, t, c, sc, 0);
+}
+// a closed door in a wall. p is the middle of the doorway at floor height; n points into the room you stand in
+static void add_door(Level *L, Vector3 p, Vector3 n, Color col, WorldId to, int needs, const char *label) {
+    bool xn = fabsf(n.x) > 0.5f;   // wall normal along x
+    Vector3 slabH = xn ? (Vector3){ 0.05f, 1.15f, 0.6f } : (Vector3){ 0.6f, 1.15f, 0.05f };
+    Vector3 sc = { p.x - n.x * 0.05f, p.y + 1.15f, p.z - n.z * 0.05f };
+    add_box(L, sc, slabH, TEX_WOOD, (Color){ 70, 52, 42, 255 }, 1.0f, F_NOCOLLIDE);
+    // frame
+    Vector3 side = xn ? (Vector3){ 0, 0, 1 } : (Vector3){ 1, 0, 0 };
+    for (int s = -1; s <= 1; s += 2) {
+        Vector3 c = { p.x + side.x * s * 0.68f + n.x * 0.02f, p.y + 1.2f, p.z + side.z * s * 0.68f + n.z * 0.02f };
+        add_box(L, c, xn ? (Vector3){ 0.18f, 1.2f, 0.07f } : (Vector3){ 0.07f, 1.2f, 0.18f }, TEX_WOOD, (Color){ 50, 38, 32, 255 }, 1.0f, F_NOCOLLIDE);
+    }
+    add_box(L, (Vector3){ p.x + n.x * 0.02f, p.y + 2.37f, p.z + n.z * 0.02f }, xn ? (Vector3){ 0.18f, 0.07f, 0.75f } : (Vector3){ 0.75f, 0.07f, 0.18f }, TEX_WOOD, (Color){ 50, 38, 32, 255 }, 1.0f, F_NOCOLLIDE);
+    // the light round the edges: a line under the door, a thin slit at the side, and a little of it on the floor
+    add_box(L, (Vector3){ p.x + n.x * 0.01f, p.y + 0.012f, p.z + n.z * 0.01f }, xn ? (Vector3){ 0.03f, 0.01f, 0.58f } : (Vector3){ 0.58f, 0.01f, 0.03f }, TEX_CONCRETE, col, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_box(L, (Vector3){ p.x + side.x * 0.6f, p.y + 1.15f, p.z + side.z * 0.6f }, xn ? (Vector3){ 0.03f, 1.12f, 0.012f } : (Vector3){ 0.012f, 1.12f, 0.03f }, TEX_CONCRETE, col, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_box(L, (Vector3){ p.x + n.x * 0.45f, p.y + 0.006f, p.z + n.z * 0.45f }, xn ? (Vector3){ 0.4f, 0.003f, 0.55f } : (Vector3){ 0.55f, 0.003f, 0.4f }, TEX_CONCRETE, scale_tint(col, 0.22f), 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_portal(L, (Vector3){ p.x + n.x * 0.55f, p.y, p.z + n.z * 0.55f }, to, needs, col, label);
+    L->portals.data[L->portals.size - 1].radius = 0.75f;
+}
+// a portrait on a wall: a frame, a dark canvas, a pale smear where the face is. later on they have been turned round
+static void add_portrait(Level *L, Vector3 p, Vector3 n, float w, float h, bool turned) {
+    bool xn = fabsf(n.x) > 0.5f;
+    Vector3 fh = xn ? (Vector3){ 0.03f, h, w } : (Vector3){ w, h, 0.03f };
+    add_box(L, (Vector3){ p.x + n.x * 0.03f, p.y, p.z + n.z * 0.03f }, fh, TEX_WOOD, (Color){ 90, 66, 40, 255 }, 1.0f, F_NOCOLLIDE);
+    Vector3 ch = xn ? (Vector3){ 0.01f, h - 0.06f, w - 0.06f } : (Vector3){ w - 0.06f, h - 0.06f, 0.01f };
+    Vector3 cc = { p.x + n.x * 0.065f, p.y, p.z + n.z * 0.065f };
+    if (turned) { add_box(L, cc, ch, TEX_WOOD, (Color){ 120, 100, 80, 255 }, 0.5f, F_NOCOLLIDE); return; }
+    add_box(L, cc, ch, TEX_CLOTH, (Color){ 50, 40, 36, 255 }, 1.0f, F_NOCOLLIDE);
+    Vector3 face = { cc.x + n.x * 0.012f, p.y + h * 0.15f, cc.z + n.z * 0.012f };
+    add_box(L, face, xn ? (Vector3){ 0.005f, h * 0.3f, w * 0.28f } : (Vector3){ w * 0.28f, h * 0.3f, 0.005f }, TEX_SKIN, (Color){ 170, 150, 130, 255 }, 0.3f, F_NOCOLLIDE);
+    // someone took the eyes out with a nail
+    Vector3 sd = xn ? (Vector3){ 0, 0, 1 } : (Vector3){ 1, 0, 0 };
+    Vector3 ec = { face.x + n.x * 0.006f, face.y + h * 0.06f, face.z + n.z * 0.006f };
+    add_box(L, (Vector3){ ec.x - sd.x * w * 0.25f, ec.y, ec.z - sd.z * w * 0.25f }, xn ? (Vector3){ 0.004f, h * 0.05f, w * 0.18f } : (Vector3){ w * 0.18f, h * 0.05f, 0.004f }, TEX_CONCRETE, (Color){ 12, 8, 8, 255 }, 1.0f, F_NOCOLLIDE);
+}
+static void add_spot(Level *L, float x, float y, float z) { if (L->nspots < 40) L->spots[L->nspots++] = (Vector3){ x, y, z }; }
+
 static void build_hub(Level *L, int seed) {
-    L->name = "THE ROOM";
-    L->fog = (Color){ 34, 30, 26, 255 };
-    L->fogDensity = 0.06f;
-    L->light = 1.0f;
-    L->gradeLo = (Color){ 118, 128, 150, 255 }; L->gradeHi = (Color){ 150, 128, 112, 255 };
+    L->name = "THE HOUSE";
+    L->fog = (Color){ 22, 20, 18, 255 };
+    L->fogDensity = 0.075f;
+    L->light = 0.9f;
+    L->gradeLo = (Color){ 118, 126, 146, 255 }; L->gradeHi = (Color){ 150, 128, 112, 255 };
     L->moteCol = (Color){ 150, 140, 120, 255 };
-    L->spawn = (Vector3){ 0, 0.05f, 2.0f };
-    L->spawnYaw = 0;
     L->killY = -50;
-    const float S = 8, H = 4.2f;
-    room(L, S, S, H, seed >= 7 ? TEX_EYES : TEX_TILE, seed >= 7 ? (Color){ 190, 170, 170, 255 } : (Color){ 200, 205, 180, 255 }, TEX_WOOD, (Color){ 190, 170, 150, 255 }, TEX_CONCRETE, (Color){ 140, 140, 130, 255 });
-
-    // doors: slab glows in a dark frame, set into the wall faces
-    struct { Vector3 p; int axis; Color c; WorldId to; int needs; const char *lbl; } d[5] = {
-        { { 0, 1.3f, -S + 0.15f }, 0, { 230, 120, 40, 255 },  W_SHAFT,  0, "THE SHAFT" },
-        { { S - 0.15f, 1.3f, 0 }, 1, { 90, 220, 90, 255 },   W_DRAINS, 0, "THE DRAINS" },
-        { { -S + 0.15f, 1.3f, 0 }, 1, { 170, 90, 255, 255 }, W_VOID,   0, "THE STEPS" },
-        { { 0, 1.3f, S - 0.15f }, 0, { 255, 245, 235, 255 }, W_END,    FX_ALL, "THE WAY OUT" },
-        { { 3.4f, 1.3f, -S + 0.15f }, 0, { 255, 110, 190, 255 }, W_GARDEN, 0, "THE ORCHARD" },
-    };
-    for (int i = 0; i < 5; i++) {
-        Vector3 fh = d[i].axis == 0 ? (Vector3){ 1.35f, 1.5f, 0.12f } : (Vector3){ 0.12f, 1.5f, 1.35f };
-        Vector3 sh = d[i].axis == 0 ? (Vector3){ 1.0f, 1.25f, 0.05f } : (Vector3){ 0.05f, 1.25f, 1.0f };
-        add_box(L, d[i].p, fh, TEX_CONCRETE, (Color){ 40, 38, 36, 255 }, 1.0f, F_NOCOLLIDE);
-        Vector3 in = d[i].p;
-        if (d[i].axis == 0) in.z += (d[i].p.z < 0 ? 0.08f : -0.08f); else in.x += (d[i].p.x < 0 ? 0.08f : -0.08f);
-        add_box(L, in, sh, TEX_CONCRETE, d[i].c, 1.0f, F_EMIT | F_NOCOLLIDE);
-        Vector3 pp = d[i].p;
-        if (d[i].axis == 0) pp.z += (pp.z < 0 ? 0.6f : -0.6f); else pp.x += (pp.x < 0 ? 0.6f : -0.6f);
-        pp.y = 0;
-        add_portal(L, pp, d[i].to, d[i].needs, d[i].c, d[i].lbl);
-    }
-
-    // the room is never quite arranged the way you left it
     SetRandomSeed(seed * 31 + 5);
-    static const float CX[4] = { -5.8f, 5.8f, -5.8f, 5.8f }, CZ[4] = { -5.4f, -5.4f, 5.4f, 5.4f };
-    int bc = GetRandomValue(0, 3), dc = (bc + 1 + GetRandomValue(0, 2)) % 4;
-    {   // a bed that nobody wants
-        float bx = CX[bc], bz = CZ[bc], sg = bz < 0 ? 1.0f : -1.0f;
-        add_box(L, (Vector3){ bx, 0.35f, bz }, (Vector3){ 1.0f, 0.35f, 1.9f }, TEX_WOOD, (Color){ 150, 120, 100, 255 }, 1.0f, 0);
-        add_box(L, (Vector3){ bx, 0.78f, bz + 0.2f * sg }, (Vector3){ 0.92f, 0.1f, 1.7f }, TEX_TILE, (Color){ 150, 130, 120, 255 }, 1.0f, 0);
-        add_box(L, (Vector3){ bx, 0.95f, bz - 1.4f * sg }, (Vector3){ 0.6f, 0.12f, 0.3f }, TEX_CONCRETE, (Color){ 200, 190, 170, 255 }, 1.0f, F_NOCOLLIDE);
-    }
-    {   // a desk with a TV that never turns off, screen turned toward the middle of the room
-        float dx = CX[dc], dz = CZ[dc], sg = dz < 0 ? 1.0f : -1.0f;
-        add_box(L, (Vector3){ dx, 0.45f, dz }, (Vector3){ 1.2f, 0.45f, 0.6f }, TEX_WOOD, (Color){ 140, 110, 90, 255 }, 1.0f, 0);
-        add_box(L, (Vector3){ dx, 1.2f, dz }, (Vector3){ 0.5f, 0.35f, 0.4f }, TEX_CONCRETE, (Color){ 50, 50, 46, 255 }, 1.0f, F_NOCOLLIDE);
-        add_box(L, (Vector3){ dx, 1.2f, dz + 0.41f * sg }, (Vector3){ 0.4f, 0.27f, 0.02f }, TEX_STATIC, (Color){ 150, 170, 160, 255 }, 1.0f, F_NOCOLLIDE);
+    const Color WALLC = seed >= 7 ? (Color){ 170, 150, 150, 255 } : (Color){ 176, 168, 146, 255 }, WOODF = { 170, 150, 130, 255 }, CEIL = { 120, 118, 110, 255 };
+    const TexId WALLT = seed >= 7 ? TEX_EYES : TEX_TILE;
+    const float BH = 3.0f, HH = 2.7f, PF = -3.0f, PH = 4.6f;
+
+    // ---- the bedroom: x -4..4, z -3.5..3.5
+    slab(L, -4, 4, -3.5f, 3.5f, 0, 1, TEX_WOOD, WOODF, 2.0f);
+    slab(L, -4, 4, -3.5f, 3.5f, BH + 1, 1, TEX_CONCRETE, CEIL, 3.0f);
+    wall_x(L, -4, -3.6f, 3.6f, 0, BH, WALLT, WALLC);
+    wall_z(L, -3.5f, -4, 4, 0, BH, WALLT, WALLC);
+    wall_z(L, 3.5f, -4, 4, 0, BH, WALLT, WALLC);
+    wall_x_door(L, 4, -3.6f, 3.6f, 0, BH, -0.6f, 0.6f, 2.25f, WALLT, WALLC);
+    int bedSide = GetRandomValue(0, 1);
+    float bz = bedSide ? -2.2f : 2.2f, bx = -2.9f;
+    add_box(L, (Vector3){ bx, 0.35f, bz }, (Vector3){ 0.95f, 0.35f, 1.2f }, TEX_WOOD, (Color){ 150, 120, 100, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ bx, 0.78f, bz }, (Vector3){ 0.88f, 0.1f, 1.1f }, TEX_CLOTH, (Color){ 170, 160, 150, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ -3.75f, 0.9f, bz }, (Vector3){ 0.12f, 0.9f, 1.0f }, TEX_WOOD, (Color){ 110, 84, 64, 255 }, 1.0f, 0);   // headboard
+    add_box(L, (Vector3){ -3.35f, 0.95f, bz }, (Vector3){ 0.25f, 0.1f, 0.5f }, TEX_CLOTH, (Color){ 200, 190, 176, 255 }, 1.0f, F_NOCOLLIDE);
+    L->wakePos = (Vector3){ -1.5f, 0.05f, bz }; L->wakeYaw = 90;
+    {   // a desk with a TV that never turns off
+        float dz = -bz * 1.25f, s2 = dz < 0 ? 1.0f : -1.0f;
+        add_box(L, (Vector3){ -1.0f, 0.45f, dz }, (Vector3){ 1.0f, 0.45f, 0.45f }, TEX_WOOD, (Color){ 140, 110, 90, 255 }, 1.0f, 0);
+        add_box(L, (Vector3){ -1.0f, 1.22f, dz }, (Vector3){ 0.42f, 0.32f, 0.36f }, TEX_CONCRETE, (Color){ 50, 50, 46, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ -1.0f, 1.22f, dz + 0.37f * s2 }, (Vector3){ 0.34f, 0.25f, 0.02f }, TEX_STATIC, (Color){ 150, 170, 160, 255 }, 1.0f, F_NOCOLLIDE);
         static const int HUBNOTE[] = { NOTE_VIGIL, NOTE_DAY9, NOTE_DOORS, NOTE_GARDEN, NOTE_FAMILY, NOTE_AWAKE };
-        add_note(L, (Vector3){ dx + 0.75f, 0.91f, dz + 0.1f * sg }, HUBNOTE[(seed - 1) % 6]);
+        add_note(L, (Vector3){ -0.2f, 0.91f, dz }, HUBNOTE[(seed - 1) % 6]);
     }
-    // pillars, a half wall: different cover every time
-    int npil = GetRandomValue(0, 3);
-    for (int i = 0; i < npil; i++) {
-        float px = frand(-5.5f, 5.5f), pz = frand(-5.5f, 5.5f);
-        if ((fabsf(px) < 2.2f && fabsf(pz) > 3.0f) || (fabsf(pz) < 2.2f && fabsf(px) > 3.0f)) continue;  // keep door approaches clear
-        if (fabsf(px) < 1.5f && fabsf(pz - 2.0f) < 1.5f) continue;                                          // and the spawn
-        if (fabsf(px - CX[bc]) < 2.4f && fabsf(pz - CZ[bc]) < 2.8f) continue;
-        if (fabsf(px - CX[dc]) < 2.4f && fabsf(pz - CZ[dc]) < 2.0f) continue;
-        add_box(L, (Vector3){ px, H / 2, pz }, (Vector3){ 0.32f, H / 2, 0.32f }, TEX_CONCRETE, (Color){ 130, 128, 118, 255 }, 1.5f, 0);
-    }
-    if (GetRandomValue(0, 1)) {
-        float sx = GetRandomValue(0, 1) ? 3.8f : -3.8f, sz = GetRandomValue(0, 1) ? 3.4f : -3.4f;
-        add_box(L, (Vector3){ sx, 0.55f, sz }, (Vector3){ 1.6f, 0.55f, 0.12f }, TEX_TILE, (Color){ 150, 150, 130, 255 }, 1.0f, 0);
-    }
-    if (seed == 1) {   // somebody is standing in the corner, facing the wall. next time you wake up they're gone.
-        float fx = CX[(bc + 2) % 4] > 0 ? S - 0.6f : -S + 0.6f, fz = CZ[(bc + 2) % 4] > 0 ? S - 0.6f : -S + 0.6f;
-        add_effigy(L, FIG_PENITENT, (Vector3){ fx, 0, fz }, atan2f(fx, -fz), 0.0f);
-    }
-    {   // every time you wake there is more of it: candles around the bed, a cross over it, chalk on the floor, chairs
-        float bx = CX[bc], bz = CZ[bc];
+    // a wardrobe, not quite shut
+    add_box(L, (Vector3){ 3.2f, 1.1f, -bz * 1.3f }, (Vector3){ 0.6f, 1.1f, 0.35f }, TEX_WOOD, (Color){ 90, 70, 56, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ 3.2f, 1.1f, -bz * 1.3f + (bz > 0 ? -0.36f : 0.36f) }, (Vector3){ 0.02f, 1.0f, 0.01f }, TEX_CONCRETE, (Color){ 4, 3, 3, 255 }, 1.0f, F_NOCOLLIDE);
+    // a window onto somewhere that isn't there
+    float wz = bz < 0 ? 3.5f - WT : -3.5f + WT, wn = bz < 0 ? -1.0f : 1.0f;
+    add_box(L, (Vector3){ 1.6f, 1.8f, wz + wn * 0.02f }, (Vector3){ 0.85f, 0.75f, 0.04f }, TEX_CONCRETE, (Color){ 22, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ 1.6f, 1.8f, wz + wn * 0.05f }, (Vector3){ 0.72f, 0.62f, 0.01f }, TEX_CONCRETE, (Color){ 30, 44, 70, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_box(L, (Vector3){ 1.6f, 1.8f, wz + wn * 0.07f }, (Vector3){ 0.03f, 0.64f, 0.01f }, TEX_CONCRETE, (Color){ 22, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ 1.6f, 1.8f, wz + wn * 0.07f }, (Vector3){ 0.74f, 0.03f, 0.01f }, TEX_CONCRETE, (Color){ 22, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ 1.6f, 0.01f, wz + wn * 1.4f }, (Vector3){ 0.7f, 0.004f, 1.2f }, TEX_CONCRETE, (Color){ 22, 32, 52, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_box(L, (Vector3){ 0, BH - 0.4f, 0 }, (Vector3){ 0.01f, 0.4f, 0.01f }, TEX_CONCRETE, (Color){ 20, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ 0, BH - 0.86f, 0 }, (Vector3){ 0.08f, 0.1f, 0.08f }, TEX_CONCRETE, (Color){ 230, 196, 130, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_box(L, (Vector3){ 0.4f, 0.008f, 0 }, (Vector3){ 1.8f, 0.004f, 2.2f }, TEX_MOSAIC, (Color){ 52, 40, 48, 255 }, 1.4f, F_NOCOLLIDE);
+    if (seed == 1) add_effigy(L, FIG_PENITENT, (Vector3){ 3.45f, 0, bz > 0 ? -2.95f : 2.95f }, bz > 0 ? 3.14159f : 0.0f, 0.0f);   // in the corner, facing the wall. next time it's gone
+    {   // every time you wake there is more of it
         int candles = seed >= 2 ? (seed - 1) * 2 : 0;
-        if (candles > 16) candles = 16;
+        if (candles > 14) candles = 14;
         for (int i = 0; i < candles; i++) {
-            float a = i * 6.2831853f / 16.0f + 0.2f;
-            Vector3 cp = { bx + sinf(a) * 1.55f, 0, bz + cosf(a) * 2.35f };
-            if (fabsf(cp.x) > S - 0.3f || fabsf(cp.z) > S - 0.3f) continue;
-            add_candle(L, cp, frand(0.12f, 0.3f), i % 3 == 0);
+            float a = 0.3f + i * 3.14159f / 14.0f;
+            add_candle(L, (Vector3){ bx + 0.9f + sinf(a) * 0.9f, 0, bz + cosf(a) * 1.7f }, frand(0.12f, 0.3f), i % 3 == 0);
         }
-        if (seed >= 3) add_cross(L, (Vector3){ bx > 0 ? S - 0.06f : -S + 0.06f, 2.0f, bz }, 0.45f, 0, (Color){ 90, 60, 50, 255 });
-        if (seed >= 4) add_sigil(L, (Vector3){ 0, 0.004f, 0 }, 2.2f, (Color){ 120, 30, 24, 255 }, seed);
-        if (seed >= 6) {   // they sat here and watched you sleep
-            float cx0 = bx * 0.25f, cz0 = bz * 0.25f;
-            float yaw = atan2f(bx - cx0, -(bz - cz0));
-            for (int i = 0; i < 4; i++) {
-                Vector3 cp = { cx0 + cosf(yaw) * (i - 1.5f) * 0.75f, 0, cz0 + sinf(yaw) * (i - 1.5f) * 0.75f };
-                add_chair(L, cp, yaw);
-            }
-        }
+        if (seed >= 3) add_cross(L, (Vector3){ -4 + WT + 0.05f, 2.2f, bz }, 0.4f, 0, (Color){ 90, 60, 50, 255 });
+        if (seed >= 4) add_sigil(L, (Vector3){ 0.4f, 0.004f, 0 }, 1.8f, (Color){ 120, 30, 24, 255 }, seed);
+        if (seed >= 6) for (int i = 0; i < 3; i++) add_chair(L, (Vector3){ 0.6f, 0, bz + (i - 1) * 0.7f }, -1.5708f);   // they sat here and watched you sleep
     }
-    // a threadbare rug, and a window onto somewhere that isn't there
-    add_box(L, (Vector3){ 0, 0.008f, 0 }, (Vector3){ 2.6f, 0.004f, 3.4f }, TEX_MOSAIC, (Color){ 52, 40, 48, 255 }, 1.4f, F_NOCOLLIDE);
-    add_box(L, (Vector3){ -3.6f, 2.4f, -S + 0.1f }, (Vector3){ 0.95f, 0.85f, 0.1f }, TEX_CONCRETE, (Color){ 22, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
-    add_box(L, (Vector3){ -3.6f, 2.4f, -S + 0.23f }, (Vector3){ 0.8f, 0.72f, 0.03f }, TEX_CONCRETE, (Color){ 50, 80, 150, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
-    add_box(L, (Vector3){ -3.6f, 2.4f, -S + 0.27f }, (Vector3){ 0.03f, 0.74f, 0.02f }, TEX_CONCRETE, (Color){ 22, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
-    add_box(L, (Vector3){ -3.6f, 2.4f, -S + 0.27f }, (Vector3){ 0.82f, 0.03f, 0.02f }, TEX_CONCRETE, (Color){ 22, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
-    add_box(L, (Vector3){ -3.6f, 0.012f, -S + 1.8f }, (Vector3){ 0.8f, 0.004f, 1.5f }, TEX_CONCRETE, (Color){ 40, 60, 100, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE); // moonlight on the boards
-    // hanging bulb
-    add_box(L, (Vector3){ 0, 3.7f, 0 }, (Vector3){ 0.01f, 0.5f, 0.01f }, TEX_CONCRETE, (Color){ 20, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
-    add_box(L, (Vector3){ 0, 3.15f, 0 }, (Vector3){ 0.1f, 0.14f, 0.1f }, TEX_CONCRETE, (Color){ 255, 220, 140, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
-    // stains on the floor
-    for (int i = 0; i < 10; i++)
-        add_box(L, (Vector3){ frand(-7, 7), 0.01f, frand(-7, 7) }, (Vector3){ frand(0.4f, 1.4f), 0.005f, frand(0.4f, 1.4f) }, TEX_SLUDGE, (Color){ 120, 90, 90, 255 }, 2.0f, F_NOCOLLIDE);
-    // things written on the walls
     char buf[96];
-    add_decal(L, "STILL ASLEEP", (Vector3){ S, 2.3f, -4.5f }, 0, -1, 0.26f, BLOOD);
-    if (g_launches > 1) add_decal(L, "YOU CAME BACK", (Vector3){ -S, 2.1f, 4.2f }, 0, 1, 0.24f, BLOOD);
-    if (g_wakes > 0) {
-        snprintf(buf, sizeof buf, "WOKEN %d TIMES", g_wakes);
-        add_decal(L, buf, (Vector3){ -S, 2.4f, -4.0f }, 0, 1, 0.22f, BLOOD);
+    add_decal(L, "STILL ASLEEP", (Vector3){ 4 - WT, 2.3f, bz < 0 ? 2.2f : -2.2f }, 0, -1, 0.2f, BLOOD);
+    if (g_launches > 1) add_decal(L, "YOU CAME BACK", (Vector3){ -4 + WT, 2.3f, -bz }, 0, 1, 0.2f, BLOOD);
+    if (g_wakes > 0) { snprintf(buf, sizeof buf, "WOKEN %d TIMES", g_wakes); add_decal(L, buf, (Vector3){ -1.0f, 2.4f, -bz * 1.6f + (bz > 0 ? 0.05f : -0.05f) }, 2, bz > 0 ? 1 : -1, 0.18f, BLOOD); }
+    add_spot(L, 3.0f, 0, bz); add_spot(L, -2.6f, 0, -bz); add_spot(L, 3.4f, 0, 0); add_spot(L, -0.5f, 0, bz * 0.3f);
+
+    // ---- the hallway: x 4..20, z -1.1..1.1
+    slab(L, 4, 20, -1.1f, 1.1f, 0, 1, TEX_WOOD, (Color){ 130, 110, 96, 255 }, 2.0f);
+    slab(L, 4, 20, -1.1f, 1.1f, HH + 1, 1, TEX_CONCRETE, CEIL, 3.0f);
+    add_box(L, (Vector3){ 12, 0.006f, 0 }, (Vector3){ 8, 0.004f, 0.55f }, TEX_MOSAIC, (Color){ 70, 30, 34, 255 }, 1.0f, F_NOCOLLIDE);   // a runner
+    wall_z_door(L, -1.1f, 4, 20, 0, HH, 9.4f, 10.6f, 2.25f, TEX_TILE, (Color){ 150, 140, 120, 255 });
+    wall_z_door(L, 1.1f, 4, 20, 0, HH, 14.4f, 15.6f, 2.25f, TEX_TILE, (Color){ 150, 140, 120, 255 });
+    wall_x(L, 4, -1.2f, 1.2f, BH, BH + 0.01f, TEX_TILE, WALLC);
+    for (int i = 0; i < 3; i++) {   // bulbs. one of them has gone, and which one changes
+        float x = 6.5f + i * 5.5f;
+        add_box(L, (Vector3){ x, HH - 0.2f, 0 }, (Vector3){ 0.01f, 0.2f, 0.01f }, TEX_CONCRETE, (Color){ 20, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
+        bool dead = i == seed % 3;
+        add_box(L, (Vector3){ x, HH - 0.45f, 0 }, (Vector3){ 0.07f, 0.09f, 0.07f }, TEX_CONCRETE, dead ? (Color){ 40, 38, 34, 255 } : (Color){ 220, 180, 120, 255 }, 1.0f, dead ? F_NOCOLLIDE : F_EMIT | F_NOCOLLIDE);
     }
-    if (seed >= 3) add_decal(L, "DO NOT WAKE HIM", (Vector3){ -4.6f, 2.0f, S }, 2, -1, 0.22f, CHALK);
-    if (seed >= 5) add_decal(L, "NEMA", (Vector3){ 4.2f, 2.5f, S }, 2, -1, 0.3f, BLOOD);
-    if (seed >= 7) add_decal(L, "PATER NOSTER QUI ES IN INFERNIS", (Vector3){ 0, 3.3f, -S }, 2, 1, 0.16f, SOOT);
-    // visitors: they only move when you aren't looking, and there are more each time you wake
+    {   // the family on the walls. once you have been down enough times, they have been turned to face the wall
+        bool turned = seed >= 5;
+        add_portrait(L, (Vector3){ 6.0f, 1.6f, -1.1f + WT }, (Vector3){ 0, 0, 1 }, 0.35f, 0.45f, turned);
+        add_portrait(L, (Vector3){ 12.5f, 1.7f, -1.1f + WT }, (Vector3){ 0, 0, 1 }, 0.5f, 0.35f, turned);
+        add_portrait(L, (Vector3){ 7.5f, 1.6f, 1.1f - WT }, (Vector3){ 0, 0, -1 }, 0.3f, 0.4f, turned);
+        add_portrait(L, (Vector3){ 11.5f, 1.6f, 1.1f - WT }, (Vector3){ 0, 0, -1 }, 0.3f, 0.4f, seed >= 3);
+        add_portrait(L, (Vector3){ 18.0f, 1.65f, 1.1f - WT }, (Vector3){ 0, 0, -1 }, 0.42f, 0.5f, turned);
+    }
+    // a long-case clock that has stopped at ten to three
+    add_box(L, (Vector3){ 17.0f, 1.05f, -0.82f }, (Vector3){ 0.28f, 1.05f, 0.14f }, TEX_WOOD, (Color){ 80, 56, 40, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ 17.0f, 1.72f, -0.67f }, (Vector3){ 0.18f, 0.18f, 0.01f }, TEX_SKIN, (Color){ 210, 200, 170, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ 16.95f, 1.75f, -0.655f }, (Vector3){ 0.01f, 0.1f, 0.004f }, TEX_CONCRETE, (Color){ 20, 16, 16, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ 16.94f, 1.68f, -0.655f }, (Vector3){ 0.07f, 0.01f, 0.004f }, TEX_CONCRETE, (Color){ 20, 16, 16, 255 }, 1.0f, F_NOCOLLIDE);
+    if (seed >= 3) add_decal(L, "DO NOT WAKE HIM", (Vector3){ 15.5f, 2.0f, -1.1f + WT }, 2, 1, 0.16f, CHALK);
+    add_spot(L, 5.0f, 0, 0.5f); add_spot(L, 9.0f, 0, -0.4f); add_spot(L, 13.0f, 0, 0.4f); add_spot(L, 17.8f, 0, 0.3f); add_spot(L, 19.4f, 0, -0.5f);
+
+    // ---- the bathroom: x 8..12, z -5..-1.1
+    slab(L, 8, 12, -5, -1.1f, 0, 1, TEX_TILE, (Color){ 160, 160, 150, 255 }, 1.0f);
+    slab(L, 8, 12, -5, -1.1f, HH + 1, 1, TEX_CONCRETE, CEIL, 3.0f);
+    wall_x(L, 8, -5.1f, -1.1f, 0, HH, TEX_TILE, (Color){ 170, 176, 170, 255 });
+    wall_z(L, -5, 8, 12, 0, HH, TEX_TILE, (Color){ 170, 176, 170, 255 });
+    wall_x_door(L, 12, -5.1f, -1.1f, 0, HH, -3.7f, -2.5f, 2.3f, TEX_TILE, (Color){ 170, 176, 170, 255 });
+    {   // a bath, full to the brim with something dark that does not move
+        Color tub = { 200, 196, 186, 255 };
+        add_box(L, (Vector3){ 9.4f, 0.3f, -4.85f + 0.06f }, (Vector3){ 1.2f, 0.3f, 0.06f }, TEX_SKIN, tub, 1.0f, 0);
+        add_box(L, (Vector3){ 9.4f, 0.3f, -3.95f }, (Vector3){ 1.2f, 0.3f, 0.06f }, TEX_SKIN, tub, 1.0f, 0);
+        add_box(L, (Vector3){ 8.26f, 0.3f, -4.4f }, (Vector3){ 0.06f, 0.3f, 0.45f }, TEX_SKIN, tub, 1.0f, 0);
+        add_box(L, (Vector3){ 10.54f, 0.3f, -4.4f }, (Vector3){ 0.06f, 0.3f, 0.45f }, TEX_SKIN, tub, 1.0f, 0);
+        add_box(L, (Vector3){ 9.4f, 0.52f, -4.4f }, (Vector3){ 1.1f, 0.01f, 0.39f }, TEX_WATER, (Color){ 20, 14, 14, 255 }, 1.0f, 0);
+        add_box(L, (Vector3){ 8.3f, 0.9f, -2.0f }, (Vector3){ 0.18f, 0.08f, 0.3f }, TEX_SKIN, tub, 1.0f, 0);   // sink
+        add_box(L, (Vector3){ 8 + WT + 0.02f, 1.6f, -2.0f }, (Vector3){ 0.02f, 0.4f, 0.32f }, TEX_WATER, (Color){ 40, 44, 50, 255 }, 1.0f, F_NOCOLLIDE);   // a mirror that shows nothing
+        if (seed >= 4) add_decal(L, "NEMA", (Vector3){ 8 + WT + 0.045f, 1.6f, -2.0f }, 0, 1, 0.12f, (Color){ 150, 150, 150, 255 });
+    }
+    add_door(L, (Vector3){ 12 - WT, 0, -3.1f }, (Vector3){ -1, 0, 0 }, (Color){ 120, 200, 120, 255 }, W_DRAINS, 0, "THE DRAINS");
+    add_spot(L, 10.6f, 0, -3.2f);
+
+    // ---- the linen cupboard: x 14..16, z 1.1..3.4
+    slab(L, 14, 16, 1.1f, 3.4f, 0, 1, TEX_WOOD, WOODF, 2.0f);
+    slab(L, 14, 16, 1.1f, 3.4f, HH + 1, 1, TEX_CONCRETE, CEIL, 3.0f);
+    wall_x(L, 14, 1.1f, 3.4f, 0, HH, TEX_WOOD, (Color){ 120, 100, 80, 255 });
+    wall_x(L, 16, 1.1f, 3.4f, 0, HH, TEX_WOOD, (Color){ 120, 100, 80, 255 });
+    wall_z(L, 3.4f, 13.9f, 16.1f, 0, HH, TEX_WOOD, (Color){ 120, 100, 80, 255 });
+    for (int i = 0; i < 4; i++) {
+        add_box(L, (Vector3){ 14.3f, 0.5f + i * 0.5f, 2.0f }, (Vector3){ 0.15f, 0.02f, 0.6f }, TEX_WOOD, (Color){ 120, 100, 80, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ 14.3f, 0.6f + i * 0.5f, 2.0f + frand(-0.3f, 0.3f) }, (Vector3){ 0.13f, 0.08f, 0.2f }, TEX_CLOTH, (Color){ 190, 180, 166, 255 }, 1.0f, F_NOCOLLIDE);
+    }
+    add_door(L, (Vector3){ 15.0f, 0, 3.4f - WT }, (Vector3){ 0, 0, -1 }, (Color){ 230, 130, 60, 255 }, W_SHAFT, 0, "THE SHAFT");
+
+    // ---- the stairs: down three metres between x 20 and 26
+    slab(L, 20, 26, -1.1f, 1.1f, HH + 1, 1, TEX_CONCRETE, CEIL, 3.0f);
+    wall_z(L, -1.1f, 20, 26, PF, HH, TEX_CONCRETE, (Color){ 120, 112, 100, 255 });
+    wall_z(L, 1.1f, 20, 26, PF, HH, TEX_CONCRETE, (Color){ 120, 112, 100, 255 });
+    for (int k = 0; k < 20; k++) {
+        float top = -0.15f * (k + 1);
+        if (top <= PF + 0.01f) break;
+        add_box(L, (Vector3){ 20 + 0.3f * k + 0.15f, (top + PF) / 2, 0 }, (Vector3){ 0.15f, (top - PF) / 2, 1.1f }, TEX_WOOD, (Color){ 120, 96, 80, 255 }, 1.0f, 0);
+    }
+    add_box(L, (Vector3){ 23, 1.0f, -0.98f }, (Vector3){ 3, 0.03f, 0.03f }, TEX_WOOD, (Color){ 80, 60, 46, 255 }, 1.0f, F_NOCOLLIDE);   // banister, for show
+    if (seed >= 2) add_decal(L, seed >= 6 ? "THEY ARE ALL DOWNSTAIRS" : "DOWN", (Vector3){ 21.5f, 1.5f, 1.1f - WT }, 2, -1, 0.09f, CHALK);
+    add_spot(L, 21.0f, -0.3f, 0); add_spot(L, 24.5f, -2.2f, 0);
+
+    // ---- the parlour: x 26..38, z -6..6, floor three metres down
+    slab(L, 26, 38, -6, 6, PF, 1, TEX_WOOD, (Color){ 120, 96, 80, 255 }, 2.0f);
+    slab(L, 26, 38, -6, 6, PF + PH + 1, 1, TEX_CONCRETE, CEIL, 3.0f);
+    const Color PW = { 120, 100, 96, 255 };
+    wall_x_door(L, 26, -6.1f, 6.1f, PF, HH, -1.1f, 1.1f, PF + PH, TEX_FLESH, PW);
+    wall_x_door(L, 38, -6.1f, 6.1f, PF, PF + PH, -0.6f, 0.6f, PF + 2.25f, TEX_FLESH, PW);
+    wall_z_door(L, -6, 26, 38, PF, PF + PH, 29.4f, 30.6f, PF + 2.25f, TEX_FLESH, PW);
+    wall_z_door(L, 6, 26, 38, PF, PF + PH, 29.4f, 30.6f, PF + 2.25f, TEX_FLESH, PW);
+    add_door(L, (Vector3){ 30, PF, -6 + WT }, (Vector3){ 0, 0, 1 }, (Color){ 170, 110, 240, 255 }, W_VOID, 0, "THE STEPS");
+    add_door(L, (Vector3){ 30, PF, 6 - WT }, (Vector3){ 0, 0, -1 }, (Color){ 200, 190, 170, 255 }, W_GARDEN, 0, "THE ORCHARD");
+    add_door(L, (Vector3){ 38 - WT, PF, 0 }, (Vector3){ -1, 0, 0 }, (Color){ 255, 250, 240, 255 }, W_END, FX_ALL, "THE WAY OUT");
+    add_cross(L, (Vector3){ 38 - WT - 0.05f, PF + 3.3f, 0 }, 0.7f, 0, (Color){ 60, 40, 34, 255 });
+    {   // the altar, and the room set out in rows to face it
+        add_box(L, (Vector3){ 35.6f, PF + 0.5f, 0 }, (Vector3){ 0.5f, 0.5f, 1.3f }, TEX_CLOTH, (Color){ 90, 20, 22, 255 }, 1.0f, 0);
+        for (int i = 0; i < 5; i++) add_candle(L, (Vector3){ 35.6f + frand(-0.3f, 0.3f), PF + 1.0f, -1.0f + i * 0.5f }, frand(0.15f, 0.35f), true);
+        add_sigil(L, (Vector3){ 33.6f, PF + 0.004f, 0 }, 1.6f, CHALK, 7 + seed);
+        int kneel = seed >= 3 ? seed - 2 : 0, placed = 0;
+        for (int r = 0; r < 3; r++) for (int c = 0; c < 4; c++) {
+            Vector3 cp = { 28.4f + r * 1.7f, PF, -2.4f + c * 1.6f };
+            add_chair(L, cp, 1.5708f);
+            if (placed < kneel && (r * 4 + c + seed) % 3 != 1) { add_effigy(L, FIG_KNEELER, (Vector3){ cp.x + 0.55f, PF, cp.z }, 1.5708f, frand(-0.25f, 0.25f)); placed++; }
+            add_spot(L, cp.x + 0.75f, PF, cp.z + 0.8f);
+        }
+        if (seed >= 9) add_effigy(L, FIG_PRIEST, (Vector3){ 36.6f, PF, 0 }, -1.5708f, 0.0f);
+    }
+    // a piano that nobody is playing, and lamps on stands
+    add_box(L, (Vector3){ 36.4f, PF + 0.65f, 5.3f }, (Vector3){ 1.1f, 0.65f, 0.4f }, TEX_WOOD, (Color){ 40, 30, 28, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ 36.4f, PF + 0.74f, 4.88f }, (Vector3){ 0.95f, 0.02f, 0.06f }, TEX_SKIN, (Color){ 220, 210, 190, 255 }, 1.0f, F_NOCOLLIDE);
+    for (int s = -1; s <= 1; s += 2) {
+        add_box(L, (Vector3){ 34.5f, PF + 0.8f, s * 4.8f }, (Vector3){ 0.03f, 0.8f, 0.03f }, TEX_RUST, (Color){ 70, 60, 50, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ 34.5f, PF + 1.7f, s * 4.8f }, (Vector3){ 0.14f, 0.12f, 0.14f }, TEX_CONCRETE, (Color){ 200, 120, 70, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    }
+    add_portrait(L, (Vector3){ 32.5f, PF + 2.4f, -6 + WT }, (Vector3){ 0, 0, 1 }, 0.6f, 0.8f, false);
+    add_portrait(L, (Vector3){ 34.0f, PF + 2.4f, 6 - WT }, (Vector3){ 0, 0, -1 }, 0.6f, 0.8f, seed >= 6);
+    if (seed >= 7) add_decal(L, "PATER NOSTER QUI ES IN INFERNIS", (Vector3){ 32.0f, PF + 3.9f, -6 + WT }, 2, 1, 0.16f, SOOT);
+    add_spot(L, 27.0f, PF, -5.0f); add_spot(L, 27.0f, PF, 5.0f); add_spot(L, 37.0f, PF, -5.0f); add_spot(L, 37.0f, PF, 3.5f);
+
+    L->spawn = (Vector3){ 0.5f, 0.05f, 0 }; L->spawnYaw = 270;
+    // visitors: more each time you wake. they wait in the places you are not looking
     int visitors = seed >= 3 ? (seed - 1) / 2 : 0;
     if (visitors > 3) visitors = 3;
     for (int i = 0; i < visitors; i++) {
-        float a = frand(0, 6.2831f);
-        Watcher w = { { sinf(a) * 6.5f, 0, cosf(a) * 6.5f }, frand(0, 6), 0, false };
+        Vector3 sp = L->spots[L->nspots - 1 - GetRandomValue(0, 14)];
+        Watcher w = { sp, frand(0, 6), 0, frand(4, 9), 0, false };
         Watchers_push(&L->watchers, w);
     }
-    // junk you can shove around (this is what Box3D is for in here)
-    for (int i = 0; i < 7; i++) {
-        float s = frand(0.3f, 0.55f);
-        add_prop(L, (Vector3){ frand(-4, 4), s + 0.05f + i * 0.02f, frand(-5.5f, -1.5f) }, (Vector3){ s, s, s }, i % 2 ? TEX_WOOD : TEX_RUST,
-                 (Color){ 170, 160, 150, 255 }, 250, 1.0f);
+    // junk you can shove around
+    for (int i = 0; i < 5; i++) {
+        float s = frand(0.25f, 0.4f);
+        add_prop(L, (Vector3){ frand(1.0f, 3.0f), s + 0.05f + i * 0.02f, frand(-2.5f, 2.5f) * (i % 2 ? 1 : 0.4f) }, (Vector3){ s, s, s }, i % 2 ? TEX_WOOD : TEX_RUST, (Color){ 170, 160, 150, 255 }, 250, 1.0f);
     }
 }
 
@@ -495,7 +614,7 @@ static void build_drains(Level *L, int seed) {
     for (int tries = 0; tries < 200 && placed < 4; tries++) {
         int i = GetRandomValue(0, N * N - 1);
         if (far[i] < 6 && i != best) continue;
-        Watcher w = { CELLC(i), frand(0, 6), 0, false };
+        Watcher w = { CELLC(i), frand(0, 6), 0, 0, 0, false };
         Watchers_push(&L->watchers, w);
         placed++;
     }
@@ -738,7 +857,7 @@ static void build_garden(Level *L, int seed) {
     for (int i = 0; i < n; i++) {
         float x = frand(-E + 6, E - 6), z = frand(-E + 6, 10);
         if (fabsf(x) < P + 2 && fabsf(z) < P + 2) { x = (x < 0 ? -1 : 1) * (P + 4); }
-        Watcher w = { { x, 0, z }, frand(0, 6), 0, false };
+        Watcher w = { { x, 0, z }, frand(0, 6), 0, 0, 0, false };
         Watchers_push(&L->watchers, w);
     }
 }
@@ -850,7 +969,7 @@ static void refresh_dist(Level *L, int from) {
 }
 
 bool level_seen(Level *L, Vector3 eye, Vector3 fwd, Vector3 pos) {
-    Vector3 chest = { pos.x, 1.6f, pos.z };
+    Vector3 chest = { pos.x, pos.y + 1.6f, pos.z };
     Vector3 to = Vector3Subtract(chest, eye);
     float dist = Vector3Length(to);
     if (dist < 0.01f || dist > 45) return false;

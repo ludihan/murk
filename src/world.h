@@ -53,6 +53,8 @@ typedef struct Level {
     bool sawWatcher;        // set when a watcher first comes into view (main consumes it)
     float nearest;          // distance to the closest watcher
     Vector3 bed;            // ending trigger
+    Vector3 wakePos; float wakeYaw;   // where you come to after waking (the hub's bed)
+    Vector3 spots[40]; int nspots;    // the house: places a visitor can stand without being seen arriving
     float t;
 } Level;
 
