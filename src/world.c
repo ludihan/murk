@@ -319,7 +319,10 @@ static void build_hub(Level *L, int seed) {
     const Color PW = { 120, 100, 96, 255 };
     wall_x_door(L, 26, -6.1f, 6.1f, PF, HH, -1.1f, 1.1f, PF + PH, TEX_FLESH, PW);
     wall_x_door(L, 38, -6.1f, 6.1f, PF, PF + PH, -0.6f, 0.6f, PF + 2.25f, TEX_FLESH, PW);
-    wall_z_door(L, -6, 26, 38, PF, PF + PH, 29.4f, 30.6f, PF + 2.25f, TEX_FLESH, PW);
+    // the north wall has two doors in it
+    wall_z(L, -6, 26, 29.4f, PF, PF + PH, TEX_FLESH, PW); wall_z(L, -6, 30.6f, 34.4f, PF, PF + PH, TEX_FLESH, PW); wall_z(L, -6, 35.6f, 38, PF, PF + PH, TEX_FLESH, PW);
+    wall_z(L, -6, 29.4f, 30.6f, PF + 2.25f, PF + PH, TEX_FLESH, PW); wall_z(L, -6, 34.4f, 35.6f, PF + 2.25f, PF + PH, TEX_FLESH, PW);
+    add_door(L, (Vector3){ 35, PF, -6 + WT }, (Vector3){ 0, 0, 1 }, (Color){ 200, 40, 30, 255 }, W_CHAPEL, 0, "THE LOWER CHURCH");
     wall_z_door(L, 6, 26, 38, PF, PF + PH, 29.4f, 30.6f, PF + 2.25f, TEX_FLESH, PW);
     add_door(L, (Vector3){ 30, PF, -6 + WT }, (Vector3){ 0, 0, 1 }, (Color){ 170, 110, 240, 255 }, W_VOID, 0, "THE STEPS");
     add_door(L, (Vector3){ 30, PF, 6 - WT }, (Vector3){ 0, 0, -1 }, (Color){ 200, 190, 170, 255 }, W_GARDEN, 0, "THE ORCHARD");
@@ -895,6 +898,59 @@ static void build_garden(Level *L, int seed) {
     }
 }
 
+// ---------------------------------------------------------------- CHAPEL: the lower church
+// a nave full of people standing in their pews. when the bell has rung three times they kneel, and the one at
+// the altar counts them. the veil is on the altar
+static void build_chapel(Level *L, int seed) {
+    L->name = "THE LOWER CHURCH";
+    SetRandomSeed(seed * 4409 + 17);
+    L->fog = (Color){ 22, 12, 12, 255 };
+    L->fogDensity = 0.05f;
+    L->light = 0.8f;
+    L->killY = -50;
+    L->gradeLo = (Color){ 126, 118, 122, 255 }; L->gradeHi = (Color){ 156, 124, 110, 255 };
+    L->moteCol = (Color){ 140, 120, 100, 255 };
+    const float X = 6, Z0 = -34, Z1 = 6, H = 9;
+    const Color STONE = { 120, 110, 104, 255 };
+    slab(L, -X, X, Z0, Z1, 0, 1, TEX_TILE, (Color){ 96, 90, 84, 255 }, 1.5f);
+    slab(L, -X, X, Z0, Z1, H + 1, 1, TEX_CONCRETE, (Color){ 60, 56, 54, 255 }, 3.0f);
+    wall_x(L, -X, Z0, Z1, 0, H, TEX_CONCRETE, STONE); wall_x(L, X, Z0, Z1, 0, H, TEX_CONCRETE, STONE);
+    wall_z(L, Z0, -X, X, 0, H, TEX_CONCRETE, STONE); wall_z(L, Z1, -X, X, 0, H, TEX_CONCRETE, STONE);
+    for (int z = 0; z >= -30; z -= 6) for (int s = -1; s <= 1; s += 2)   // columns
+        add_box(L, (Vector3){ s * 3.9f, H / 2, (float)z }, (Vector3){ 0.35f, H / 2, 0.35f }, TEX_CONCRETE, (Color){ 100, 92, 88, 255 }, 1.5f, 0);
+    // pews, and people standing in them
+    int people = 0;
+    for (int r = 0; r < 10; r++) {
+        float z = -2.0f - r * 2.3f;
+        for (int s = -1; s <= 1; s += 2) {
+            float cx = s * 3.45f;
+            add_box(L, (Vector3){ cx, 0.45f, z }, (Vector3){ 2.0f, 0.04f, 0.28f }, TEX_WOOD, (Color){ 90, 64, 48, 255 }, 1.0f, 0);
+            add_box(L, (Vector3){ cx, 0.22f, z }, (Vector3){ 2.0f, 0.22f, 0.04f }, TEX_WOOD, (Color){ 80, 56, 42, 255 }, 1.0f, F_NOCOLLIDE);
+            add_box(L, (Vector3){ cx, 0.8f, z + 0.3f }, (Vector3){ 2.0f, 0.38f, 0.04f }, TEX_WOOD, (Color){ 90, 64, 48, 255 }, 1.0f, 0);
+            for (int k = 0; k < 4 && people < 34; k++) {
+                if (GetRandomValue(0, 99) < 35) continue;
+                add_effigy(L, FIG_PENITENT, (Vector3){ cx - 1.5f + k * 1.0f + frand(-0.15f, 0.15f), 0, z - 0.55f }, 0, frand(-0.2f, 0.2f));
+                people++;
+            }
+        }
+    }
+    // the sanctuary: a step up, the altar, the one who counts, and the cross the wrong way up
+    slab(L, -X, X, Z0, -27.5f, 0.4f, 0.4f, TEX_TILE, (Color){ 110, 40, 40, 255 }, 1.0f);
+    add_box(L, (Vector3){ 0, 0.4f + 0.55f, -30.5f }, (Vector3){ 1.6f, 0.55f, 0.6f }, TEX_CLOTH, (Color){ 100, 18, 20, 255 }, 1.0f, 0);
+    for (int i = 0; i < 7; i++) add_candle(L, (Vector3){ -1.4f + i * 0.47f, 1.5f, -30.3f + frand(-0.2f, 0.2f) }, frand(0.2f, 0.45f), true);
+    add_effigy(L, FIG_PRIEST, (Vector3){ 0, 0.4f, -32.0f }, 3.14159f, 0.0f);
+    add_cross(L, (Vector3){ 0, 5.2f, Z0 + WT + 0.05f }, 2.2f, 2, (Color){ 50, 34, 30, 255 });
+    add_box(L, (Vector3){ 0, 6.0f, Z0 + WT + 0.02f }, (Vector3){ 1.1f, 2.6f, 0.02f }, TEX_EYES, (Color){ 150, 40, 40, 255 }, 0.6f, F_EMIT | F_NOCOLLIDE);   // a window of eyes, lit from behind
+    add_sigil(L, (Vector3){ 0, 0.004f, -25.0f }, 1.2f, (Color){ 140, 30, 24, 255 }, 77);
+    for (int z = -2; z >= -26; z -= 4) for (int s = -1; s <= 1; s += 2) add_candle(L, (Vector3){ s * 1.0f, 0, (float)z }, frand(0.3f, 0.6f), z % 8 == 0);
+    if (seed >= 4) add_decal(L, "IN NOMINE DEI NOSTRI", (Vector3){ -X + WT, 4.0f, -14 }, 0, 1, 0.24f, SOOT);
+    add_decal(L, "COUNT THEM", (Vector3){ X - WT, 2.2f, 2.0f }, 0, -1, 0.16f, CHALK);
+    Pickup pk = { { 0, 2.3f, -30.5f }, FX_VEIL, false, false };
+    Pickups_push(&L->pickups, pk);
+    L->spawn = (Vector3){ 0, 0.05f, 4.0f }; L->spawnYaw = 0;
+    add_note(L, (Vector3){ 1.3f, 0.01f, 3.4f }, NOTE_BELL);
+}
+
 // ---------------------------------------------------------------- END: the way out
 static void build_end(Level *L) {
     L->name = "THE WAY OUT";
@@ -938,6 +994,7 @@ void level_build(Level *L, WorldId id, int seed) {
     case W_DRAINS: build_drains(L, seed); break;
     case W_VOID:   build_void(L, seed); break;
     case W_GARDEN: build_garden(L, seed); break;
+    case W_CHAPEL: build_chapel(L, seed); break;
     default:       build_end(L); break;
     }
     // ash motes

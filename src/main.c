@@ -70,15 +70,18 @@ static const char *useHint;
 // the shaft: something on the wall below you that climbs when you climb, and only while you aren't looking at it
 static struct { bool on, seen; float y, lastPY, scrapeT; Vector3 pos, n; } climber;
 static struct { int phase; float t, noticed, lift; bool warned; } gaze;
+// the lower church: three tolls, then everyone kneels and he counts them
+static struct { int phase, tolls; float t, tollT, stare; bool warned; } mass;
 
 static void use_thing(Use *u);
 
-static const char *FX_NAME[FX_COUNT] = { "LAMP", "GLOVES", "BOOTS", "FEATHER" };
+static const char *FX_NAME[FX_COUNT] = { "LAMP", "GLOVES", "BOOTS", "FEATHER", "VEIL" };
 static const char *FX_DESC[FX_COUNT] = {
     "press F to toggle it. the dark pulls back a little.",
     "your grip drains slower. you climb faster.",
     "you can jump once more in the air.",
     "hold SPACE in the air. you fall like something that was never heavy.",
+    "kneel, and the things that look for you look past you.",
 };
 
 // the game keeps a tiny file about you
@@ -125,6 +128,7 @@ static void load_world(WorldId id, bool wake) {
     recN = 0; recT = 0;
     memset(&climber, 0, sizeof climber);
     memset(&gaze, 0, sizeof gaze); gaze.t = 7.0f;
+    memset(&mass, 0, sizeof mass); mass.t = 8.0f;
     ghost.on = ghostN[id] > 40 && dreams >= 2 && GetRandomValue(0, 2) > 0; ghost.noticed = false; ghost.t = -frand_(4, 9);
     level_build(&L, id, ++dreams);
     levelLoaded = true;
@@ -188,6 +192,7 @@ static const char *WHISPERS[W_COUNT][4] = {
     { "it can hear your heart.", "walk softly.", "something is drinking from the water.", "the walls are wet. they are always wet." },
     { "the eye was here first.", "there is no floor. there never was.", "you are falling very slowly.", "hold still and it looks past you." },
     { "the flowers were people.", "someone planted you here.", "it is so quiet. why is it so quiet.", "don't pick anything." },
+    { "they know all the words.", "someone in the back is weeping.", "he has counted to the same number every week.", "your place in the pew is warm." },
     { "stay.", "stay.", "stay.", "stay." },
 };
 // something happens every half minute or so, so no dream ever just sits there
@@ -321,7 +326,7 @@ static bool update_gaze(float dt) {
         Vector3 chest = { P.pos.x, P.pos.y + 1.1f - P.crouch * 0.5f, P.pos.z };
         b3RayResult r = b3World_CastRayClosest(L.phys, b3v(chest), b3v(Vector3Scale(ED, 40.0f)), b3DefaultQueryFilter());
         bool covered = r.hit;
-        bool moving = P.speedMeter > 0.6f || !P.grounded || P.gripping;
+        bool moving = (P.speedMeter > 0.6f || !P.grounded || P.gripping) && !((P.fx & (1u << FX_VEIL)) && P.crouch > 0.5f);
         if (!covered && moving) gaze.noticed += dt * (P.crouch > 0.5f ? 0.45f : 0.9f);
         else gaze.noticed = fmaxf(0, gaze.noticed - dt * 0.25f);
         if (gaze.noticed >= 1.0f) { gaze.lift = 0.001f; say("it saw you.", 4); audio_play_ex(SFX_CHANT, 0.8f, 0.7f); }
@@ -336,7 +341,8 @@ static bool flower_has_eye(const Bloom *b, int i) { return b->yaw <= 0.5f && i %
 static void garden_update(float dt, Vector3 eye) {
     static float spotted;
     bool seen = false; Vector3 from = { 0 };
-    float range = P.crouch > 0.5f ? (P.speedMeter > 0.5f ? 3.5f : 0.0f) : 11.0f;
+    bool veil = P.fx & (1u << FX_VEIL);
+    float range = P.crouch > 0.5f ? (P.speedMeter > 0.5f && !veil ? 3.5f : 0.0f) : 11.0f;
     for (int i = 0; i < L.blooms.size && range > 0; i++) {
         const Bloom *b = &L.blooms.data[i];
         if (!flower_has_eye(b, i) || !flower_open(i, L.t)) continue;
@@ -383,6 +389,48 @@ static void garden_update(float dt, Vector3 eye) {
         }
     }
     L.nearest = nearest;
+}
+
+static const Effigy *priest_of(void) {
+    for (int i = 0; i < L.effigies.size; i++) if (L.effigies.data[i].kind == FIG_PRIEST) return &L.effigies.data[i];
+    return NULL;
+}
+static bool veil_taken(void) {
+    for (int i = 0; i < L.pickups.size; i++) if (L.pickups.data[i].fx == FX_VEIL) return L.pickups.data[i].taken;
+    return false;
+}
+static bool update_mass(float dt, Vector3 eye) {
+    if (L.id != W_CHAPEL) return false;
+    if (veil_taken()) {   // they all know. the bell does not stop
+        mass.tollT -= dt;
+        if (mass.tollT <= 0) { mass.tollT = 2.2f; audio_play_ex(SFX_BELL, 0.7f, 0.94f); }
+        mass.phase = 0;
+        return false;
+    }
+    mass.t -= dt;
+    if (mass.phase == 0 && mass.t <= 0) { mass.phase = 1; mass.tolls = 3; mass.tollT = 0; }
+    else if (mass.phase == 1) {
+        mass.tollT -= dt;
+        if (mass.tollT <= 0 && mass.tolls > 0) {
+            audio_play_ex(SFX_BELL, 0.9f, 1.0f); mass.tollT = 1.4f;
+            if (--mass.tolls == 0) mass.t = 1.4f;
+        } else if (mass.tolls == 0 && mass.tollT <= 0) {
+            mass.phase = 2; mass.t = frand_(5.0f, 6.5f);
+            audio_play_ex(SFX_CHANT, 0.7f, 0.9f);
+            if (!mass.warned) { mass.warned = true; say("they kneel. he is counting.", 3); }
+        }
+    } else if (mass.phase == 2) {
+        const Effigy *pr = priest_of();
+        bool seen = false;
+        if (pr) {
+            Vector3 head = { pr->pos.x, pr->pos.y + 2.2f, pr->pos.z + 0.3f };
+            seen = P.crouch < 0.5f && ray_clear(head, eye);
+        }
+        mass.stare = seen ? mass.stare + dt : fmaxf(0, mass.stare - dt);
+        if (mass.stare > 0.6f) return true;
+        if (mass.t <= 0) { mass.phase = 0; mass.t = frand_(9, 15) * fmaxf(0.6f, 1.0f - dreams * 0.03f); mass.stare = 0; audio_play_ex(SFX_BELL, 0.6f, 0.8f); }
+    }
+    return false;
 }
 
 static void scare_update(float dt) {
@@ -494,7 +542,7 @@ static float dist_to_box(Vector3 p, const Box *b) {
 }
 
 static Color fx_color(EffectId f) {
-    return f == FX_LAMP ? (Color){ 255, 225, 120, 255 } : f == FX_GLOVES ? (Color){ 255, 140, 60, 255 } : f == FX_BOOTS ? (Color){ 190, 140, 255, 255 } : (Color){ 255, 150, 220, 255 };
+    return f == FX_LAMP ? (Color){ 255, 225, 120, 255 } : f == FX_GLOVES ? (Color){ 255, 140, 60, 255 } : f == FX_BOOTS ? (Color){ 190, 140, 255, 255 } : f == FX_FEATHER ? (Color){ 255, 150, 220, 255 } : (Color){ 200, 30, 30, 255 };
 }
 
 static Color scale_col(Color c, float k) {
@@ -553,6 +601,11 @@ static void draw_scene(Camera3D cam, float time) {
         const Effigy *e = &L.effigies.data[i];
         if (Vector3Distance(eye, e->pos) > cull + 2) continue;
         Fig f = { (FigKind)e->kind, e->pos, e->yaw, 0, eye, e->look * 0.9f, e->tilt, time + i, { 0, 0, 1 }, { 0 } };
+        if (L.id == W_CHAPEL) {   // the congregation stands, and kneels on the third bell; the priest only looks up to count
+            bool taken = veil_taken();
+            if (f.kind != FIG_PRIEST) { f.kind = mass.phase == 2 ? FIG_KNEELER : FIG_PENITENT; f.look = taken ? 1.0f : e->look * 0.5f; }
+            else f.look = (mass.phase == 2 || taken) ? 1.0f : 0.0f;
+        }
         figure_draw(&f);
     }
     if (climber.on) {
@@ -961,6 +1014,7 @@ static void frame(void) {
                         say(b, 10);
                         audio_play(SFX_PICKUP);
                         if (pk->fx == FX_LAMP) lampOn = 1;
+                        if (pk->fx == FX_VEIL) say("EFFECT: VEIL - kneel, and the things that look for you look past you. every head in the church has turned to you. (R to wake up)", 10);
                         flash = 0.0f;
                     }
                 }
@@ -1001,6 +1055,7 @@ static void frame(void) {
                     }
                 }
                 if (P.slipped) { P.slipped = false; audio_play(SFX_KNOCK); }
+                if (update_mass(frameDt, player_eye(&P))) { dead = true; say("he counted one too many.", 4); audio_play_ex(SFX_BREATH, 0.7f, 0.7f); }
                 if (update_climber(player_eye(&P), fwd)) { dead = true; say("it had your hands.", 4); audio_play_ex(SFX_BREATH, 0.7f, 0.8f); }
                 scare_update(frameDt);
                 if (gardenCaught) { gardenCaught = false; dead = true; audio_play(SFX_BREATH); }
@@ -1030,13 +1085,13 @@ static void frame(void) {
             if (m > 1) m = 1;
             madness += (m - madness) * fminf(1, frameDt * 3);
             tension = madness;
-            float tone = L.id == W_HUB ? 1.0f : L.id == W_SHAFT ? 0.75f : L.id == W_DRAINS ? 0.9f : L.id == W_VOID ? 1.4f : L.id == W_GARDEN ? 1.15f : 2.0f;
+            float tone = L.id == W_HUB ? 1.0f : L.id == W_SHAFT ? 0.75f : L.id == W_DRAINS ? 0.9f : L.id == W_VOID ? 1.4f : L.id == W_GARDEN ? 1.15f : L.id == W_CHAPEL ? 0.8f : 2.0f;
             float mus = L.id == W_GARDEN ? 0.8f : L.id == W_VOID ? 0.5f : L.id == W_END ? 0.8f : (L.id == W_HUB && dreams >= 4) ? 0.25f : 0.0f;
             audio_music(frozen ? 0.0f : mus, fminf(1.0f, madness * 0.9f + (blackout > 0 ? 0.4f : 0.0f)));
             float whisper = L.nearest < 18 ? 1.0f - L.nearest / 18.0f : 0.0f;
             if (!frozen) audio_set(tone, tension, whisper, tr.on ? 0.3f : 0.9f);
             {   // the mass behind the walls gets louder the deeper you go; something breathes when one of them is close
-                float choir = L.id == W_HUB ? fminf(1.0f, dreams * 0.12f) : L.id == W_END ? 1.0f : 0.35f;
+                float choir = L.id == W_HUB ? fminf(1.0f, dreams * 0.12f) : (L.id == W_END || L.id == W_CHAPEL) ? 1.0f : 0.35f;
                 float breath = 0, bpan = 0, bd = 1e9f;
                 for (int i = 0; i < L.watchers.size; i++) {
                     float d = Vector3Distance(L.watchers.data[i].pos, P.pos);

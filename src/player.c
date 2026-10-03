@@ -195,6 +195,7 @@ void player_update(Player *p, Level *L, const Input *in, float dt) {
     // noise: running is loud, walking carries, kneeling and creeping is almost nothing
     float loud = !p->grounded ? 0.0f : horiz < 0.4f ? 0.0f : sprint ? 1.0f : 0.12f + 0.38f * (1.0f - p->crouch);
     if (p->gripping) loud = 0.15f;
+    if ((p->fx & (1u << FX_VEIL)) && p->crouch > 0.5f) loud *= 0.25f;   // under the veil you are hardly there
     p->noise = fmaxf(loud, p->noise - dt * 0.8f);
     float rollTarget = p->gripping ? sinf(GetTime() * 2.3f) * 1.2f * (1.0f - p->grip) + (-mx) * 2.0f : -mx * 1.2f;
     p->roll += (rollTarget - p->roll) * fminf(1, dt * 8);
