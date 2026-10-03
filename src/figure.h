@@ -17,6 +17,7 @@ typedef enum {
     FIG_HAND,       // a forearm and hand coming up out of something, fingers slowly closing
     FIG_FACE,       // a face in a wall, eyes following you, mouth working
     FIG_SHEET,      // someone standing up under a mortuary sheet, a tag on one toe
+    FIG_PUPPET,     // a marionette the size of a person, hanging from its strings, head lolling
     FIG_COUNT
 } FigKind;
 

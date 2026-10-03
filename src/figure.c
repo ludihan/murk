@@ -171,6 +171,30 @@ static void sheet(const Fig *f, const Frame *F) {
     for (int s = -1; s <= 1; s += 2) gfx_limb(W(F, s * 0.12f, 0.12f, 0.05f), W(F, s * 0.13f, 0.02f, 0.3f), 0.05f, 0.03f, TEX_SKIN, skin);   // grey feet
     gfx_box(W(F, 0.13f, 0.06f, 0.36f), (Vector3){ 0.03f, 0.04f, 0.005f }, TEX_PAPER, (Color){ 220, 210, 170, 255 }, 1.0f);   // the tag
 }
+static void puppet(const Fig *f, const Frame *F) {
+    Color wood = tint_or(f, (Color){ 200, 180, 160, 255 }), cloth = { 110, 20, 26, 255 };
+    float j = sinf(f->t * 6.0f), k = cosf(f->t * 4.3f);   // jerked about on its strings
+    Vector3 hip = W(F, 0, 1.05f + 0.05f * j, 0), neck = W(F, 0.03f * k, 1.62f, 0);
+    gfx_limb(hip, neck, 0.16f, 0.13f, TEX_CLOTH, cloth);
+    for (int s = -1; s <= 1; s += 2) {
+        Vector3 knee = W(F, s * 0.12f, 0.55f + 0.1f * (s > 0 ? j : -j), 0.12f), foot = W(F, s * 0.12f, 0.05f + 0.06f * (s > 0 ? j : -j), 0.04f);
+        gfx_limb(W(F, s * 0.1f, 1.0f, 0), knee, 0.05f, 0.045f, TEX_WOOD, wood);
+        gfx_limb(knee, foot, 0.045f, 0.035f, TEX_WOOD, wood);
+        gfx_ellipsoid(knee, Vector3Scale(F->r, 0.06f), Vector3Scale(F->u, 0.06f), Vector3Scale(F->f, 0.06f), TEX_WOOD, wood);
+        Vector3 sh = W(F, s * 0.2f, 1.58f, 0), el = W(F, s * 0.34f, 1.3f + 0.15f * (s > 0 ? k : -k), 0.1f), hd = W(F, s * 0.3f, 1.55f + 0.25f * (s > 0 ? k : -k), 0.25f);
+        gfx_limb(sh, el, 0.04f, 0.035f, TEX_WOOD, wood);
+        gfx_limb(el, hd, 0.035f, 0.03f, TEX_WOOD, wood);
+        gfx_limb(hd, (Vector3){ hd.x, hd.y + 6.0f, hd.z }, 0.004f, 0.004f, TEX_CONCRETE, (Color){ 200, 200, 200, 255 });   // the strings, up into the dark
+    }
+    Fig g = *f; g.tilt += 0.7f + 0.3f * j;   // the head hangs to one side
+    Vector3 hc = W(F, 0.05f, 1.86f, 0.04f), hr, hu, hf;
+    head_axes(&g, F, hc, &hr, &hu, &hf);
+    gfx_ellipsoid(hc, Vector3Scale(hr, 0.13f), Vector3Scale(hu, 0.17f), Vector3Scale(hf, 0.14f), TEX_SKIN, (Color){ 236, 226, 214, 255 });
+    for (int s = -1; s <= 1; s += 2) gfx_ellipsoid(add3(hc, Vector3Scale(hf, 0.12f), Vector3Add(Vector3Scale(hr, s * 0.05f), Vector3Scale(hu, 0.03f))), Vector3Scale(hr, 0.025f), Vector3Scale(hu, 0.03f), Vector3Scale(hf, 0.015f), TEX_CONCRETE, (Color){ 10, 6, 6, 255 });
+    gfx_limb(add3(hc, Vector3Scale(hf, 0.13f), Vector3Add(Vector3Scale(hu, -0.06f), Vector3Scale(hr, -0.05f))), add3(hc, Vector3Scale(hf, 0.13f), Vector3Add(Vector3Scale(hu, -0.06f), Vector3Scale(hr, 0.05f))), 0.008f, 0.008f, TEX_FLESH, (Color){ 120, 20, 20, 255 });   // a painted smile
+    gfx_limb(hc, (Vector3){ hc.x, hc.y + 6.0f, hc.z }, 0.004f, 0.004f, TEX_CONCRETE, (Color){ 200, 200, 200, 255 });
+}
+
 static void penitent(const Fig *f, const Frame *F, bool kneel) {
     Color robe = tint_or(f, (Color){ 30, 26, 28, 255 }), skin = { 150, 138, 136, 255 };
     float sway = sinf(f->t * 0.7f) * 0.02f, top = kneel ? 1.12f : 1.72f;
@@ -360,6 +384,7 @@ void figure_draw(const Fig *f) {
     case FIG_HAND:     hand(f, &F); break;
     case FIG_FACE:     face(f, &F); break;
     case FIG_SHEET:    sheet(f, &F); break;
+    case FIG_PUPPET:   puppet(f, &F); break;
     case FIG_COUNT:    break;
     }
 }

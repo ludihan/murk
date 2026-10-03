@@ -1102,7 +1102,8 @@ static void build_city(Level *L, int seed) {
     L->gradeLo = (Color){ 116, 126, 146, 255 }; L->gradeHi = (Color){ 136, 132, 128, 255 };
     L->moteCol = (Color){ 120, 140, 170, 255 };
     add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ 100, 0.5f, 100 }, TEX_CONCRETE, (Color){ 46, 48, 54, 255 }, 3.0f, 0);
-    int hospital = GetRandomValue(0, 15), subway = (hospital + 5 + GetRandomValue(0, 5)) % 16, phone = GetRandomValue(0, 15);
+    int hospital = GetRandomValue(0, 15), subway = (hospital + 5 + GetRandomValue(0, 5)) % 16, phone = GetRandomValue(0, 15), theatre = (hospital + 2) % 16;
+    if (theatre == subway) theatre = (theatre + 1) % 16;
     for (int bi = 0; bi < 16; bi++) {
         float cx = -36 + (bi % 4) * 24.0f, cz = -36 + (bi / 4) * 24.0f;
         add_box(L, (Vector3){ cx, 0.07f, cz }, (Vector3){ B + 1.2f, 0.07f, B + 1.2f }, TEX_CONCRETE, (Color){ 80, 80, 84, 255 }, 1.5f, F_NOCOLLIDE);   // pavement
@@ -1154,6 +1155,12 @@ static void build_city(Level *L, int seed) {
             add_decal(L, "UNDERGROUND", (Vector3){ s.x, 1.6f, s.z + 1.64f }, 2, -1, 0.18f, (Color){ 220, 220, 220, 255 });
             add_portal(L, (Vector3){ s.x, 0, s.z - 0.6f }, W_STATIC, 0, (Color){ 150, 150, 150, 255 }, "UNDERGROUND");
             L->portals.data[L->portals.size - 1].radius = 0.9f;
+        }
+        if (bi == theatre) {   // a theatre, its marquee half lit: tonight, the sleeper
+            add_door(L, (Vector3){ face.x, 0.14f, face.z - 0.2f + WT }, (Vector3){ 0, 0, -1 }, (Color){ 230, 170, 100, 255 }, W_THEATRE, 0, "THE THEATRE");
+            add_box(L, (Vector3){ face.x, 3.4f, face.z - 1.2f }, (Vector3){ 3.5f, 0.5f, 1.0f }, TEX_CONCRETE, (Color){ 30, 26, 24, 255 }, 1.0f, F_NOCOLLIDE);
+            add_decal(L, "TONIGHT  THE SLEEPER", (Vector3){ face.x, 3.4f, face.z - 2.22f }, 2, -1, 0.22f, (Color){ 240, 220, 170, 255 });
+            for (int k = 0; k < 14; k++) if (GetRandomValue(0, 3)) add_box(L, (Vector3){ face.x - 3.3f + k * 0.5f, 3.95f, face.z - 2.2f }, (Vector3){ 0.07f, 0.07f, 0.07f }, TEX_CONCRETE, (Color){ 255, 210, 140, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
         }
         if (bi == phone) {   // a telephone box on the corner. sometimes it rings
             Vector3 p = { cx - B - 1.4f, 0, cz - B - 1.4f };
@@ -1216,6 +1223,51 @@ static void build_morgue(Level *L, int seed) {
     add_door(L, (Vector3){ 0, 0, 5 - WT }, (Vector3){ 0, 0, -1 }, (Color){ 190, 220, 200, 255 }, W_WARD, 0, "THE LIFT");
     L->spawn = (Vector3){ 0, 0.05f, 3.0f }; L->spawnYaw = 0;
     add_note(L, (Vector3){ 1.0f, 0.02f, 1.8f }, NOTE_MORGUE);
+}
+
+// ---------------------------------------------------------------- THEATRE: tonight, the sleeper
+// a dark auditorium with an audience of mannequins, all seated, all facing the stage. on the stage, marionettes act
+// out a child asleep and a woman bending over him. between scenes the house lights go out (main)
+static void build_theatre(Level *L, int seed) {
+    L->name = "THE THEATRE";
+    L->ambient = 0.14f;
+    SetRandomSeed(seed * 2203 + 19);
+    L->fog = (Color){ 8, 4, 4, 255 };
+    L->fogDensity = 0.05f;
+    L->light = 0.9f;
+    L->killY = -50;
+    L->gradeLo = (Color){ 130, 116, 116, 255 }; L->gradeHi = (Color){ 162, 126, 110, 255 };
+    L->moteCol = (Color){ 170, 150, 120, 255 };
+    const float H = 14;
+    const Color CRIMSON = { 100, 22, 26, 255 }, VEL = { 120, 30, 34, 255 };
+    slab(L, -12, 12, -10, 27, 0, 1, TEX_WOOD, (Color){ 90, 60, 50, 255 }, 2.0f);
+    slab(L, -12, 12, -10, 27, H + 1, 1, TEX_CLOTH, (Color){ 40, 14, 16, 255 }, 4.0f);
+    wall_x(L, -12 - WT, -10, 27, 0, H, TEX_CLOTH, CRIMSON); wall_x(L, 12 + WT, -10, 27, 0, H, TEX_CLOTH, CRIMSON);
+    wall_z(L, 27 + WT, -12.1f, 12.1f, 0, H, TEX_CLOTH, CRIMSON); wall_z(L, -10 - WT, -12.1f, 12.1f, 0, H, TEX_CLOTH, CRIMSON);
+    add_box(L, (Vector3){ 0, 0.012f, 22 }, (Vector3){ 12, 0.006f, 4 }, TEX_MOSAIC, (Color){ 34, 10, 12, 255 }, 2.0f, F_NOCOLLIDE);
+    // rows of seats, and in some of them the audience
+    for (int r = 0; r < 9; r++) for (int c = 0; c < 18; c++) {
+        float z = 3.0f + r * 2.2f, x = -10.5f + c * 1.0f + (c >= 9 ? 1.4f : 0);
+        add_box(L, (Vector3){ x, 0.25f, z }, (Vector3){ 0.4f, 0.25f, 0.35f }, TEX_CLOTH, VEL, 1.0f, 0);
+        add_box(L, (Vector3){ x, 0.75f, z + 0.38f }, (Vector3){ 0.4f, 0.5f, 0.06f }, TEX_CLOTH, VEL, 1.0f, 0);
+        if (GetRandomValue(0, 99) < 35) add_effigy(L, FIG_SEATED, (Vector3){ x, -0.05f, z + 0.05f }, 0, frand(-0.2f, 0.2f));
+    }
+    for (int i = 0; i < L->effigies.size; i++) L->effigies.data[i].scale = 0;   // (seated mannequins are their own size)
+    // the stage, the arch round it, the curtains drawn back, and a light on the bed
+    add_box(L, (Vector3){ 0, 0.6f, -5.5f }, (Vector3){ 10, 0.6f, 4.5f }, TEX_WOOD, (Color){ 110, 80, 60, 255 }, 2.0f, 0);
+    for (int s = -1; s <= 1; s += 2) {
+        add_box(L, (Vector3){ s * 9.5f, 6, -1.0f }, (Vector3){ 2.5f, 6, 0.3f }, TEX_CLOTH, CRIMSON, 2.0f, 0);
+        add_box(L, (Vector3){ s * 6.4f, 6.5f, -1.3f }, (Vector3){ 0.6f, 5.3f, 0.2f }, TEX_CLOTH, (Color){ 150, 30, 34, 255 }, 1.5f, F_NOCOLLIDE);
+    }
+    add_box(L, (Vector3){ 0, 11, -1.0f }, (Vector3){ 7, 1.0f, 0.3f }, TEX_CLOTH, CRIMSON, 2.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ 0, 1.5f, -6 }, (Vector3){ 1.0f, 0.3f, 1.6f }, TEX_WOOD, (Color){ 160, 140, 130, 255 }, 1.0f, 0);   // the bed in the play
+    add_effigy(L, FIG_SLEEPER, (Vector3){ 0, 1.8f, -6 }, 0, 0);
+    add_box(L, (Vector3){ 0, 1.215f, -5 }, (Vector3){ 2.6f, 0.004f, 2.6f }, TEX_CONCRETE, (Color){ 120, 110, 80, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    for (int i = 0; i < 12; i++) add_box(L, (Vector3){ -9 + i * 1.64f, 1.25f, -1.4f }, (Vector3){ 0.1f, 0.06f, 0.06f }, TEX_CONCRETE, (Color){ 230, 190, 120, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);   // footlights
+    add_door(L, (Vector3){ -9.0f, 1.2f, -10 + WT }, (Vector3){ 0, 0, 1 }, (Color){ 255, 170, 90, 255 }, W_DINNER, 0, "BACKSTAGE");
+    add_door(L, (Vector3){ 0, 0, 27 - WT }, (Vector3){ 0, 0, -1 }, (Color){ 150, 170, 200, 255 }, W_CITY, 0, "THE STREET");
+    L->spawn = (Vector3){ 0, 0.05f, 24.5f }; L->spawnYaw = 0;
+    add_note(L, (Vector3){ 1.2f, 0.02f, 23.5f }, NOTE_THEATRE);
 }
 
 // ---------------------------------------------------------------- CHAPEL: the lower church
@@ -1326,6 +1378,7 @@ void level_build(Level *L, WorldId id, int seed) {
     case W_WOMB:   build_womb(L, seed); break;
     case W_CITY:   build_city(L, seed); break;
     case W_MORGUE: build_morgue(L, seed); break;
+    case W_THEATRE: build_theatre(L, seed); break;
     default:       build_end(L); break;
     }
     // ash motes
