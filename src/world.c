@@ -165,7 +165,6 @@ static void add_portrait(Level *L, Vector3 p, Vector3 n, float w, float h) {
     add_box(L, (Vector3){ cc.x, p.y - ih * 0.6f, cc.z }, xn ? (Vector3){ 0.01f, ih * 0.4f, iw } : (Vector3){ iw, ih * 0.4f, 0.01f }, TEX_GRASS, (Color){ 230, 220, 140, 255 }, 1.0f, F_NOCOLLIDE);
     add_box(L, (Vector3){ cc.x + n.x * 0.006f, p.y - ih * 0.15f, cc.z + n.z * 0.006f }, xn ? (Vector3){ 0.004f, ih * 0.08f, iw * 0.9f } : (Vector3){ iw * 0.9f, ih * 0.08f, 0.004f }, TEX_GRASS, (Color){ 160, 200, 140, 255 }, 0.5f, F_NOCOLLIDE);
 }
-static void add_spot(Level *L, float x, float y, float z) { if (L->nspots < 40) L->spots[L->nspots++] = (Vector3){ x, y, z }; }
 static void add_plant(Level *L, Vector3 p) {
     add_box(L, (Vector3){ p.x, p.y + 0.22f, p.z }, (Vector3){ 0.18f, 0.22f, 0.18f }, TEX_CONCRETE, (Color){ 170, 100, 70, 255 }, 1.0f, 0);
     for (int k = 0; k < 5; k++) {
@@ -441,6 +440,11 @@ static void build_shaft(Level *L, int seed) {
     // the very top: a landing with the effect on a plinth
     int w = (LEVELS + 1) % 4;
     wall_box(L, w, 0.0f, sEnd, top + STEP - 0.4f, top + STEP, 4.0f, TEX_FLESH, (Color){ 190, 160, 160, 255 }, 0);
+    {   // at the top, a plain door in the wall, and rain falling somewhere behind it
+        static const Vector3 IN[4] = { { 0, 0, 1 }, { -1, 0, 0 }, { 0, 0, -1 }, { 1, 0, 0 } };
+        Vector3 dp = wall_pt(w, 2 * W - 1.2f, top + STEP, 0.0f);
+        add_door(L, dp, IN[w], (Color){ 150, 170, 200, 255 }, W_CITY, 0, "THE CITY");
+    }
     Vector3 pp = wall_pt(w, W, top + STEP + 0.5f, 1.8f);
     Pickup pk = { pp, FX_GLOVES, false, false };
     Pickups_push(&L->pickups, pk);
@@ -1180,6 +1184,94 @@ static void build_womb(Level *L, int seed) {
     #undef CC
 }
 
+// ---------------------------------------------------------------- CITY: the empty city
+// a grid of blocks in the rain that goes on forever. nobody lives here any more and the lights are left on.
+// a tall man stands at the ends of streets (main). there is a hospital, an underground, and a telephone
+static void build_city(Level *L, int seed) {
+    L->name = "THE CITY";
+    SetRandomSeed(seed * 5581 + 13);
+    const float Wr = 96, B = 8;   // the dream repeats every 96 m; blocks are 16 m with 8 m streets between
+    L->fog = (Color){ 48, 54, 64, 255 };   // pale enough that anything standing in the street is a silhouette against it
+    L->fogDensity = 0.04f;
+    L->light = 0.85f;
+    L->killY = -50;
+    L->wrap = Wr;
+    L->rain = true;
+    L->gradeLo = (Color){ 116, 126, 146, 255 }; L->gradeHi = (Color){ 136, 132, 128, 255 };
+    L->moteCol = (Color){ 120, 140, 170, 255 };
+    add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ 100, 0.5f, 100 }, TEX_CONCRETE, (Color){ 46, 48, 54, 255 }, 3.0f, 0);
+    int hospital = GetRandomValue(0, 15), subway = (hospital + 5 + GetRandomValue(0, 5)) % 16, phone = GetRandomValue(0, 15);
+    for (int bi = 0; bi < 16; bi++) {
+        float cx = -36 + (bi % 4) * 24.0f, cz = -36 + (bi / 4) * 24.0f;
+        add_box(L, (Vector3){ cx, 0.07f, cz }, (Vector3){ B + 1.2f, 0.07f, B + 1.2f }, TEX_CONCRETE, (Color){ 80, 80, 84, 255 }, 1.5f, F_NOCOLLIDE);   // pavement
+        // one to four buildings to a block, all different heights
+        int split = GetRandomValue(0, 2);
+        for (int k = 0; k < (split == 0 ? 1 : split == 1 ? 2 : 4); k++) {
+            float hx = split == 0 ? B : split == 1 ? B : B / 2, hz = split == 0 ? B : split == 1 ? B / 2 : B / 2;
+            float ox = split == 2 ? ((k & 1) ? B / 2 : -B / 2) : 0, oz = split == 1 ? (k ? B / 2 : -B / 2) : split == 2 ? ((k & 2) ? B / 2 : -B / 2) : 0;
+            float h = frand(8, 34);
+            Color tint = scale_tint((Color){ 150, 146, 150, 255 }, frand(0.7f, 1.05f));
+            add_box(L, (Vector3){ cx + ox, h / 2, cz + oz }, (Vector3){ hx - 0.2f, h / 2, hz - 0.2f }, TEX_FACADE, tint, 4.0f, 0);
+            // a few windows still lit
+            for (int wdw = 0; wdw < 6; wdw++) {
+                int side = GetRandomValue(0, 3);
+                float wy = 2.0f + 4.0f * GetRandomValue(0, (int)(h / 4) - 1), along = frand(-hx + 1.5f, hx - 1.5f);
+                Vector3 c = { cx + ox, wy, cz + oz };
+                Vector3 hh;
+                if (side == 0) { c.z -= hz - 0.15f; c.x += along; hh = (Vector3){ 0.5f, 0.6f, 0.02f }; }
+                else if (side == 1) { c.z += hz - 0.15f; c.x += along; hh = (Vector3){ 0.5f, 0.6f, 0.02f }; }
+                else if (side == 2) { c.x -= hx - 0.15f; c.z += along; hh = (Vector3){ 0.02f, 0.6f, 0.5f }; }
+                else { c.x += hx - 0.15f; c.z += along; hh = (Vector3){ 0.02f, 0.6f, 0.5f }; }
+                if (wy > h - 1) continue;
+                add_box(L, c, hh, TEX_CONCRETE, GetRandomValue(0, 3) ? (Color){ 220, 170, 100, 255 } : (Color){ 110, 140, 200, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+            }
+        }
+        // street lamps on two corners
+        for (int k = 0; k < 2; k++) {
+            float lx = cx + (k ? B + 0.8f : -B - 0.8f), lz = cz + (k ? -B - 0.8f : B + 0.8f);
+            add_box(L, (Vector3){ lx, 2.6f, lz }, (Vector3){ 0.07f, 2.6f, 0.07f }, TEX_RUST, (Color){ 50, 52, 56, 255 }, 1.0f, F_NOCOLLIDE);
+            if (GetRandomValue(0, 3)) add_box(L, (Vector3){ lx, 5.2f, lz }, (Vector3){ 0.18f, 0.08f, 0.18f }, TEX_CONCRETE, (Color){ 230, 200, 150, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+        }
+        if (GetRandomValue(0, 2) == 0) {   // a car nobody came back for
+            float x = cx + B + 4.0f, z = cz + frand(-5, 5);
+            Color car = scale_tint((Color){ 120, 60, 50, 255 }, frand(0.4f, 1.0f));
+            add_box(L, (Vector3){ x, 0.55f, z }, (Vector3){ 0.9f, 0.4f, 2.1f }, TEX_RUST, car, 1.0f, 0);
+            add_box(L, (Vector3){ x, 1.2f, z + 0.2f }, (Vector3){ 0.8f, 0.3f, 1.1f }, TEX_WATER, (Color){ 40, 46, 56, 255 }, 1.0f, 0);
+        }
+        Vector3 face = { cx, 0, cz - B + 0.2f };   // the north face of the block, on the pavement
+        if (bi == hospital) {
+            add_door(L, (Vector3){ face.x, 0.14f, face.z - 0.2f + WT }, (Vector3){ 0, 0, -1 }, (Color){ 190, 220, 200, 255 }, W_WARD, 0, "ST. AGATHA'S");
+            add_decal(L, "ST AGATHA'S HOSPITAL", (Vector3){ face.x, 3.2f, face.z - 0.4f }, 2, -1, 0.3f, (Color){ 200, 210, 200, 255 });
+            add_box(L, (Vector3){ face.x, 3.2f, face.z - 0.6f }, (Vector3){ 1.6f, 0.03f, 0.4f }, TEX_CONCRETE, (Color){ 180, 220, 190, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+        }
+        if (bi == subway) {   // steps going down under the road, behind railings, and grey light coming up
+            Vector3 s = { cx + B + 4.0f, 0, cz };
+            for (int k = -1; k <= 1; k += 2) add_box(L, (Vector3){ s.x + k * 1.4f, 0.55f, s.z }, (Vector3){ 0.04f, 0.55f, 1.6f }, TEX_RUST, (Color){ 40, 60, 50, 255 }, 1.0f, 0);
+            add_box(L, (Vector3){ s.x, 0.55f, s.z + 1.6f }, (Vector3){ 1.4f, 0.55f, 0.04f }, TEX_RUST, (Color){ 40, 60, 50, 255 }, 1.0f, 0);
+            add_box(L, (Vector3){ s.x, 0.012f, s.z - 0.2f }, (Vector3){ 1.3f, 0.01f, 1.4f }, TEX_CONCRETE, (Color){ 120, 120, 124, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+            add_decal(L, "UNDERGROUND", (Vector3){ s.x, 1.6f, s.z + 1.64f }, 2, -1, 0.18f, (Color){ 220, 220, 220, 255 });
+            add_portal(L, (Vector3){ s.x, 0, s.z - 0.6f }, W_STATIC, 0, (Color){ 150, 150, 150, 255 }, "UNDERGROUND");
+            L->portals.data[L->portals.size - 1].radius = 0.9f;
+        }
+        if (bi == phone) {   // a telephone box on the corner. sometimes it rings
+            Vector3 p = { cx - B - 1.4f, 0, cz - B - 1.4f };
+            add_box(L, (Vector3){ p.x, 1.2f, p.z }, (Vector3){ 0.5f, 1.2f, 0.5f }, TEX_RUST, (Color){ 120, 30, 26, 255 }, 1.0f, F_NOCOLLIDE);
+            add_box(L, (Vector3){ p.x, 2.25f, p.z }, (Vector3){ 0.45f, 0.1f, 0.45f }, TEX_CONCRETE, (Color){ 240, 230, 200, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+            Use u = { { p.x + 0.6f, 1.2f, p.z + 0.6f }, USE_LINK, 1, false };
+            Uses_push(&L->uses, u);
+            L->bed = p;   // where the ringing comes from
+        }
+    }
+    // a few people standing in the street with their faces to the wall. you never get close to one
+    for (int i = 0; i < 3; i++) {
+        int bi = GetRandomValue(0, 15);
+        float cx = -36 + (bi % 4) * 24.0f, cz = -36 + (bi / 4) * 24.0f;
+        add_effigy(L, FIG_PENITENT, (Vector3){ cx + frand(-4, 4), 0.14f, cz + B + 0.5f }, 3.14159f, frand(-0.3f, 0.3f));
+    }
+    L->spawn = (Vector3){ 0, 0.05f, 4 }; L->spawnYaw = 0;
+    add_note(L, (Vector3){ 1.0f, 0.02f, 2.6f }, NOTE_CITY);
+}
+
 // ---------------------------------------------------------------- CHAPEL: the lower church
 // a nave full of people standing in their pews. when the bell has rung three times they kneel, and the one at
 // the altar counts them. the veil is on the altar
@@ -1283,12 +1375,14 @@ void level_build(Level *L, WorldId id, int seed) {
     case W_STATIC: build_static(L, seed); break;
     case W_DINNER: build_dinner(L, seed); break;
     case W_WOMB:   build_womb(L, seed); break;
+    case W_CITY:   build_city(L, seed); break;
     default:       build_end(L); break;
     }
     // ash motes
     for (int i = 0; i < 140; i++) {
         Mote m = { { 0, 0, 0 }, { frand(-.1f, .1f), frand(-.25f, -.05f), frand(-.1f, .1f) }, frand(0, 1) };
         if (L->moteGlow) m.vel = (Vector3){ frand(-.25f, .25f), frand(0.05f, 0.35f), frand(-.25f, .25f) };
+        if (L->rain) m.vel = (Vector3){ 0.6f, frand(-11, -9), 0.2f };
         Motes_push(&L->motes, m);
     }
     if (L->moteCol.a == 0) L->moteCol = (Color){ 150, 140, 120, 255 };
@@ -1314,7 +1408,7 @@ void level_step(Level *L, float dt, Vector3 player) {
         Mote *m = &L->motes.data[i];
         m->pos = Vector3Add(m->pos, Vector3Scale(m->vel, dt));
         m->life -= dt * 0.15f;
-        if (m->life <= 0 || Vector3Distance(m->pos, player) > 12) {
+        if (m->life <= 0 || Vector3Distance(m->pos, player) > 12 || (L->rain && m->pos.y < player.y - 0.5f)) {
             m->life = 1;
             m->pos = (Vector3){ player.x + frand(-10, 10), player.y + frand(0, 5), player.z + frand(-10, 10) };
         }

@@ -169,6 +169,16 @@ static Color texel(TexId id, int x, int y) {
         if (stain > 0.55f) c = mix(c, (Color){ 30, 12, 10, 255 }, (stain - 0.55f) * 2.0f);
         return shade(c, 0.9f + 0.2f * grain);
     }
+    case TEX_FACADE: { // a city wall: grimy stone, rows of dark windows
+        Color c = mix((Color){ 50, 50, 54, 255 }, (Color){ 86, 84, 86, 255 }, n);
+        c = shade(c, 1.0f - 0.4f * powf(vnoise(u * 16, v * 2, 16, 41), 3.0f));
+        int wx = x % 32, wy = y % 32;
+        if (wx >= 8 && wx < 24 && wy >= 6 && wy < 26) {
+            c = mix((Color){ 8, 10, 14, 255 }, (Color){ 30, 36, 48, 255 }, rnd(x / 32, y / 32, 42) * 0.6f + 0.2f * (wy - 6) / 20.0f);
+            if (wx == 15 || wy == 15) c = (Color){ 30, 30, 32, 255 };   // the window bars
+        }
+        return shade(c, 0.9f + 0.2f * grain);
+    }
     case TEX_PAPER: {  // the house's wallpaper: soft stripes and small flowers, a little faded
         Color c = mix((Color){ 150, 132, 104, 255 }, (Color){ 186, 168, 136, 255 }, 0.5f + 0.5f * n);
         if ((x % 32) < 3) c = shade(c, 0.9f);

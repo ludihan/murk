@@ -12,6 +12,7 @@ typedef enum {
     FIG_SLEEPER,    // someone lying on their back under a sheet
     FIG_SEATED,     // a hooded figure sitting at a table, hands flat on it
     FIG_COCOON,     // someone wrapped up and hung from the ceiling by a cord. the face presses through
+    FIG_TALL,       // a thin man in a dark suit, much too tall, with a face like an egg
 } FigKind;
 
 typedef struct Fig {
@@ -25,6 +26,7 @@ typedef struct Fig {
     float t;            // clock, for the small movements
     Vector3 wallN;      // climber: the wall it is on
     Color tint;         // 0 alpha = the default for the kind
+    float scale;        // 0 = life size. limbs stay just as thin when it is scaled up
 } Fig;
 
 void figure_draw(const Fig *f);

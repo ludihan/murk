@@ -71,6 +71,26 @@ static void cocoon(const Fig *f, const Frame *F) {
     gfx_ellipsoid((Vector3){ mo.x, mo.y - 0.05f, mo.z }, Vector3Scale(F->r, 0.04f), (Vector3){ 0, 0.07f, 0 }, Vector3Scale(F->f, 0.03f), TEX_CONCRETE, (Color){ 6, 2, 2, 255 });
 }
 
+static void tall(const Fig *f, const Frame *F) {
+    Color suit = tint_or(f, (Color){ 16, 15, 18, 255 }), skin = { 220, 216, 210, 255 };
+    for (int s = -1; s <= 1; s += 2) {
+        gfx_limb(W(F, s * 0.09f, 1.25f, 0), W(F, s * 0.1f, 0.62f, 0.03f), 0.045f, 0.035f, TEX_CLOTH, suit);
+        gfx_limb(W(F, s * 0.1f, 0.62f, 0.03f), W(F, s * 0.1f, 0.02f, 0), 0.035f, 0.03f, TEX_CLOTH, suit);
+    }
+    gfx_limb(W(F, 0, 1.22f, 0), W(F, 0, 2.05f, 0.02f), 0.08f, 0.11f, TEX_CLOTH, suit);
+    gfx_limb(W(F, -0.16f, 2.04f, 0.02f), W(F, 0.16f, 2.04f, 0.02f), 0.05f, 0.05f, TEX_CLOTH, suit);
+    for (int s = -1; s <= 1; s += 2) {   // arms that hang past the knees
+        Vector3 sh = W(F, s * 0.18f, 2.02f, 0.02f), el = W(F, s * 0.22f, 1.35f, 0.04f), wr = W(F, s * 0.2f, 0.7f, 0.06f);
+        gfx_limb(sh, el, 0.035f, 0.03f, TEX_CLOTH, suit);
+        gfx_limb(el, wr, 0.03f, 0.025f, TEX_CLOTH, suit);
+        fingers(wr, Vector3Negate(F->u), F->r, 0.22f, 3, skin);
+    }
+    gfx_limb(W(F, 0, 2.06f, 0.02f), W(F, 0, 2.22f, 0.03f), 0.03f, 0.03f, TEX_SKIN, skin);
+    Vector3 hc = W(F, 0, 2.36f, 0.03f), hr, hu, hf;
+    head_axes(f, F, hc, &hr, &hu, &hf);
+    gfx_ellipsoid(hc, Vector3Scale(hr, 0.1f), Vector3Scale(hu, 0.15f), Vector3Scale(hf, 0.11f), TEX_SKIN, skin);   // no face at all
+}
+
 static void penitent(const Fig *f, const Frame *F, bool kneel) {
     Color robe = tint_or(f, (Color){ 30, 26, 28, 255 }), skin = { 150, 138, 136, 255 };
     float sway = sinf(f->t * 0.7f) * 0.02f, top = kneel ? 1.12f : 1.72f;
@@ -214,6 +234,7 @@ void figure_draw(const Fig *f) {
         F.u = (Vector3){ 0, 1, 0 };
         F.r = (Vector3){ cosf(f->yaw), 0, sinf(f->yaw) };
     }
+    if (f->scale > 0) { F.f = Vector3Scale(F.f, f->scale); F.u = Vector3Scale(F.u, f->scale); F.r = Vector3Scale(F.r, f->scale); }
     switch (f->kind) {
     case FIG_PENITENT: penitent(f, &F, false); break;
     case FIG_KNEELER:  penitent(f, &F, true); break;
@@ -223,5 +244,6 @@ void figure_draw(const Fig *f) {
     case FIG_SLEEPER:  sleeper(f, &F); break;
     case FIG_SEATED:   seated(f, &F); break;
     case FIG_COCOON:   cocoon(f, &F); break;
+    case FIG_TALL:     tall(f, &F); break;
     }
 }

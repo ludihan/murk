@@ -278,6 +278,13 @@ static float s_creak(float t, float d) {
     return svf_bp(&sv_a, saw, 600.0f + 300.0f * t / d, 0.15f) * sinf(t / d * 3.14159f) * 0.35f;
 }
 
+static float s_ring(float t, float d) {   // two bursts of an old bell telephone
+    (void)d;
+    float on = (fmodf(t, 3.0f) < 0.4f || (fmodf(t, 3.0f) > 0.6f && fmodf(t, 3.0f) < 1.0f)) ? 1.0f : 0.0f;
+    float clap = fmodf(t * 20.0f, 1.0f) < 0.5f ? 1.0f : 0.6f;
+    return (sinf(t * TAU * 820) * 0.5f + sinf(t * TAU * 1240) * 0.3f + sinf(t * TAU * 1650) * 0.15f) * on * clap * 0.45f;
+}
+
 static Sound synth(SynthFn fn, float dur) {
     int n = (int)(RATE * dur);
     short *data = malloc(n * sizeof(short));
@@ -309,7 +316,7 @@ void audio_init(void) {
         [SFX_SWELL] = { s_swell, 2.4f },  [SFX_KNOCK] = { s_knock, 1.5f },   [SFX_BREATH] = { s_breath, 2.2f },
         [SFX_BELL] = { s_bell, 6.0f },    [SFX_CHANT] = { s_chant, 4.0f },   [SFX_SCRAPE] = { s_scrape, 1.8f },
         [SFX_HUM] = { s_hum, 3.4f },      [SFX_CLICK] = { s_click, 0.7f },   [SFX_THUD] = { s_thud, 0.6f },
-        [SFX_PRAYER] = { s_prayer, 2.6f }, [SFX_CREAK] = { s_creak, 0.8f },
+        [SFX_PRAYER] = { s_prayer, 2.6f }, [SFX_CREAK] = { s_creak, 0.8f },   [SFX_RING] = { s_ring, 1.1f },
     };
     for (int i = 0; i < SFX_COUNT; i++) sfx[i] = synth(DEF[i].fn, DEF[i].dur);
 }
