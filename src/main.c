@@ -196,6 +196,10 @@ static const char *WHISPERS[W_COUNT][4] = {
     { "the eye was here first.", "there is no floor. there never was.", "you are falling very slowly.", "hold still and it looks past you." },
     { "the flowers were people.", "someone planted you here.", "it is so quiet. why is it so quiet.", "don't pick anything." },
     { "they know all the words.", "someone in the back is weeping.", "he has counted to the same number every week.", "your place in the pew is warm." },
+    { "visiting hours are over.", "the radio is tuned to nothing.", "this corridor is longer than it was.", "don't stop walking." },
+    { "nothing is on.", "it is so quiet you can hear the screens.", "the grey man doesn't mean any harm.", "every channel is the same channel." },
+    { "they have been waiting for you to sit down.", "nobody has touched their food.", "the candles never burn down.", "it is rude to leave the table." },
+    { "it is warm here.", "something is breathing all around you.", "this is where he is.", "you were born somewhere like this." },
     { "stay.", "stay.", "stay.", "stay." },
 };
 // something happens every half minute or so, so no dream ever just sits there
@@ -554,6 +558,13 @@ static float flicker(float t, float amount) {
 }
 
 // ---------------------------------------------------------------- drawing
+// in a dream that repeats, everything is drawn at whichever copy of it is nearest to you
+static float wrapf(float d, float w) { return d - w * floorf(d / w + 0.5f); }
+static Vector3 wp(Vector3 p, Vector3 eye) {
+    if (L.wrap <= 0) return p;
+    return (Vector3){ eye.x + wrapf(p.x - eye.x, L.wrap), p.y, eye.z + wrapf(p.z - eye.z, L.wrap) };
+}
+
 static float dist_to_box(Vector3 p, const Box *b) {
     float dx = fmaxf(fabsf(p.x - b->c.x) - b->h.x, 0), dy = fmaxf(fabsf(p.y - b->c.y) - b->h.y, 0), dz = fmaxf(fabsf(p.z - b->c.z) - b->h.z, 0);
     return sqrtf(dx * dx + dy * dy + dz * dz);
@@ -578,9 +589,11 @@ static void draw_scene(Camera3D cam, float time) {
     for (int i = 0; i < (int)L.boxes.size; i++) {
         const Box *b = &L.boxes.data[i];
         if (b->flags & F_EMIT) continue;
-        if (dist_to_box(eye, b) > cull) continue;
-        if (b->flags & F_DECAL) gfx_decal(b->c, b->h, (int)b->tex, b->scale);
-        else gfx_box(b->c, b->h, b->tex, b->tint, b->scale);
+        Box wb = *b;
+        if (L.wrap > 0 && b->h.x < L.wrap * 0.25f && b->h.z < L.wrap * 0.25f) wb.c = wp(b->c, eye);
+        if (dist_to_box(eye, &wb) > cull) continue;
+        if (b->flags & F_DECAL) gfx_decal(wb.c, b->h, (int)b->tex, b->scale);
+        else gfx_box(wb.c, b->h, b->tex, b->tint, b->scale);
     }
     for (int i = 0; i < L.props.size; i++) {
         const Prop *pr = &L.props.data[i];
@@ -596,7 +609,9 @@ static void draw_scene(Camera3D cam, float time) {
         figure_draw(&f);
     }
     for (int i = 0; i < L.uses.size; i++) {
-        const Use *u = &L.uses.data[i];
+        Use wu = L.uses.data[i];
+        const Use *u = &wu;
+        wu.pos = wp(wu.pos, eye);
         if (Vector3Distance(eye, u->pos) > cull) continue;
         if (u->kind == USE_NOTE) {
             gfx_box((Vector3){ u->pos.x, u->pos.y + 0.004f, u->pos.z }, (Vector3){ 0.13f, 0.004f, 0.18f }, TEX_SKIN, u->done ? (Color){ 150, 140, 120, 255 } : (Color){ 235, 225, 196, 255 }, 1.0f);
@@ -617,8 +632,9 @@ static void draw_scene(Camera3D cam, float time) {
     }
     for (int i = 0; i < L.effigies.size; i++) {
         const Effigy *e = &L.effigies.data[i];
-        if (Vector3Distance(eye, e->pos) > cull + 2) continue;
-        Fig f = { (FigKind)e->kind, e->pos, e->yaw, 0, eye, e->look * 0.9f, e->tilt, time + i, { 0, 0, 1 }, { 0 } };
+        Vector3 ep = wp(e->pos, eye);
+        if (Vector3Distance(eye, ep) > cull + 2) continue;
+        Fig f = { (FigKind)e->kind, ep, e->yaw, 0, eye, e->look * 0.9f, e->tilt, time + i, { 0, 0, 1 }, { 0 } };
         if (L.id == W_CHAPEL) {   // the congregation stands, and kneels on the third bell; the priest only looks up to count
             bool taken = veil_taken();
             if (f.kind != FIG_PRIEST) { f.kind = mass.phase == 2 ? FIG_KNEELER : FIG_PENITENT; f.look = taken ? 1.0f : e->look * 0.5f; }
@@ -668,7 +684,7 @@ static void draw_scene(Camera3D cam, float time) {
         const Box *b = &L.boxes.data[i];
         if (!(b->flags & F_EMIT)) continue;
         float k = ((L.id == W_HUB || L.id == W_DRAINS) && b->h.y < 0.2f) ? flicker(time + i, 0.4f) : 1.0f;
-        gfx_glow(b->c, b->h, scale_col(b->tint, k));
+        gfx_glow(wp(b->c, eye), b->h, scale_col(b->tint, k));
     }
     for (int i = 0; i < L.pickups.size; i++) {
         const Pickup *pk = &L.pickups.data[i];
@@ -697,7 +713,8 @@ static void draw_scene(Camera3D cam, float time) {
     }
     for (int i = 0; i < L.uses.size; i++) {
         const Use *u = &L.uses.data[i];
-        if (u->kind == USE_CANDLE && u->done) gfx_glow((Vector3){ u->pos.x, u->pos.y + 0.46f + sinf(time * 13 + i) * 0.006f, u->pos.z }, (Vector3){ 0.02f, 0.05f, 0.02f }, (Color){ 255, 160, 70, 255 });
+        Vector3 up = wp(u->pos, eye);
+        if (u->kind == USE_CANDLE && u->done) gfx_glow((Vector3){ up.x, up.y + 0.46f + sinf(time * 13 + i) * 0.006f, up.z }, (Vector3){ 0.02f, 0.05f, 0.02f }, (Color){ 255, 160, 70, 255 });
     }
     // soft glow around everything bright
     gfx_begin_glow();
@@ -711,9 +728,10 @@ static void draw_scene(Camera3D cam, float time) {
         if (!(b->flags & F_EMIT)) continue;
         float mx = fmaxf(b->h.x, fmaxf(b->h.y, b->h.z));
         if (mx > 1.6f || b->h.y > 3.0f) continue;
-        if (dist_to_box(eye, b) > cull) continue;
+        Box wb = *b; wb.c = wp(b->c, eye);
+        if (dist_to_box(eye, &wb) > cull) continue;
         float k = ((L.id == W_HUB || L.id == W_DRAINS) && b->h.y < 0.2f) ? flicker(time + i, 0.4f) : 1.0f;
-        Vector3 ho = Vector3Add(b->c, Vector3Scale(Vector3Normalize(Vector3Subtract(eye, b->c)), 0.45f));   // pull it off the wall it hangs on
+        Vector3 ho = Vector3Add(wb.c, Vector3Scale(Vector3Normalize(Vector3Subtract(eye, wb.c)), 0.45f));   // pull it off the wall it hangs on
         if (mx < 0.06f) gfx_halo(ho, 0.45f, b->tint, 0.28f * k);   // a candle flame: a small warm smudge, not a bloom
         else gfx_halo(ho, 0.9f + mx * 2.6f, b->tint, 0.55f * k);
     }
@@ -997,6 +1015,7 @@ static void frame(void) {
                     Input in = input_read();
                     if (bot) bot_input(&in, &P, &L, (float)clock);
                     player_update(&P, &L, &in, DT);
+                    if (L.wrap > 0) { P.pos.x = wrapf(P.pos.x, L.wrap); P.pos.z = wrapf(P.pos.z, L.wrap); }   // off one edge, in at the other
                 }
                 level_step(&L, DT, P.pos);
             }
@@ -1016,14 +1035,15 @@ static void frame(void) {
                     for (int i = 0; i < L.uses.size; i++) {
                         Use *u = &L.uses.data[i];
                         if (u->done && u->kind != USE_NOTE) continue;
-                        Vector3 d = Vector3Subtract(u->pos, eye);
+                        Vector3 d = Vector3Subtract(wp(u->pos, eye), eye);
                         float len = Vector3Length(d);
                         if (len > 2.2f) continue;
                         float dot = Vector3DotProduct(Vector3Scale(d, 1.0f / len), fwd);
                         if (dot > best) { best = dot; near = u; }
                     }
                 }
-                useHint = near ? (near->kind == USE_NOTE ? "E  read" : near->kind == USE_LILY ? "E  pick it" : "E  light it") : NULL;
+                static const char *HINT[] = { [USE_NOTE] = "E  read", [USE_CANDLE] = "E  light it", [USE_LILY] = "E  pick it" };
+                useHint = near ? HINT[near->kind] : NULL;
                 if (reading >= 0 && (IsKeyPressed(KEY_E) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || P.speedMeter > 4.5f)) reading = -1;
                 else if (near && IsKeyPressed(KEY_E)) {
                     if (near->kind == USE_NOTE) { reading = near->arg; near->done = true; audio_play_ex(SFX_CREAK, 0.25f, 1.6f); }

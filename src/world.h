@@ -42,6 +42,7 @@ typedef struct Level {
     float sludgeY, sludgeSpeed;
     bool sludgeArmed;
     float shaftW;           // half width of the shaft
+    float wrap;             // > 0: the dream repeats every `wrap` metres in x and z, and walking off one edge brings you in at the other
 
     // drains maze
     int mazeN;
