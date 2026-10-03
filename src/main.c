@@ -64,6 +64,7 @@ static const char *NOTES[NOTE_COUNT] = {
     [NOTE_FAMILY] = "To the family.\nThank you for your son. He will sleep for as long as we need him to.\nYou may visit on Sundays. Please do not bring anything that rings.\n\n- the Congregation of the Lower Church",
     [NOTE_AWAKE] = "If you are reading this then you are awake.\nYou are not supposed to be awake.\nLie back down.",
     [NOTE_SLEEPER] = "You keep coming down here. You keep looking for the way out.\nThere is no way out for you. You are what he is dreaming, and we need him to keep dreaming.\nGo up and look at the bed.",
+    [NOTE_WARD] = "ROOM 6.\nPatient has not woken in eleven years. Vital signs unremarkable.\nMother visits Sundays and will not leave when asked. She says he is dreaming of a house.\nShe says she can hear it through the wall.",
     [NOTE_BELL] = "When the bell tolls, kneel with the others.\nThe priest counts the heads.\nHe must not count one that is standing.",
 };
 static int reading = -1;   // the note on screen, or -1
@@ -71,6 +72,7 @@ static const char *useHint;
 // the shaft: something on the wall below you that climbs when you climb, and only while you aren't looking at it
 static struct { bool on, seen; float y, lastPY, scrapeT; Vector3 pos, n; } climber;
 static float circleT;   // how long you have knelt in the parlour's circle
+static float radioT, wardFollow;   // the ward's radio, and how far along the thing that follows you is
 static struct { int phase; float t, noticed, lift; bool warned; } gaze;
 // the lower church: three tolls, then everyone kneels and he counts them
 static struct { int phase, tolls; float t, tollT, stare; bool warned; } mass;
@@ -124,6 +126,7 @@ static void say(const char *s, float secs) { snprintf(msg, sizeof msg, "%s", s);
 
 static void load_world(WorldId id, bool wake) {
     reading = -1; useHint = NULL;
+    if (id == W_WARD) { g_wardLoop = 0; radioT = 3.0f; wardFollow = 0; }
     if (levelLoaded) {
         if (recN > 40 && L.id != W_SHAFT && L.id != W_END) { memcpy(ghostPath[L.id], rec, recN * sizeof *rec); ghostN[L.id] = recN; }
         level_free(&L);
@@ -147,6 +150,7 @@ static void load_world(WorldId id, bool wake) {
     if (id == W_HUB && !wake && dreams <= 1) say("WASD walk · SHIFT run · CTRL kneel · E use · hold LMB at rusty walls to grip · R wake up", 12);
     if (id == W_SHAFT) say("hold LMB on the rusty plates. W climbs, A/D shuffle, SPACE lunges. don't let go.", 9);
     if (id == W_DRAINS) say("something down here is listening.", 7);
+    if (id == W_WARD) say("the lights hum. the corridor goes on ahead of you.", 6);
     if (id == W_VOID) say("there is nothing underneath.", 6);
 }
 
@@ -455,6 +459,48 @@ static void secret_update(float dt) {
     if (!g_secret) { g_secret = 1; save_memory(); }
 }
 
+// the ward: crossing into the second copy of the corridor puts you back at the start of the first, one lap on
+static const char *RADIO[5][2] = {
+    { "...visiting hours are from two until four...", "...would the family of the patient in room six..." },
+    { "...room six has not woken...", "...his mother visits on Sundays..." },
+    { "...eleven years...", "...she brings him flowers from the orchard. they don't die..." },
+    { "...she is in the room with him now...", "...don't stop. it walks where you walked..." },
+    { "...he has come down to us...", "...the door at the end is open..." },
+};
+static bool ward_update(float dt, Vector3 eye) {
+    if (L.id != W_WARD) return false;
+    if (P.pos.z < -30.0f && P.pos.x > 4.0f) {   // another lap
+        g_wardLoop++;
+        level_free(&L);
+        level_build(&L, W_WARD, dreams);
+        P.pos.x -= 8.0f; P.pos.z += 36.0f;
+        recN = 0; wardFollow = 0; radioT = 2.0f;
+        if (g_wardLoop >= 3) play_behind(SFX_KNOCK, 0.4f, 0.8f);
+    }
+    int k = g_wardLoop > 4 ? 4 : g_wardLoop;
+    radioT -= dt;
+    if (radioT <= 0) {
+        radioT = frand_(9, 14);
+        play_from(SFX_PRAYER, (Vector3){ 0.75f, 0.9f, -3.4f }, 0.45f, 0.7f);
+        say(RADIO[k][GetRandomValue(0, 1)], 4);
+    }
+    // the one at the far end is gone before you reach it
+    for (int i = 0; i < L.effigies.size; i++) {
+        Effigy *e = &L.effigies.data[i];
+        if (e->kind == FIG_PENITENT && e->pos.y > -10 && Vector3Distance(e->pos, P.pos) < 7.5f) {
+            e->pos.y = -100; blackout = 0.7f; play_behind(SFX_BREATH, 0.4f, 0.9f);
+        }
+    }
+    // on the fourth lap something walks your path, six seconds behind you. stand still and it arrives
+    if (g_wardLoop == 3 && recN > 24) {
+        wardFollow = fminf(1.0f, wardFollow + dt * 0.5f);
+        Vector3 fp = rec[recN - 24];
+        if (Vector3Distance(fp, P.pos) < 0.9f && wardFollow >= 1.0f) return true;
+    }
+    (void)eye;
+    return false;
+}
+
 static void scare_update(float dt) {
     Vector3 eye = player_eye(&P), fwd = player_forward(&P);
     // ---- the game hitches: everything stops and the sound drops out, then it all lurches back
@@ -640,6 +686,11 @@ static void draw_scene(Camera3D cam, float time) {
             if (f.kind != FIG_PRIEST) { f.kind = mass.phase == 2 ? FIG_KNEELER : FIG_PENITENT; f.look = taken ? 1.0f : e->look * 0.5f; }
             else f.look = (mass.phase == 2 || taken) ? 1.0f : 0.0f;
         }
+        figure_draw(&f);
+    }
+    if (L.id == W_WARD && g_wardLoop == 3 && recN > 24) {
+        Vector3 fp = rec[recN - 24], nx = rec[recN - 23];
+        Fig f = { FIG_PENITENT, Vector3Lerp(fp, nx, recT / 0.25f), atan2f(nx.x - fp.x, -(nx.z - fp.z)), (float)recN, eye, 0.6f, 0.3f, time, { 0, 0, 1 }, (Color){ 20, 18, 18, 255 } };
         figure_draw(&f);
     }
     if (climber.on) {
@@ -1105,6 +1156,7 @@ static void frame(void) {
                     }
                 }
                 if (P.slipped) { P.slipped = false; audio_play(SFX_KNOCK); }
+                if (ward_update(frameDt, player_eye(&P))) { dead = true; say("it walked where you walked.", 4); audio_play_ex(SFX_BREATH, 0.7f, 0.8f); }
                 if (update_mass(frameDt, player_eye(&P))) { dead = true; say("he counted one too many.", 4); audio_play_ex(SFX_BREATH, 0.7f, 0.7f); }
                 if (update_climber(player_eye(&P), fwd)) { dead = true; say("it had your hands.", 4); audio_play_ex(SFX_BREATH, 0.7f, 0.8f); }
                 scare_update(frameDt);
@@ -1239,6 +1291,7 @@ int main(void) {
         if (getenv("MURK_DREAMS")) dreams = atoi(getenv("MURK_DREAMS"));   // how deep the shot is taken
         P.fx = sfxmask;
         load_world((WorldId)shotWorld, false);
+        if (shotWorld == W_WARD && getenv("MURK_LAP")) { g_wardLoop = atoi(getenv("MURK_LAP")); level_free(&L); level_build(&L, W_WARD, dreams); }   // which lap of the ward
         P.pos = (Vector3){ sx, sy, sz }; P.yaw = syaw; P.pitch = spit;
         if (sfxmask & 1) lampOn = 1;
         EnableCursor();

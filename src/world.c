@@ -10,7 +10,7 @@
 #include <stc/vec.h>
 
 
-int g_launches, g_wakes, g_secret;
+int g_launches, g_wakes, g_secret, g_wardLoop;
 
 // ---------------------------------------------------------------- helpers
 static void add_box(Level *L, Vector3 c, Vector3 h, TexId tex, Color tint, float scale, int flags) {
@@ -591,11 +591,24 @@ static void build_drains(Level *L, int seed) {
     }
     free(room);
     {   // dead ends get a message
+        // the farthest dead end but one has a hatch in it, with a hospital's light coming round the edges
+        int hatch = -1;
+        for (int i = 1; i < N * N; i++) {
+            int o = L->open[i], cnt = (o & 1) + ((o >> 1) & 1) + ((o >> 2) & 1) + ((o >> 3) & 1);
+            if (cnt == 1 && i != best && far[i] >= 4 && (hatch < 0 || far[i] > far[hatch])) hatch = i;
+        }
+        if (hatch >= 0) {
+            int o = L->open[hatch], d = 0;
+            for (int k = 0; k < 4; k++) if (o & (1 << k)) d = (k + 2) % 4;   // the wall facing the way in
+            Vector3 c = CELLC(hatch), p = { c.x, 0, c.z }, n = { 0, 0, 0 };
+            if (d == 0) { p.z -= C / 2 - wt; n.z = 1; } else if (d == 1) { p.x += C / 2 - wt; n.x = -1; } else if (d == 2) { p.z += C / 2 - wt; n.z = -1; } else { p.x -= C / 2 - wt; n.x = 1; }
+            add_door(L, p, n, (Color){ 190, 220, 200, 255 }, W_WARD, 0, "THE WARD");
+        }
         static const char *DEAD[] = { "HUSH", "STAY", "NEMA", "HE HEARS", "KNEEL", "NON SERVIAM" };
         int placed = 0;
         for (int i = 1; i < N * N && placed < 7; i++) {
             int o = L->open[i], cnt = (o & 1) + ((o >> 1) & 1) + ((o >> 2) & 1) + ((o >> 3) & 1);
-            if (cnt != 1 || i == best) continue;
+            if (cnt != 1 || i == best || i == hatch) continue;
             int d = -1;
             for (int k = 0; k < 4; k++) if (!(o & (1 << k))) { d = k; if (GetRandomValue(0, 1)) break; }
             Vector3 c = CELLC(i);
@@ -900,6 +913,92 @@ static void build_garden(Level *L, int seed) {
     }
 }
 
+// ---------------------------------------------------------------- WARD: the corridor
+// one corridor with a dogleg in it, built twice end to end. walking off the end of the first copy into the start
+// of the second puts you back at the start of the first (main does that), one lap on. every lap it is worse
+static void ward_copy(Level *L, float ox, float oz, int k, bool first) {
+    const float H = 2.8f;
+    SetRandomSeed(1000 + k * 7);   // a lap looks the same from either copy, so the seam can't be seen
+    Color wall = k >= 3 ? (Color){ 170, 120, 116, 255 } : (Color){ 176, 186, 170, 255 }, floor = { 140, 150, 140, 255 };
+    #define WX(x) ((x) + ox)
+    #define WZ(z) ((z) + oz)
+    // A: x -1.2..1.2, z 8..-14.   B: the dogleg, z -14..-16.4, x -1.2..9.2.   C: x 6.8..9.2, z -16.4..-28
+    slab(L, WX(-1.2f), WX(1.2f), WZ(-16.4f), WZ(8), 0, 1, TEX_TILE, floor, 1.0f);
+    slab(L, WX(1.2f), WX(9.2f), WZ(-16.4f), WZ(-14), 0, 1, TEX_TILE, floor, 1.0f);
+    slab(L, WX(6.8f), WX(9.2f), WZ(-28), WZ(-16.4f), 0, 1, TEX_TILE, floor, 1.0f);
+    slab(L, WX(-1.2f), WX(1.2f), WZ(-16.4f), WZ(8), H + 1, 1, TEX_CONCRETE, (Color){ 120, 124, 116, 255 }, 3.0f);
+    slab(L, WX(1.2f), WX(9.2f), WZ(-16.4f), WZ(-14), H + 1, 1, TEX_CONCRETE, (Color){ 120, 124, 116, 255 }, 3.0f);
+    slab(L, WX(6.8f), WX(9.2f), WZ(-28), WZ(-16.4f), H + 1, 1, TEX_CONCRETE, (Color){ 120, 124, 116, 255 }, 3.0f);
+    if (k >= 3) wall_x_door(L, WX(-1.2f), WZ(-16.4f), WZ(8), 0, H, WZ(-6.6f), WZ(-5.4f), 2.2f, TEX_TILE, wall);   // room 6 stands open
+    else wall_x(L, WX(-1.2f), WZ(-16.4f), WZ(8), 0, H, TEX_TILE, wall);
+    wall_x(L, WX(1.2f), WZ(-14), WZ(8), 0, H, TEX_TILE, wall);
+    wall_z(L, WZ(-14), WX(1.2f), WX(9.3f), 0, H, TEX_TILE, wall);
+    wall_z(L, WZ(-16.4f), WX(-1.2f), WX(6.8f), 0, H, TEX_TILE, wall);
+    wall_x(L, WX(6.8f), WZ(-28), WZ(-16.4f), 0, H, TEX_TILE, wall);
+    if (k >= 4 && first) wall_x_door(L, WX(9.2f), WZ(-28), WZ(-14), 0, H, WZ(-25.6f), WZ(-24.4f), 2.25f, TEX_TILE, wall);
+    else wall_x(L, WX(9.2f), WZ(-28), WZ(-14), 0, H, TEX_TILE, wall);
+    if (first) {   // the way you came in is shut behind you
+        wall_z(L, WZ(8), WX(-1.3f), WX(1.3f), 0, H, TEX_TILE, wall);
+        add_box(L, (Vector3){ WX(0), 1.15f, WZ(8) - 0.17f }, (Vector3){ 0.6f, 1.15f, 0.03f }, TEX_WOOD, (Color){ 90, 96, 90, 255 }, 1.0f, F_NOCOLLIDE);
+    } else wall_z(L, WZ(-28), WX(6.7f), WX(9.3f), 0, H, TEX_TILE, wall);   // far beyond anything you can see
+    // tubes in the ceiling: pale green, then fewer of them, then red
+    Color tube = k >= 3 ? (Color){ 200, 50, 40, 255 } : k == 2 ? (Color){ 210, 200, 150, 255 } : (Color){ 200, 225, 205, 255 };
+    for (int i = 0; i < 6; i++) {
+        if ((k >= 2 && i % 2 == 1) || (k >= 4 && i % 3 != 0)) continue;
+        add_box(L, (Vector3){ WX(0), H - 0.03f, WZ(6 - i * 4.0f) }, (Vector3){ 0.08f, 0.02f, 0.6f }, TEX_CONCRETE, tube, 1.0f, F_EMIT | F_NOCOLLIDE);
+    }
+    add_box(L, (Vector3){ WX(4.0f), H - 0.03f, WZ(-15.2f) }, (Vector3){ 0.6f, 0.02f, 0.08f }, TEX_CONCRETE, tube, 1.0f, F_EMIT | F_NOCOLLIDE);
+    if (k < 4) add_box(L, (Vector3){ WX(8.0f), H - 0.03f, WZ(-22) }, (Vector3){ 0.08f, 0.02f, 0.6f }, TEX_CONCRETE, tube, 1.0f, F_EMIT | F_NOCOLLIDE);
+    // a gurney with a radio on it
+    add_box(L, (Vector3){ WX(0.75f), 0.75f, WZ(-3) }, (Vector3){ 0.32f, 0.04f, 0.95f }, TEX_SKIN, (Color){ 200, 196, 186, 255 }, 1.0f, 0);
+    for (int i = 0; i < 4; i++) add_box(L, (Vector3){ WX(0.75f + (i & 1 ? 0.27f : -0.27f)), 0.37f, WZ(-3 + (i & 2 ? 0.85f : -0.85f)) }, (Vector3){ 0.02f, 0.37f, 0.02f }, TEX_RUST, (Color){ 130, 130, 126, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ WX(0.75f), 0.88f, WZ(-3.4f) }, (Vector3){ 0.14f, 0.09f, 0.07f }, TEX_WOOD, (Color){ 100, 70, 50, 255 }, 1.0f, F_NOCOLLIDE);
+    // room six
+    add_box(L, (Vector3){ WX(-1.2f) - 0.17f, 2.35f, WZ(-6) }, (Vector3){ 0.02f, 0.12f, 0.3f }, TEX_SKIN, (Color){ 220, 216, 200, 255 }, 1.0f, F_NOCOLLIDE);
+    add_decal(L, "6", (Vector3){ WX(-1.2f) + 0.15f, 2.35f, WZ(-6) }, 0, 1, 0.1f, SOOT);
+    if (k < 3) add_box(L, (Vector3){ WX(-1.2f) + 0.17f, 1.1f, WZ(-6) }, (Vector3){ 0.03f, 1.1f, 0.6f }, TEX_WOOD, (Color){ 140, 150, 140, 255 }, 1.0f, F_NOCOLLIDE);
+    else {
+        slab(L, WX(-4.6f), WX(-1.2f), WZ(-8), WZ(-4), 0, 1, TEX_TILE, floor, 1.0f);
+        slab(L, WX(-4.6f), WX(-1.2f), WZ(-8), WZ(-4), H + 1, 1, TEX_CONCRETE, (Color){ 120, 124, 116, 255 }, 3.0f);
+        wall_x(L, WX(-4.6f), WZ(-8), WZ(-4), 0, H, TEX_TILE, wall); wall_z(L, WZ(-8), WX(-4.6f), WX(-1.2f), 0, H, TEX_TILE, wall); wall_z(L, WZ(-4), WX(-4.6f), WX(-1.2f), 0, H, TEX_TILE, wall);
+        add_box(L, (Vector3){ WX(-3.6f), 0.35f, WZ(-6) }, (Vector3){ 0.9f, 0.35f, 0.5f }, TEX_SKIN, (Color){ 190, 186, 176, 255 }, 1.0f, 0);
+        add_effigy(L, FIG_SLEEPER, (Vector3){ WX(-3.6f), 0.72f, WZ(-6) }, -1.5708f, 0);
+        add_effigy(L, FIG_KNEELER, (Vector3){ WX(-3.4f), 0, WZ(-7.2f) }, 0.0f, 0.3f);   // his mother, at the bedside
+        add_box(L, (Vector3){ WX(-3.6f), H - 0.03f, WZ(-6) }, (Vector3){ 0.3f, 0.02f, 0.08f }, TEX_CONCRETE, tube, 1.0f, F_EMIT | F_NOCOLLIDE);
+        if (first) add_note(L, (Vector3){ WX(-2.4f), 0.01f, WZ(-5.2f) }, NOTE_WARD);
+    }
+    if (k >= 1) {   // a wheelchair, facing the wall
+        Color ch = { 110, 110, 106, 255 };
+        add_box(L, (Vector3){ WX(8.7f), 0.5f, WZ(-20.5f) }, (Vector3){ 0.24f, 0.03f, 0.24f }, TEX_CLOTH, (Color){ 60, 60, 66, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ WX(8.95f), 0.8f, WZ(-20.5f) }, (Vector3){ 0.02f, 0.3f, 0.24f }, TEX_CLOTH, (Color){ 60, 60, 66, 255 }, 1.0f, F_NOCOLLIDE);
+        for (int s = -1; s <= 1; s += 2) add_box(L, (Vector3){ WX(8.7f), 0.33f, WZ(-20.5f) + s * 0.28f }, (Vector3){ 0.3f, 0.3f, 0.015f }, TEX_RUST, ch, 1.0f, F_NOCOLLIDE);
+    }
+    if (k == 2) add_effigy(L, FIG_PENITENT, (Vector3){ WX(8.0f), 0, WZ(-26.5f) }, 0.0f, 0.4f);   // someone at the far end, with their back to you
+    for (int i = 0; i < k * 3; i++) add_box(L, (Vector3){ WX(frand(-0.8f, 0.8f)), 0.008f, WZ(frand(-12, 6)) }, (Vector3){ frand(0.1f, 0.4f), 0.004f, frand(0.1f, 0.5f) }, TEX_SLUDGE, (Color){ 90, 20, 18, 255 }, 1.0f, F_NOCOLLIDE);
+    if (k >= 2) add_decal(L, "SHE VISITS ON SUNDAYS", (Vector3){ WX(4.0f), 1.7f, WZ(-14) - 0.16f }, 2, -1, 0.12f, BLOOD);
+    if (k >= 3) add_decal(L, "HE WILL NOT WAKE", (Vector3){ WX(1.2f) - 0.16f, 1.6f, WZ(-9) }, 0, -1, 0.14f, BLOOD);
+    if (k >= 4 && first) {
+        add_door(L, (Vector3){ WX(9.2f) - WT, 0, WZ(-25) }, (Vector3){ -1, 0, 0 }, (Color){ 200, 40, 40, 255 }, W_WOMB, 0, "DOWN");
+        add_decal(L, "COME DOWN", (Vector3){ WX(6.8f) + 0.16f, 1.8f, WZ(-25) }, 0, 1, 0.14f, BLOOD);
+    }
+    #undef WX
+    #undef WZ
+}
+static void build_ward(Level *L, int seed) {
+    int k = g_wardLoop;
+    L->name = k == 0 ? "THE WARD" : NULL;
+    (void)seed;
+    L->fog = k >= 3 ? (Color){ 26, 8, 8, 255 } : (Color){ 14, 18, 16, 255 };
+    L->fogDensity = 0.085f + 0.01f * k;
+    L->light = 0.9f - 0.08f * k;
+    L->killY = -50;
+    L->gradeLo = (Color){ 120, 132, 126, 255 }; L->gradeHi = (Color){ 140, 140, 124, 255 };
+    L->moteCol = (Color){ 160, 170, 160, 255 };
+    ward_copy(L, 0, 0, k, true);
+    ward_copy(L, 8, -36, k + 1, false);
+    L->spawn = (Vector3){ 0, 0.05f, 6.0f }; L->spawnYaw = 0;
+}
+
 // ---------------------------------------------------------------- CHAPEL: the lower church
 // a nave full of people standing in their pews. when the bell has rung three times they kneel, and the one at
 // the altar counts them. the veil is on the altar
@@ -997,6 +1096,7 @@ void level_build(Level *L, WorldId id, int seed) {
     case W_VOID:   build_void(L, seed); break;
     case W_GARDEN: build_garden(L, seed); break;
     case W_CHAPEL: build_chapel(L, seed); break;
+    case W_WARD:   build_ward(L, seed); break;
     default:       build_end(L); break;
     }
     // ash motes
