@@ -91,6 +91,35 @@ static void tall(const Fig *f, const Frame *F) {
     gfx_ellipsoid(hc, Vector3Scale(hr, 0.1f), Vector3Scale(hu, 0.15f), Vector3Scale(hf, 0.11f), TEX_SKIN, skin);   // no face at all
 }
 
+static void mother(const Fig *f, const Frame *F) {
+    Color gown = tint_or(f, (Color){ 168, 160, 146, 255 }), skin = { 196, 188, 182, 255 }, hair = { 10, 8, 8, 255 };
+    gfx_limb(W(F, 0, 0.02f, 0), W(F, 0, 1.5f, 0), 0.34f, 0.15f, TEX_CLOTH, gown);
+    for (int s = -1; s <= 1; s += 2) gfx_limb(W(F, s * 0.1f, 0.03f, 0.18f), W(F, s * 0.12f, 0.02f, 0.44f), 0.045f, 0.015f, TEX_SKIN, skin);   // bare feet, toes too long
+    gfx_limb(W(F, -0.2f, 1.5f, 0), W(F, 0.2f, 1.5f, 0), 0.07f, 0.07f, TEX_CLOTH, gown);
+    // the neck goes up and then over, much too far
+    Vector3 nk = W(F, 0.12f, 1.74f, 0.04f), hc = W(F, 0.27f, 1.8f, 0.07f), hr, hu, hf;
+    gfx_limb(W(F, 0, 1.52f, 0), nk, 0.05f, 0.045f, TEX_SKIN, skin);
+    gfx_limb(nk, hc, 0.045f, 0.04f, TEX_SKIN, skin);
+    head_axes(f, F, hc, &hr, &hu, &hf);
+    gfx_ellipsoid(hc, Vector3Scale(hr, 0.1f), Vector3Scale(hu, 0.13f), Vector3Scale(hf, 0.11f), TEX_SKIN, skin);
+    gfx_ellipsoid(add3(hc, Vector3Scale(hf, 0.09f), Vector3Scale(hu, -0.05f)), Vector3Scale(hr, 0.03f), Vector3Scale(hu, 0.06f), Vector3Scale(hf, 0.03f), TEX_CONCRETE, (Color){ 4, 2, 2, 255 });
+    // hair: it hangs straight down from wherever her head is, over her face
+    for (int k = 0; k < 18; k++) {
+        float a = k * 0.349f;
+        Vector3 p0 = add3(hc, Vector3Scale(hu, 0.07f), Vector3Add(Vector3Scale(hr, cosf(a) * 0.09f), Vector3Scale(hf, sinf(a) * 0.1f)));
+        float len = 0.7f + 0.25f * ((k * 7) % 5) / 4.0f, sw = sinf(f->t * 0.9f + k) * 0.02f;
+        Vector3 mid = { p0.x + sw, p0.y - len * 0.5f, p0.z }, end = { p0.x + sw * 2 + cosf(a) * 0.03f, p0.y - len, p0.z + sinf(a) * 0.03f };
+        gfx_limb(p0, mid, 0.022f, 0.016f, TEX_CLOTH, hair);
+        gfx_limb(mid, end, 0.016f, 0.004f, TEX_CLOTH, hair);
+    }
+    for (int s = -1; s <= 1; s += 2) {   // arms down past her knees
+        Vector3 sh = W(F, s * 0.22f, 1.48f, 0), el = W(F, s * 0.27f, 1.0f, 0.08f), wr = W(F, s * 0.25f, 0.52f, 0.16f);
+        gfx_limb(sh, el, 0.035f, 0.03f, TEX_SKIN, skin);
+        gfx_limb(el, wr, 0.03f, 0.022f, TEX_SKIN, skin);
+        fingers(wr, Vector3Negate(F->u), F->r, 0.27f, 4, skin);
+    }
+}
+
 static void penitent(const Fig *f, const Frame *F, bool kneel) {
     Color robe = tint_or(f, (Color){ 30, 26, 28, 255 }), skin = { 150, 138, 136, 255 };
     float sway = sinf(f->t * 0.7f) * 0.02f, top = kneel ? 1.12f : 1.72f;
@@ -264,5 +293,7 @@ void figure_draw(const Fig *f) {
     case FIG_SEATED:   seated(f, &F); break;
     case FIG_COCOON:   cocoon(f, &F); break;
     case FIG_TALL:     tall(f, &F); break;
+    case FIG_MOTHER:   mother(f, &F); break;
+    case FIG_COUNT:    break;
     }
 }

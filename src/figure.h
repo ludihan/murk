@@ -13,6 +13,8 @@ typedef enum {
     FIG_SEATED,     // a hooded figure sitting at a table, hands flat on it
     FIG_COCOON,     // someone wrapped up and hung from the ceiling by a cord. the face presses through
     FIG_TALL,       // a thin man in a dark suit, much too tall, with a face like an egg
+    FIG_MOTHER,     // a woman in a stained nightgown, head bent too far over, hair hanging over her face
+    FIG_COUNT
 } FigKind;
 
 typedef struct Fig {

@@ -74,7 +74,8 @@ static int reading = -1;   // the note on screen, or -1
 static const char *useHint;
 // the shaft: something on the wall below you that climbs when you climb, and only while you aren't looking at it
 static struct { bool on, seen; float y, lastPY, scrapeT; Vector3 pos, n; } climber;
-static float radioT, wardFollow;   // the ward's radio, and how far along the thing that follows you is
+static float radioT, wardFollow;
+static struct { bool bang, cried, ran; float s, shown, stepT, strobeT, stare; } mom;   // the woman in the ward   // the ward's radio, and how far along the thing that follows you is
 static struct { int phase; float t, noticed, lift; bool warned; } gaze;
 // the lower church: three tolls, then everyone kneels and he counts them
 static struct { int phase, tolls; float t, tollT, stare; bool warned; } mass;
@@ -153,7 +154,7 @@ static Vector3 wp(Vector3 p, Vector3 eye) {
 
 static void load_world(WorldId id, bool wake) {
     reading = -1; useHint = NULL;
-    if (id == W_WARD) { g_wardLoop = 0; radioT = 3.0f; wardFollow = 0; }
+    if (id == W_WARD) { g_wardLoop = 0; radioT = 3.0f; wardFollow = 0; memset(&mom, 0, sizeof mom); }
     if (levelLoaded) {
         if (recN > 40 && L.id != W_SHAFT && L.id != W_END) { memcpy(ghostPath[L.id], rec, recN * sizeof *rec); ghostN[L.id] = recN; }
         level_free(&L);
@@ -429,18 +430,34 @@ static const char *RADIO[5][2] = {
     { "...visiting hours are from two until four...", "...would the family of the patient in room six..." },
     { "...room six has not woken...", "...his mother visits on Sundays..." },
     { "...eleven years...", "...she brings him flowers from the orchard. they don't die..." },
-    { "...she is in the room with him now...", "...don't stop. it walks where you walked..." },
-    { "...he has come down to us...", "...the door at the end is open..." },
+    { "...she is in the corridor with you now...", "...she only moves in the dark. she only moves when you don't look..." },
+    { "...whatever you hear, don't turn around...", "...she is right behind you. keep walking..." },
 };
+// the corridor as a line you walk along: down A, across the dogleg, down C. s is how far along it you are
+static Vector3 ward_pt(float s) {
+    if (s < 23.2f) return (Vector3){ 0, 0, 8.0f - s };
+    if (s < 31.2f) return (Vector3){ s - 23.2f, 0, -15.2f };
+    return (Vector3){ 8.0f, 0, -15.2f - (s - 31.2f) };
+}
+static Vector3 ward_dir(float s) { return s < 23.2f ? (Vector3){ 0, 0, -1 } : s < 31.2f ? (Vector3){ 1, 0, 0 } : (Vector3){ 0, 0, -1 }; }
+static float ward_s(Vector3 p) {
+    if (p.z > -14.0f && p.x < 2.0f) return 8.0f - p.z;
+    if (p.z > -16.4f) return 23.2f + Clamp(p.x, 0, 8);
+    return 31.2f + (-15.2f - p.z);
+}
 static bool ward_update(float dt, Vector3 eye) {
     if (L.id != W_WARD) return false;
+    Vector3 fwd = player_forward(&P);
     if (P.pos.z < -30.0f && P.pos.x > 4.0f) {   // another lap
         g_wardLoop++;
         level_free(&L);
         level_build(&L, W_WARD, dreams);
         P.pos.x -= 8.0f; P.pos.z += 36.0f;
         recN = 0; wardFollow = 0; radioT = 2.0f;
-        if (g_wardLoop >= 3) play_behind(SFX_KNOCK, 0.4f, 0.8f);
+        memset(&mom, 0, sizeof mom);
+        mom.s = 40.0f; mom.shown = 40.0f;   // on the fourth lap she starts at the far end
+        if (g_wardLoop == 3) { audio_play_ex(SFX_SCREECH, 0.5f, 0.6f); blackout = 1.0f; }
+        if (g_wardLoop == 4) { say("...don't turn around...", 5); play_behind(SFX_BREATH, 0.7f, 0.8f); }
     }
     int k = g_wardLoop > 4 ? 4 : g_wardLoop;
     radioT -= dt;
@@ -449,20 +466,45 @@ static bool ward_update(float dt, Vector3 eye) {
         play_from(SFX_PRAYER, (Vector3){ 0.75f, 0.9f, -3.4f }, 0.45f, 0.7f);
         say(RADIO[k][GetRandomValue(0, 1)], 4);
     }
-    // the one at the far end is gone before you reach it
+    Vector3 door6 = { -1.2f, 1.2f, -6.0f };
+    float d6 = Vector3Distance(P.pos, (Vector3){ door6.x, 0, door6.z });
+    // first lap: someone very small is crying behind the door of room six
+    if (g_wardLoop == 0 && !mom.cried && d6 < 5) { mom.cried = true; play_from(SFX_CRY, door6, 0.45f, 1.0f); }
+    // second lap: as you pass it, something inside throws itself at that door
+    if (g_wardLoop == 1 && !mom.bang && d6 < 1.8f) { mom.bang = true; play_from(SFX_BANG, door6, 1.0f, 0.9f); madness = 1; }
+    // third lap: she is at the far end with her back to you. the lights go, she is gone, and something runs behind you
     for (int i = 0; i < L.effigies.size; i++) {
         Effigy *e = &L.effigies.data[i];
-        if (e->kind == FIG_PENITENT && e->pos.y > -10 && Vector3Distance(e->pos, P.pos) < 7.5f) {
-            e->pos.y = -100; blackout = 0.7f; play_behind(SFX_BREATH, 0.4f, 0.9f);
+        if (e->kind == FIG_MOTHER && e->pos.y > -10 && Vector3Distance(e->pos, P.pos) < 8.0f) {
+            e->pos.y = -100; blackout = 1.2f; mom.ran = true; mom.stepT = 1.3f;
         }
     }
-    // on the fourth lap something walks your path, six seconds behind you. stand still and it arrives
-    if (g_wardLoop == 3 && recN > 24) {
-        wardFollow = fminf(1.0f, wardFollow + dt * 0.5f);
-        Vector3 fp = rec[recN - 24];
-        if (Vector3Distance(fp, P.pos) < 0.9f && wardFollow >= 1.0f) return true;
+    if (mom.ran && mom.stepT > 0) { mom.stepT -= dt; if (mom.stepT <= 0) play_behind(SFX_RUN, 0.8f, 1.0f); }
+    float ps = ward_s(P.pos);
+    // fourth lap: the lights strobe, and she comes down the corridor whenever it is dark or you are not looking
+    if (g_wardLoop == 3) {
+        mom.strobeT -= dt;
+        if (mom.strobeT <= 0) { mom.strobeT = frand_(2.5f, 5.0f); blackout = frand_(0.4f, 1.0f); }
+        Vector3 mp = ward_pt(mom.s);
+        bool seen = blackout <= 0 && level_seen(&L, eye, fwd, mp);
+        if (!seen) {
+            float sp = blackout > 0 ? 5.0f : 2.2f, dir = ps < mom.s ? -1.0f : 1.0f;
+            mom.s += dir * fminf(fabsf(ps - mom.s), sp * dt);
+        }
+        mom.stepT -= dt;
+        if (mom.stepT <= 0) { mom.stepT = 1.0f / 6.0f; mom.shown = mom.s; }   // she is only ever seen in jerks
+        if (fabsf(ps - mom.s) < 0.9f) return true;
     }
-    (void)eye;
+    // last lap: no light at all, and she is right behind you. you can hear her. don't look
+    if (g_wardLoop >= 4) {
+        mom.s = mom.shown = ps - 1.3f;
+        Vector3 back = ward_dir(fmaxf(0, mom.s));
+        float look = Vector3DotProduct((Vector3){ fwd.x, 0, fwd.z }, back);
+        mom.stare = look < -0.35f ? mom.stare + dt : 0;
+        if (mom.stare > 0.35f) return true;
+        mom.stepT -= dt;
+        if (mom.stepT <= 0) { mom.stepT = frand_(3, 6); play_behind(GetRandomValue(0, 2) ? SFX_BREATH : SFX_CRY, 0.6f, 0.8f); }
+    }
     return false;
 }
 
@@ -777,9 +819,10 @@ static void draw_scene(Camera3D cam, float time) {
         }
         figure_draw(&f);
     }
-    if (L.id == W_WARD && g_wardLoop == 3 && recN > 24) {
-        Vector3 fp = rec[recN - 24], nx = rec[recN - 23];
-        Fig f = { FIG_PENITENT, Vector3Lerp(fp, nx, recT / 0.25f), atan2f(nx.x - fp.x, -(nx.z - fp.z)), (float)recN, eye, 0.6f, 0.3f, time, { 0, 0, 1 }, (Color){ 20, 18, 18, 255 }, 0 };
+    if (L.id == W_WARD && g_wardLoop >= 3) {   // her, in stop motion
+        Vector3 mp = ward_pt(fmaxf(0, mom.shown));
+        float jt = floorf(time * 6.0f) / 6.0f;
+        Fig f = { FIG_MOTHER, mp, atan2f(eye.x - mp.x, -(eye.z - mp.z)), 0, eye, 0.6f, 1.25f + 0.15f * sinf(jt * 13.0f), jt, { 0, 0, 1 }, { 0 }, 0 };
         figure_draw(&f);
     }
     if (L.id == W_DINNER && dinner.sitT <= 0 && (dinner.host.x != 0 || dinner.host.y != 0)) {   // the host: very tall, and his hands are wet
@@ -806,12 +849,12 @@ static void draw_scene(Camera3D cam, float time) {
         figure_draw(&f);
     }
     if (catchS.on) {   // it comes straight at your face
-        static const float HY[] = { [FIG_PENITENT] = 2.02f, [FIG_KNEELER] = 1.7f, [FIG_CRAWLER] = 0.5f, [FIG_CLIMBER] = 0.5f, [FIG_GARDENER] = 3.4f, [FIG_PRIEST] = 2.25f,
-                                    [FIG_SLEEPER] = 0.6f, [FIG_SEATED] = 1.66f, [FIG_COCOON] = 0.0f, [FIG_TALL] = 2.36f };
-        static const float HZ[] = { [FIG_PENITENT] = 0.15f, [FIG_CRAWLER] = 0.66f, [FIG_GARDENER] = 0.1f, [FIG_PRIEST] = 0.1f, [FIG_SEATED] = 0.13f, [FIG_TALL] = 0.03f };
+        static const float HY[FIG_COUNT] = { [FIG_PENITENT] = 2.02f, [FIG_KNEELER] = 1.7f, [FIG_CRAWLER] = 0.5f, [FIG_CLIMBER] = 0.5f, [FIG_GARDENER] = 3.4f, [FIG_PRIEST] = 2.25f,
+                                    [FIG_SLEEPER] = 0.6f, [FIG_SEATED] = 1.66f, [FIG_COCOON] = 0.0f, [FIG_TALL] = 2.36f, [FIG_MOTHER] = 1.8f };
+        static const float HZ[FIG_COUNT] = { [FIG_PENITENT] = 0.15f, [FIG_CRAWLER] = 0.66f, [FIG_GARDENER] = 0.1f, [FIG_PRIEST] = 0.1f, [FIG_SEATED] = 0.13f, [FIG_TALL] = 0.03f, [FIG_MOTHER] = 0.07f };
         float s = catchS.scale > 0 ? catchS.scale : 1.0f, t = catchS.t;
         float k = t / 0.28f; k = k > 1 ? 1 : k * k * (3 - 2 * k);
-        static const float END[] = { [FIG_PENITENT] = 0.5f, [FIG_CRAWLER] = 0.45f, [FIG_GARDENER] = 0.7f, [FIG_PRIEST] = 1.0f, [FIG_TALL] = 0.6f, [FIG_SEATED] = 0.5f };
+        static const float END[FIG_COUNT] = { [FIG_PENITENT] = 0.5f, [FIG_CRAWLER] = 0.45f, [FIG_GARDENER] = 0.7f, [FIG_PRIEST] = 1.0f, [FIG_TALL] = 0.6f, [FIG_SEATED] = 0.5f, [FIG_MOTHER] = 0.6f };
         float end = END[catchS.kind] > 0 ? END[catchS.kind] : 0.55f;
         float dist = end + 2.9f * (1.0f - k);
         Vector3 f = player_forward(&P); f.y = 0; f = Vector3Normalize(f);
@@ -1336,7 +1379,7 @@ static void frame(void) {
                 if (city_update(frameDt, player_eye(&P), fwd)) caught(FIG_TALL, (Color){ 0 }, 2.7f, "he was always that tall.", false);
                 if (dinner_update(frameDt, player_eye(&P), fwd)) caught(FIG_GARDENER, (Color){ 70, 30, 30, 255 }, 0, "it is rude to leave the table.", false);
                 if (grey_update(frameDt)) caught(FIG_PENITENT, (Color){ 104, 104, 104, 255 }, 0, "you forget something.", true);
-                if (ward_update(frameDt, player_eye(&P))) caught(FIG_PENITENT, (Color){ 20, 18, 18, 255 }, 0, "it walked where you walked.", false);
+                if (ward_update(frameDt, player_eye(&P))) caught(FIG_MOTHER, (Color){ 0 }, 0, g_wardLoop >= 4 ? "you looked." : "she was always in the corridor.", false);
                 if (update_mass(frameDt, player_eye(&P))) caught(FIG_PRIEST, (Color){ 0 }, 0, "he counted one too many.", false);
                 if (update_climber(player_eye(&P), fwd)) caught(FIG_CRAWLER, (Color){ 0 }, 0, "it had your hands.", false);
                 scare_update(frameDt);
@@ -1479,7 +1522,7 @@ int main(void) {
         if (getenv("MURK_DREAMS")) dreams = atoi(getenv("MURK_DREAMS"));   // how deep the shot is taken
         P.fx = sfxmask;
         load_world((WorldId)shotWorld, false);
-        if (shotWorld == W_WARD && getenv("MURK_LAP")) { g_wardLoop = atoi(getenv("MURK_LAP")); level_free(&L); level_build(&L, W_WARD, dreams); }   // which lap of the ward
+        if (shotWorld == W_WARD && getenv("MURK_LAP")) { g_wardLoop = atoi(getenv("MURK_LAP")); level_free(&L); level_build(&L, W_WARD, dreams); mom.s = mom.shown = 40; }   // which lap of the ward
         P.pos = (Vector3){ sx, sy, sz }; P.yaw = syaw; P.pitch = spit;
         if (sfxmask & 1) lampOn = 1;
         EnableCursor();

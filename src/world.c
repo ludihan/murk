@@ -937,10 +937,10 @@ static void ward_copy(Level *L, float ox, float oz, int k, bool first) {
     // tubes in the ceiling: pale green, then fewer of them, then red
     Color tube = k >= 3 ? (Color){ 200, 50, 40, 255 } : k == 2 ? (Color){ 210, 200, 150, 255 } : (Color){ 200, 225, 205, 255 };
     for (int i = 0; i < 6; i++) {
-        if ((k >= 2 && i % 2 == 1) || (k >= 4 && i % 3 != 0)) continue;
+        if ((k >= 2 && i % 2 == 1) || k >= 4) continue;   // on the last lap there is no light at all
         add_box(L, (Vector3){ WX(0), H - 0.03f, WZ(6 - i * 4.0f) }, (Vector3){ 0.08f, 0.02f, 0.6f }, TEX_CONCRETE, tube, 1.0f, F_EMIT | F_NOCOLLIDE);
     }
-    add_box(L, (Vector3){ WX(4.0f), H - 0.03f, WZ(-15.2f) }, (Vector3){ 0.6f, 0.02f, 0.08f }, TEX_CONCRETE, tube, 1.0f, F_EMIT | F_NOCOLLIDE);
+    if (k < 4) add_box(L, (Vector3){ WX(4.0f), H - 0.03f, WZ(-15.2f) }, (Vector3){ 0.6f, 0.02f, 0.08f }, TEX_CONCRETE, tube, 1.0f, F_EMIT | F_NOCOLLIDE);
     if (k < 4) add_box(L, (Vector3){ WX(8.0f), H - 0.03f, WZ(-22) }, (Vector3){ 0.08f, 0.02f, 0.6f }, TEX_CONCRETE, tube, 1.0f, F_EMIT | F_NOCOLLIDE);
     // a gurney with a radio on it
     add_box(L, (Vector3){ WX(0.75f), 0.75f, WZ(-3) }, (Vector3){ 0.32f, 0.04f, 0.95f }, TEX_SKIN, (Color){ 200, 196, 186, 255 }, 1.0f, 0);
@@ -966,7 +966,18 @@ static void ward_copy(Level *L, float ox, float oz, int k, bool first) {
         add_box(L, (Vector3){ WX(8.95f), 0.8f, WZ(-20.5f) }, (Vector3){ 0.02f, 0.3f, 0.24f }, TEX_CLOTH, (Color){ 60, 60, 66, 255 }, 1.0f, F_NOCOLLIDE);
         for (int s = -1; s <= 1; s += 2) add_box(L, (Vector3){ WX(8.7f), 0.33f, WZ(-20.5f) + s * 0.28f }, (Vector3){ 0.3f, 0.3f, 0.015f }, TEX_RUST, ch, 1.0f, F_NOCOLLIDE);
     }
-    if (k == 2) add_effigy(L, FIG_PENITENT, (Vector3){ WX(8.0f), 0, WZ(-26.5f) }, 0.0f, 0.4f);   // someone at the far end, with their back to you
+    if (k == 2) add_effigy(L, FIG_MOTHER, (Vector3){ WX(8.0f), 0, WZ(-26.5f) }, 0.0f, 1.2f);   // a woman at the far end, with her back to you
+    if (k >= 3) {   // the floor is wet with it now, and there are hands on the walls
+        add_box(L, (Vector3){ WX(0), 0.012f, WZ(-4) }, (Vector3){ 1.15f, 0.006f, 11.9f }, TEX_SLUDGE, (Color){ 110, 14, 12, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ WX(8), 0.012f, WZ(-22) }, (Vector3){ 1.15f, 0.006f, 5.9f }, TEX_SLUDGE, (Color){ 110, 14, 12, 255 }, 1.0f, F_NOCOLLIDE);
+        for (int i = 0; i < 26; i++) {
+            float z = frand(-13, 7), y = frand(0.4f, 2.3f);
+            int sd = GetRandomValue(0, 1) ? 1 : -1;
+            add_box(L, (Vector3){ WX(sd * 1.04f), y, WZ(z) }, (Vector3){ 0.004f, 0.09f, 0.07f }, TEX_FLESH, (Color){ 90, 10, 10, 255 }, 1.0f, F_NOCOLLIDE);
+            add_box(L, (Vector3){ WX(sd * 1.04f), y + 0.12f, WZ(z) }, (Vector3){ 0.004f, 0.05f, 0.012f }, TEX_FLESH, (Color){ 90, 10, 10, 255 }, 1.0f, F_NOCOLLIDE);
+        }
+    }
+    if (k >= 4 && first) add_decal(L, "DON'T LOOK BACK", (Vector3){ WX(1.2f) - 0.16f, 1.7f, WZ(3) }, 0, -1, 0.16f, BLOOD);
     for (int i = 0; i < k * 3; i++) add_box(L, (Vector3){ WX(frand(-0.8f, 0.8f)), 0.008f, WZ(frand(-12, 6)) }, (Vector3){ frand(0.1f, 0.4f), 0.004f, frand(0.1f, 0.5f) }, TEX_SLUDGE, (Color){ 90, 20, 18, 255 }, 1.0f, F_NOCOLLIDE);
     if (k >= 2) add_decal(L, "SHE VISITS ON SUNDAYS", (Vector3){ WX(4.0f), 1.7f, WZ(-14) - 0.16f }, 2, -1, 0.12f, BLOOD);
     if (k >= 3) add_decal(L, "HE WILL NOT WAKE", (Vector3){ WX(1.2f) - 0.16f, 1.6f, WZ(-9) }, 0, -1, 0.14f, BLOOD);
@@ -978,8 +989,9 @@ static void ward_copy(Level *L, float ox, float oz, int k, bool first) {
     #undef WZ
 }
 static void build_ward(Level *L, int seed) {
-    L->ambient = 0.55f;
     int k = g_wardLoop;
+    static const float AMB[5] = { 0.5f, 0.38f, 0.24f, 0.14f, 0.02f };
+    L->ambient = AMB[k > 4 ? 4 : k];
     L->name = k == 0 ? "THE WARD" : NULL;
     (void)seed;
     L->fog = k >= 3 ? (Color){ 26, 8, 8, 255 } : (Color){ 14, 18, 16, 255 };
