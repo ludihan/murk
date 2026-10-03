@@ -10,7 +10,6 @@
 
 
 int g_launches, g_wakes;
-char g_user[64] = "YOU";
 
 // ---------------------------------------------------------------- helpers
 static void add_box(Level *L, Vector3 c, Vector3 h, TexId tex, Color tint, float scale, int flags) {
@@ -164,8 +163,7 @@ static void build_hub(Level *L, int seed) {
         add_box(L, (Vector3){ frand(-7, 7), 0.01f, frand(-7, 7) }, (Vector3){ frand(0.4f, 1.4f), 0.005f, frand(0.4f, 1.4f) }, TEX_SLUDGE, (Color){ 120, 90, 90, 255 }, 2.0f, F_NOCOLLIDE);
     // things written on the walls
     char buf[96];
-    snprintf(buf, sizeof buf, "%s IS STILL ASLEEP", g_user);
-    add_decal(L, buf, (Vector3){ S, 2.3f, -4.5f }, 0, -1, 0.26f, BLOOD);
+    add_decal(L, "STILL ASLEEP", (Vector3){ S, 2.3f, -4.5f }, 0, -1, 0.26f, BLOOD);
     if (g_launches > 1) add_decal(L, "YOU CAME BACK", (Vector3){ -S, 2.1f, 4.2f }, 0, 1, 0.24f, BLOOD);
     if (g_wakes > 0) {
         snprintf(buf, sizeof buf, "WOKEN %d TIMES", g_wakes);
@@ -415,7 +413,7 @@ static void build_drains(Level *L, int seed) {
             int d = -1;
             for (int k = 0; k < 4; k++) if (!(o & (1 << k))) { d = k; if (GetRandomValue(0, 1)) break; }
             Vector3 c = CELLC(i);
-            const char *txt = placed == 0 ? g_user : DEAD[GetRandomValue(0, 5)];
+            const char *txt = DEAD[GetRandomValue(0, 5)];
             Vector3 wp = c; wp.y = 1.7f;
             static const int ax[4] = { 2, 0, 2, 0 }, dr[4] = { 1, -1, -1, 1 };
             if (d == 0) wp.z -= C / 2 - wt; else if (d == 1) wp.x += C / 2 - wt; else if (d == 2) wp.z += C / 2 - wt; else wp.x -= C / 2 - wt;

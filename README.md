@@ -30,8 +30,8 @@ nginx (HTTPS recommended; browsers are stricter with audio and mouse capture on 
         types { application/wasm wasm; }
     }
 
-In the browser the game asks for a name once and keeps your launches and wake-ups in `localStorage`
-(the native build uses `$USER` and a `murk.sav` file). Click to start; Esc releases the mouse, click to take it back.
+In the browser the game keeps your launches and wake-ups in `localStorage`
+(the native build uses a `murk.sav` file). Click to start; Esc releases the mouse, click to take it back.
 
 ## Docker (murk.ludihan.xyz on its own VPS)
 

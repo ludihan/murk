@@ -10,17 +10,12 @@
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #include <emscripten/html5.h>
-// browsers have no save file or $USER: use localStorage and ask once
+// browsers have no save file: use localStorage
 EM_JS(int, web_load_int, (const char *key), {
     var v = localStorage.getItem(UTF8ToString(key));
     return v ? parseInt(v, 10) : 0;
 });
 EM_JS(void, web_save_int, (const char *key, int v), { localStorage.setItem(UTF8ToString(key), String(v)); });
-EM_JS(void, web_get_name, (char *out, int cap), {
-    var n = localStorage.getItem("murk.name");
-    if (!n) { n = window.prompt("before you go in: what is your name?", "") || "YOU"; localStorage.setItem("murk.name", n); }
-    stringToUTF8(n.trim().toUpperCase().slice(0, 24) || "YOU", out, cap);
-});
 #endif
 
 typedef enum { S_TITLE, S_PLAY, S_ENDING } State;
@@ -76,8 +71,6 @@ static void load_memory(void) {
         if (n == 3 && sv >= 100 && sv <= 5000) sens = sv / 10000.0f;
         fclose(f);
     }
-    const char *u = getenv("USER");
-    if (u && *u) { snprintf(g_user, sizeof g_user, "%s", u); for (char *c = g_user; *c; c++) if (*c >= 'a' && *c <= 'z') *c -= 32; }
 #endif
     g_launches++;
     save_memory();
@@ -85,10 +78,7 @@ static void load_memory(void) {
 
 static void haunt_title(void) {
     static const char *T[] = { "MURK - don't turn around", "MURK - it can see your desktop", "MURK - it's in the room", "MURK - wake up", "MURK - not responding" };
-    char b[128];
-    if (GetRandomValue(0, 4) == 0) snprintf(b, sizeof b, "MURK - %s", g_user);
-    else snprintf(b, sizeof b, "%s", T[GetRandomValue(0, 4)]);
-    SetWindowTitle(b);
+    SetWindowTitle(T[GetRandomValue(0, 4)]);
     titleT = 3.0f;
 }
 
@@ -750,9 +740,7 @@ static void frame(void) {
             text_c("M U R K", 80 + j, 40, (Color){ 235, 220, 195, 255 });
             text_c("a descent into other people's dreams", 128, 10, (Color){ 120, 110, 95, 255 });
             if ((int)(time * 1.5f) % 2) text_c("press ENTER or click", 190, 10, (Color){ 170, 160, 140, 255 });
-            char memo[96] = "";
-            if (g_launches >= 6) snprintf(memo, sizeof memo, "it kept your place, %s.", g_user);
-            else if (g_launches >= 2) snprintf(memo, sizeof memo, "you came back, %s.", g_user);
+            const char *memo = g_launches >= 6 ? "it kept your place." : g_launches >= 2 ? "you came back." : "";
             if (msgT > 0) text_c(msg, 172, 10, (Color){ 210, 200, 180, (unsigned char)(fminf(1.0f, msgT) * 255) });
             if (memo[0]) text_c(memo, 156, 10, (Color){ 130, 40, 34, (unsigned char)(150 + 60 * sinf(time * 2.0f)) });
             text_c("WASD · SHIFT · SPACE · hold LMB to grip · F lamp · R wake up · [ ] mouse sensitivity", RT_H - 18, 10, (Color){ 90, 85, 75, 255 });
@@ -799,9 +787,6 @@ int main(void) {
     SetTargetFPS(144);
 #endif
     load_memory();
-#ifdef __EMSCRIPTEN__
-    web_get_name(g_user, sizeof g_user);
-#endif
     gfx_init();
     audio_init();
 

@@ -55,7 +55,6 @@ typedef struct Level {
 } Level;
 
 extern int g_launches, g_wakes;   // persisted between runs: the game remembers you
-extern char g_user[64];         // who is asleep
 void level_build(Level *L, WorldId id, int seed);
 void level_free(Level *L);
 void level_step(Level *L, float dt, Vector3 player);
