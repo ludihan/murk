@@ -1,10 +1,23 @@
 # MURK
 
-A first-person psychological horror game in C. You wake in a house where a congregation keeps a vigil over
-someone who must not wake. Its doors lead into dreams: a shaft you climb while something climbs after you,
-drains where a blind thing hunts by sound, steps under an eye that sees whatever moves, an orchard whose
-flowers are watching, and a church where everyone kneels on the third bell. Bring something back from each
-one and find the way out. Read what people left lying around.
+A first-person psychological horror game in C, in the spirit of Yume Nikki, LSD Dream Emulator and .flow.
+You wake in a quiet house. Nothing follows you into it. Its doors open on dreams, and some of those dreams have
+doors of their own that go deeper. Bring something back from each of the first five and find the way out.
+Read what people left lying around.
+
+    THE HOUSE (safe)
+    ├─ the shaft ─────────── a door at the top ──> the city ──┬─ the hospital ──> the ward
+    │                                                        └─ the underground ──> the static sea
+    ├─ the drains ────────── a hatch in a dead end ──> the ward ── its last lap ──> below
+    ├─ the steps ─────────── a lone door on the way ──> the static sea (its screens link anywhere)
+    ├─ the orchard ───────── a door in the hedge ──> the dinner ── sit down ──> below
+    ├─ the lower church ──── a low door behind the altar ──> below ── a door home
+    └─ the way out (needs something from each of the five)
+
+Each dream has its own thing with its own rules, and it takes its time arriving: something that climbs when you
+climb, something blind that hears you, an eye that sees what moves, flowers that call the gardeners, a priest
+who counts heads, a corridor that loops, a grey man, a host who moves when you aren't looking, a tall man at
+the ends of streets.
 
     meson setup build && ninja -C build && ./build/murk
 
@@ -39,4 +52,4 @@ Progress is kept in `localStorage` (the native build writes `murk.sav`).
 - `web/`         Emscripten cross file, HTML shell, build and publish scripts, Caddy config
 
 Dev hooks: `MURK_SHOT="world,x,y,z,yaw,pitch,fxmask,frames,out.png"` renders one frame in a hidden window and
-exits (`MURK_DREAMS=n` sets how deep in you are); `MURK_BOT=walk|jump|climb` drives the player and logs it.
+exits (`MURK_DREAMS=n` sets how deep in you are, `MURK_LAP=n` which lap of the ward); `MURK_BOT=walk|jump|climb` drives the player and logs it.
