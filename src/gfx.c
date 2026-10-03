@@ -169,6 +169,14 @@ static Color texel(TexId id, int x, int y) {
         if (stain > 0.55f) c = mix(c, (Color){ 30, 12, 10, 255 }, (stain - 0.55f) * 2.0f);
         return shade(c, 0.9f + 0.2f * grain);
     }
+    case TEX_PAPER: {  // the house's wallpaper: soft stripes and small flowers, a little faded
+        Color c = mix((Color){ 150, 132, 104, 255 }, (Color){ 186, 168, 136, 255 }, 0.5f + 0.5f * n);
+        if ((x % 32) < 3) c = shade(c, 0.9f);
+        int fx = (x + 16) % 32 - 16, fy = (y + (x / 32 % 2) * 16) % 32 - 16;
+        if (fx * fx + fy * fy < 10) c = mix(c, (Color){ 150, 90, 80, 255 }, 0.5f);
+        else if (fx * fx + fy * fy < 18 && fy > 0) c = mix(c, (Color){ 100, 120, 80, 255 }, 0.35f);
+        return shade(c, 0.94f + 0.12f * grain);
+    }
     default: {
         uint8_t g = (uint8_t)(rnd(x, y, 1000) * 255);
         return (Color){ g, g, g, 255 };

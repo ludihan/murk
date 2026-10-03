@@ -8,7 +8,7 @@
 // ---- shared types -------------------------------------------------------
 
 typedef enum {
-    TEX_CONCRETE, TEX_RUST, TEX_TILE, TEX_FLESH, TEX_SLUDGE, TEX_WOOD, TEX_STATIC, TEX_GRASS, TEX_MOSAIC, TEX_EYES, TEX_WATER, TEX_SKIN, TEX_CLOTH, TEX_COUNT
+    TEX_CONCRETE, TEX_RUST, TEX_TILE, TEX_FLESH, TEX_SLUDGE, TEX_WOOD, TEX_STATIC, TEX_GRASS, TEX_MOSAIC, TEX_EYES, TEX_WATER, TEX_SKIN, TEX_CLOTH, TEX_PAPER, TEX_COUNT
 } TexId;
 
 enum { F_GRIP = 1, F_EMIT = 2, F_NOCOLLIDE = 4, F_DECAL = 8, F_SCREEN = 16 };   // F_SCREEN: a television picture, drawn glowing

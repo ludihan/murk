@@ -57,7 +57,6 @@ typedef struct Level {
     Vector3 bed;            // ending trigger
     Vector3 wakePos; float wakeYaw;   // where you come to after waking (the hub's bed)
     Vector3 spots[40]; int nspots;    // the house: places a visitor can stand without being seen arriving
-    Vector3 circle;                   // the chalk circle in the parlour
     float t;
 } Level;
 

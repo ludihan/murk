@@ -72,7 +72,6 @@ static int reading = -1;   // the note on screen, or -1
 static const char *useHint;
 // the shaft: something on the wall below you that climbs when you climb, and only while you aren't looking at it
 static struct { bool on, seen; float y, lastPY, scrapeT; Vector3 pos, n; } climber;
-static float circleT;   // how long you have knelt in the parlour's circle
 static float radioT, wardFollow;   // the ward's radio, and how far along the thing that follows you is
 static struct { int phase; float t, noticed, lift; bool warned; } gaze;
 // the lower church: three tolls, then everyone kneels and he counts them
@@ -142,12 +141,12 @@ static void load_world(WorldId id, bool wake) {
         if (recN > 40 && L.id != W_SHAFT && L.id != W_END) { memcpy(ghostPath[L.id], rec, recN * sizeof *rec); ghostN[L.id] = recN; }
         level_free(&L);
     }
-    recN = 0; recT = 0; circleT = 0;
+    recN = 0; recT = 0;
     memset(&climber, 0, sizeof climber);
     memset(&gaze, 0, sizeof gaze); gaze.t = 7.0f;
     memset(&mass, 0, sizeof mass); mass.t = 8.0f;
     memset(&grey, 0, sizeof grey); grey.t = frand_(14, 26);
-    ghost.on = ghostN[id] > 40 && dreams >= 2 && GetRandomValue(0, 2) > 0; ghost.noticed = false; ghost.t = -frand_(4, 9);
+    ghost.on = id != W_HUB && ghostN[id] > 40 && dreams >= 2 && GetRandomValue(0, 2) > 0; ghost.noticed = false; ghost.t = -frand_(4, 9);
     level_build(&L, id, ++dreams);
     levelLoaded = true;
     player_spawn(&P, &L);
@@ -235,62 +234,6 @@ static void director(float dt) {
         eyesOpenT = 5.0f; audio_play(SFX_SWELL);
         say("every flower opens its eyes.", 4.0f);
     }
-}
-
-// the visitors in the house never walk where you can see. they are just somewhere else when you look again,
-// a little closer each time, and in the end they are standing at your back
-static Vector3 behind_you(void) {
-    Vector3 f = player_forward(&P); f.y = 0; f = Vector3Normalize(f);
-    return (Vector3){ P.pos.x - f.x * 1.25f, P.pos.y, P.pos.z - f.z * 1.25f };
-}
-static void hub_visitors(float dt, Vector3 eye, Vector3 fwd) {
-    float nearest = 99;
-    for (int i = 0; i < L.watchers.size; i++) {
-        Watcher *w = &L.watchers.data[i];
-        bool seen = blackout <= 0 && level_seen(&L, eye, fwd, w->pos);
-        w->phase += dt;
-        float d = Vector3Distance(w->pos, P.pos);
-        if (w->state == 1) {           // at your back
-            Vector3 b = behind_you();
-            if (!seen) {
-                if (ray_clear((Vector3){ P.pos.x, P.pos.y + 1.2f, P.pos.z }, (Vector3){ b.x, b.y + 1.2f, b.z })) w->pos = b;
-                w->timer += dt;
-                if (w->timer > 14) { w->state = 0; w->timer = frand_(6, 10); w->pos = L.spots[GetRandomValue(0, L.nspots - 1)]; }
-            } else { w->state = 2; w->timer = 0; }
-        } else if (w->state == 2) {    // you turned round, and it is right there. then the light goes
-            w->timer += dt;
-            if (w->timer > 0.8f) {
-                blackout = 2.6f; madness = fminf(1.0f, madness + 0.5f);
-                int far = 0; float fd = 0;
-                for (int k = 0; k < L.nspots; k++) { float sd = Vector3Distance(L.spots[k], P.pos); if (sd > fd) { fd = sd; far = k; } }
-                w->pos = L.spots[far]; w->state = 0; w->timer = frand_(8, 14);
-                say("it only wanted to be near you.", 4);
-            }
-        } else {
-            if (seen && !w->seen) audio_play_ex(SFX_SWELL, 0.3f, 0.9f);
-            w->timer -= dt;
-            if (w->timer <= 0 && !seen) {
-                w->timer = frand_(5, 10) * fmaxf(0.45f, 1.0f - dreams * 0.05f);
-                int best = -1; float bd = d - 1.0f;
-                for (int k = 0; k < L.nspots; k++) {
-                    Vector3 sp = L.spots[k];
-                    if (Vector3Distance(sp, w->pos) > 12) continue;
-                    float ds = Vector3Distance(sp, P.pos);
-                    if (ds < bd && ds > 2.5f && !level_seen(&L, eye, fwd, sp)) { bd = ds; best = k; }
-                }
-                Vector3 b = behind_you();
-                if (best >= 0) {
-                    w->pos = L.spots[best];
-                    if (GetRandomValue(0, 2) == 0) play_from(SFX_CREAK, w->pos, 0.5f, frand_(0.75f, 0.95f));
-                } else if (d < 7 && !level_seen(&L, eye, fwd, b) && ray_clear((Vector3){ P.pos.x, P.pos.y + 1.2f, P.pos.z }, (Vector3){ b.x, b.y + 1.2f, b.z })) {
-                    w->pos = b; w->state = 1; w->timer = 0;
-                }
-            }
-        }
-        w->seen = seen;
-        if (d < nearest) nearest = d;
-    }
-    L.nearest = nearest;
 }
 
 static bool update_climber(Vector3 eye, Vector3 fwd) {
@@ -457,21 +400,6 @@ static bool update_mass(float dt, Vector3 eye) {
     return false;
 }
 
-// kneel alone in the chalk circle long enough and someone answers
-static void secret_update(float dt) {
-    if (L.id != W_HUB || L.circle.y == 0 || blackout > 0) return;
-    Vector3 d = Vector3Subtract(P.pos, L.circle);
-    bool in = fabsf(d.y) < 0.5f && sqrtf(d.x * d.x + d.z * d.z) < 1.3f && P.crouch > 0.5f && P.speedMeter < 0.3f;
-    circleT = in ? circleT + dt : 0;
-    if (circleT < 9.0f) return;
-    circleT = -1e9f;   // once a visit
-    blackout = 3.5f;
-    audio_play_ex(SFX_CHANT, 0.9f, 0.85f); play_behind(SFX_PRAYER, 0.6f, 0.9f);
-    Use u = { { L.circle.x + 0.3f, L.circle.y + 0.01f, L.circle.z }, USE_NOTE, NOTE_SLEEPER, false };
-    Uses_push(&L.uses, u);
-    if (!g_secret) { g_secret = 1; save_memory(); }
-}
-
 // the ward: crossing into the second copy of the corridor puts you back at the start of the first, one lap on
 static const char *RADIO[5][2] = {
     { "...visiting hours are from two until four...", "...would the family of the patient in room six..." },
@@ -542,6 +470,7 @@ static bool grey_update(float dt) {
 }
 
 static void scare_update(float dt) {
+    if (L.id == W_HUB) { blackout = 0; L.nearest = 99; return; }   // nothing follows you into the house
     Vector3 eye = player_eye(&P), fwd = player_forward(&P);
     // ---- the game hitches: everything stops and the sound drops out, then it all lurches back
     if (dreams >= 2 && !tr.on) {
@@ -562,7 +491,7 @@ static void scare_update(float dt) {
         if (stepGap <= 0) { play_behind(SFX_STEP, 0.3f, 0.6f); stepGap = 0.62f; phantomLeft--; }
     }
     // ---- blackouts: the lights just stop. in the drains, things keep walking.
-    bool haunted = L.id == W_DRAINS || (L.id == W_HUB && L.watchers.size > 0);
+    bool haunted = L.id == W_DRAINS;
     if (blackout > 0) {
         blackout -= dt;
     } else if (haunted && !tr.on) {
@@ -573,7 +502,6 @@ static void scare_update(float dt) {
             audio_play(SFX_KNOCK);
         }
     }
-    if (L.id == W_HUB) { hub_visitors(dt, eye, fwd); secret_update(dt); }
     if (L.id == W_GARDEN) garden_update(dt, eye);
     director(dt);
     // ---- your own path, walked by someone else
@@ -621,7 +549,7 @@ static void scare_update(float dt) {
             for (int i = 0; i < 3; i++) if (!lurk[i].on) {
                 for (int tries = 0; tries < 8; tries++) {
                     float a = (P.yaw + (GetRandomValue(0, 1) ? 1 : -1) * frand_(35, 120)) * DEG2RAD;
-                    float d = (L.id == W_HUB) ? frand_(5, 9) : frand_(9, 18);
+                    float d = frand_(9, 18);
                     Vector3 p = { eye.x + sinf(a) * d, eye.y + 0.4f, eye.z - cosf(a) * d };
                     if (!ray_clear(eye, p)) continue;
                     b3RayResult fl = b3World_CastRayClosest(L.phys, b3v(p), (b3Vec3){ 0, -6, 0 }, b3DefaultQueryFilter());
@@ -660,7 +588,7 @@ static Color scale_col(Color c, float k) {
 
 static void draw_scene(Camera3D cam, float time) {
     float dens = L.fogDensity * (lampOn > 0.5f ? 0.55f : 1.0f);
-    float light = L.light * flicker(time, L.id == W_HUB ? 0.35f + 0.05f * (dreams > 8 ? 8 : dreams) : 0.15f) * (lampOn > 0.5f ? 1.2f : 1.0f);
+    float light = L.light * (L.id == W_HUB ? 1.0f : flicker(time, 0.15f)) * (lampOn > 0.5f ? 1.2f : 1.0f);
     if (blackout > 0) { light *= 0.04f; dens *= 1.8f; }
     gfx_begin_scene(cam, L.fog, dens, light, time);
     gfx_sky(&L.sky, time, P.pos);
@@ -773,7 +701,7 @@ static void draw_scene(Camera3D cam, float time) {
     for (int i = 0; i < L.boxes.size; i++) {
         const Box *b = &L.boxes.data[i];
         if (!(b->flags & F_EMIT)) continue;
-        float k = ((L.id == W_HUB || L.id == W_DRAINS) && b->h.y < 0.2f) ? flicker(time + i, 0.4f) : 1.0f;
+        float k = (L.id == W_DRAINS && b->h.y < 0.2f) ? flicker(time + i, 0.4f) : 1.0f;
         gfx_glow(wp(b->c, eye), b->h, scale_col(b->tint, k));
     }
     for (int i = 0; i < L.pickups.size; i++) {
@@ -828,7 +756,7 @@ static void draw_scene(Camera3D cam, float time) {
         if (mx > 1.6f || b->h.y > 3.0f) continue;
         Box wb = *b; wb.c = wp(b->c, eye);
         if (dist_to_box(eye, &wb) > cull) continue;
-        float k = ((L.id == W_HUB || L.id == W_DRAINS) && b->h.y < 0.2f) ? flicker(time + i, 0.4f) : 1.0f;
+        float k = (L.id == W_DRAINS && b->h.y < 0.2f) ? flicker(time + i, 0.4f) : 1.0f;
         Vector3 ho = Vector3Add(wb.c, Vector3Scale(Vector3Normalize(Vector3Subtract(eye, wb.c)), 0.45f));   // pull it off the wall it hangs on
         if (mx < 0.06f) gfx_halo(ho, 0.45f, b->tint, 0.28f * k);   // a candle flame: a small warm smudge, not a bloom
         else gfx_halo(ho, 0.9f + mx * 2.6f, b->tint, 0.55f * k);
@@ -1248,13 +1176,16 @@ static void frame(void) {
             madness += (m - madness) * fminf(1, frameDt * 3);
             tension = madness;
             float tone = L.id == W_HUB ? 1.0f : L.id == W_SHAFT ? 0.75f : L.id == W_DRAINS ? 0.9f : L.id == W_VOID ? 1.4f : L.id == W_GARDEN ? 1.15f : L.id == W_CHAPEL ? 0.8f : L.id == W_WARD ? 1.25f : L.id == W_STATIC ? 0.6f : L.id == W_END ? 2.0f : 1.0f;
-            float mus = L.id == W_GARDEN ? 0.8f : L.id == W_VOID ? 0.5f : L.id == W_END ? 0.8f : (L.id == W_HUB && dreams >= 4) ? 0.25f : 0.0f;
-            audio_music(frozen ? 0.0f : mus, fminf(1.0f, madness * 0.9f + (blackout > 0 ? 0.4f : 0.0f)));
+            float mus = L.id == W_GARDEN ? 0.8f : L.id == W_VOID ? 0.5f : L.id == W_END ? 0.8f : L.id == W_HUB ? 0.4f : 0.0f;
+            bool home = L.id == W_HUB;   // the house: a music box in tune, a low warm hum, nothing else
+            if (home) tension = madness = 0;
+            audio_music(frozen ? 0.0f : mus, home ? 0.0f : fminf(1.0f, madness * 0.9f + (blackout > 0 ? 0.4f : 0.0f)));
             float whisper = L.nearest < 18 ? 1.0f - L.nearest / 18.0f : 0.0f;
             if (L.id == W_STATIC) whisper = fmaxf(whisper, 0.35f);   // the hiss of the screens
-            if (!frozen) audio_set(tone, tension, whisper, tr.on ? 0.3f : L.id == W_STATIC ? 0.25f : 0.9f);
+            if (home) whisper = 0;
+            if (!frozen) audio_set(tone, tension, whisper, tr.on ? 0.3f : L.id == W_STATIC ? 0.25f : home ? 0.45f : 0.9f);
             {   // the mass behind the walls gets louder the deeper you go; something breathes when one of them is close
-                float choir = L.id == W_HUB ? fminf(1.0f, dreams * 0.12f) : (L.id == W_END || L.id == W_CHAPEL) ? 1.0f : L.id == W_STATIC ? 0.0f : 0.35f;
+                float choir = L.id == W_HUB ? 0.0f : (L.id == W_END || L.id == W_CHAPEL) ? 1.0f : L.id == W_STATIC ? 0.0f : 0.35f;
                 float breath = 0, bpan = 0, bd = 1e9f;
                 for (int i = 0; i < L.watchers.size; i++) {
                     float d = Vector3Distance(L.watchers.data[i].pos, P.pos);
@@ -1272,7 +1203,7 @@ static void frame(void) {
         if (msgT > 0) msgT -= frameDt;
         if (flash > 0) flash = fmaxf(0, flash - frameDt * 1.2f);
         if (glitch > 0) glitch = fmaxf(0, glitch - frameDt * 2.5f);
-        if (levelLoaded && (L.id == W_HUB || L.id == W_STATIC)) gfx_update_static(time, (L.id == W_STATIC || dreams >= 3) && fmodf(time, 19.0f) < 0.3f);
+        if (levelLoaded && L.id == W_STATIC) gfx_update_static(time, fmodf(time, 19.0f) < 0.3f);
 
         // ---- render
         float fade = 0;
