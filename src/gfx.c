@@ -18,7 +18,7 @@ static Texture2D haloTex, moonTex, scleraTex, irisTex;
 static Vector3 camPos, camR, camU, camF;
 static Color gradeLo = { 128, 128, 128, 255 }, gradeHi = { 128, 128, 128, 255 };
 static int p_glo, p_ghi;
-static int u_fog, u_dens, u_flick, u_emit;
+static int u_fog, u_dens, u_flick, u_emit, u_amb, u_torch;
 static int p_time, p_mad, p_fade, p_flash, p_res, p_glitch;
 
 // ---------------------------------------------------------------- procedural textures
@@ -224,15 +224,20 @@ GLSL_HEAD
 "in vec2 fragTexCoord; in vec4 fragColor; out vec4 finalColor;\n"
 "uniform sampler2D texture0; uniform vec4 colDiffuse;\n"
 "uniform vec3 fogColor; uniform float fogDensity; uniform float flicker; uniform float emit;\n"
+"uniform float ambient; uniform vec4 torch;\n"   // torch: strength, beam radius (in screen heights), reach (m), how much light you carry yourself
 "void main(){\n"
 "  vec4 tx = texture(texture0, fragTexCoord);\n"
 "  if (tx.a < 0.3) discard;\n"
 "  vec4 t = tx * fragColor * colDiffuse;\n"
 "  float d = 1.0/gl_FragCoord.w;\n"
+"  vec2 sp = (gl_FragCoord.xy - vec2(240.0, 135.0)) / 270.0;\n"
+"  float beam = smoothstep(torch.y, torch.y * 0.15, length(sp)) / (1.0 + pow(d / torch.z, 2.0));\n"
+"  float near = torch.w / (1.0 + d * d * 0.35);\n"
+"  float lightAmt = ambient + torch.x * beam + near;\n"
 "  float f = 1.0 - exp(-pow(d*fogDensity, 1.5));\n"
 "  float e = min(emit, 1.0); float te = step(1.5, emit);\n"
 "  vec3 flat_ = fragColor.rgb * colDiffuse.rgb * mix(vec3(1.0), tx.rgb, te);\n"
-"  vec3 lit = mix(t.rgb * flicker * 2.3, flat_, e);\n"
+"  vec3 lit = mix(t.rgb * flicker * 2.3 * lightAmt, flat_, e);\n"
 "  vec3 col = mix(lit, fogColor, clamp(f,0.0,1.0)*(1.0-e));\n"
 "  finalColor = vec4(col, mix(1.0, fragColor.a * colDiffuse.a, e)); }\n";
 
@@ -329,6 +334,8 @@ void gfx_init(void) {
     u_dens = GetShaderLocation(obj, "fogDensity");
     u_flick = GetShaderLocation(obj, "flicker");
     u_emit = GetShaderLocation(obj, "emit");
+    u_amb = GetShaderLocation(obj, "ambient");
+    u_torch = GetShaderLocation(obj, "torch");
     post = LoadShaderFromMemory(NULL, POST_FS);
     p_time = GetShaderLocation(post, "time");
     p_mad = GetShaderLocation(post, "madness");
@@ -465,6 +472,13 @@ void gfx_begin_scene(Camera3D cam, Color fog, float density, float flicker, floa
     SetShaderValue(obj, u_dens, &density, SHADER_UNIFORM_FLOAT);
     SetShaderValue(obj, u_flick, &flicker, SHADER_UNIFORM_FLOAT);
     float e = 0; SetShaderValue(obj, u_emit, &e, SHADER_UNIFORM_FLOAT);
+    gfx_set_light(1.0f, 0, 0.3f, 6, 0);
+}
+void gfx_set_light(float ambient, float torch, float beamR, float reach, float carried) {
+    rlDrawRenderBatchActive();
+    float t[4] = { torch, beamR, reach, carried };
+    SetShaderValue(obj, u_amb, &ambient, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(obj, u_torch, t, SHADER_UNIFORM_VEC4);
 }
 void gfx_end_scene(void) {
     EndShaderMode();

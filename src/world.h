@@ -35,6 +35,7 @@ typedef struct Level {
     Color fog;
     float fogDensity;
     float light;            // base brightness multiplier
+    float ambient;          // how much of the dream you can see without a light of your own (1 = all of it)
     Vector3 spawn;
     float spawnYaw;
     float killY;            // fall below this and you wake up

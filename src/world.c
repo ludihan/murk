@@ -367,6 +367,7 @@ static void wall_box(Level *L, int w, float s0, float s1, float y0, float y1, fl
 }
 
 static void build_shaft(Level *L, int seed) {
+    L->ambient = 0.3f;
     L->name = "THE SHAFT";
     SetRandomSeed(seed * 2654435 + 11);
     // each descent is a different shaft: width, mood, number and spacing of levels
@@ -461,6 +462,7 @@ static void build_shaft(Level *L, int seed) {
 static const int DX[4] = { 0, 1, 0, -1 }, DY[4] = { -1, 0, 1, 0 };
 
 static void build_drains(Level *L, int seed) {
+    L->ambient = 0.22f;
     L->name = "THE DRAINS";
     L->fog = (Color){ 6, 12, 8, 255 };
     L->fogDensity = 0.115f;
@@ -647,6 +649,7 @@ static void build_drains(Level *L, int seed) {
 static float support(float hx, float hz, float dx, float dz) { return hx * fabsf(dx) + hz * fabsf(dz); }
 
 static void build_void(Level *L, int seed) {
+    L->ambient = 0.75f;
     L->name = "THE STEPS";
     L->fog = (Color){ 52, 20, 70, 255 };
     L->fogDensity = 0.024f;
@@ -792,6 +795,7 @@ static void flower_at(Level *L, float x, float z, float hgt, Color col, float si
 }
 
 static void build_garden(Level *L, int seed) {
+    L->ambient = 0.3f;
     L->name = "THE ORCHARD";
     SetRandomSeed(seed * 6007 + 3);
     L->fog = (Color){ 30, 34, 36, 255 };
@@ -974,6 +978,7 @@ static void ward_copy(Level *L, float ox, float oz, int k, bool first) {
     #undef WZ
 }
 static void build_ward(Level *L, int seed) {
+    L->ambient = 0.55f;
     int k = g_wardLoop;
     L->name = k == 0 ? "THE WARD" : NULL;
     (void)seed;
@@ -1003,6 +1008,7 @@ static void add_tv(Level *L, Vector3 p, int face, float s) {
     Uses_push(&L->uses, u);
 }
 static void build_static(Level *L, int seed) {
+    L->ambient = 0.5f;
     L->name = "THE STATIC SEA";
     SetRandomSeed(seed * 3301 + 29);
     L->fog = (Color){ 6, 6, 7, 255 };
@@ -1049,6 +1055,7 @@ static void build_static(Level *L, int seed) {
 // ---------------------------------------------------------------- DINNER: the table
 // a dining table that does not end, lit by candles, with the family seated all along it. one chair is empty
 static void build_dinner(Level *L, int seed) {
+    L->ambient = 0.3f;
     L->name = "THE DINNER";
     SetRandomSeed(seed * 787 + 41);
     const float Wr = 64;
@@ -1095,6 +1102,7 @@ static void build_dinner(Level *L, int seed) {
 // warm red tunnels that pulse. bodies hang wrapped from the ceiling, and pale things cling up there too, asleep until
 // they hear you. at the bottom is a heart, and him
 static void build_womb(Level *L, int seed) {
+    L->ambient = 0.25f;
     L->name = "BELOW";
     SetRandomSeed(seed * 9973 + 3);
     L->fog = (Color){ 26, 4, 6, 255 };
@@ -1188,6 +1196,7 @@ static void build_womb(Level *L, int seed) {
 // a grid of blocks in the rain that goes on forever. nobody lives here any more and the lights are left on.
 // a tall man stands at the ends of streets (main). there is a hospital, an underground, and a telephone
 static void build_city(Level *L, int seed) {
+    L->ambient = 0.55f;
     L->name = "THE CITY";
     SetRandomSeed(seed * 5581 + 13);
     const float Wr = 96, B = 8;   // the dream repeats every 96 m; blocks are 16 m with 8 m streets between
@@ -1276,6 +1285,7 @@ static void build_city(Level *L, int seed) {
 // a nave full of people standing in their pews. when the bell has rung three times they kneel, and the one at
 // the altar counts them. the veil is on the altar
 static void build_chapel(Level *L, int seed) {
+    L->ambient = 0.28f;
     L->name = "THE LOWER CHURCH";
     SetRandomSeed(seed * 4409 + 17);
     L->fog = (Color){ 22, 12, 12, 255 };
@@ -1329,6 +1339,7 @@ static void build_chapel(Level *L, int seed) {
 
 // ---------------------------------------------------------------- END: the way out
 static void build_end(Level *L) {
+    L->ambient = 0.5f;
     L->name = "THE WAY OUT";
     L->fog = (Color){ 70, 60, 52, 255 };
     L->fogDensity = 0.07f;
@@ -1360,6 +1371,7 @@ void level_build(Level *L, WorldId id, int seed) {
     L->id = id;
     L->dreamNo = seed;
     L->nearest = 99;
+    L->ambient = 1.0f;
     b3WorldDef wd = b3DefaultWorldDef();
     wd.gravity = (b3Vec3){ 0, -20.0f, 0 };
     wd.workerCount = 1;

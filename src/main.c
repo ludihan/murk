@@ -700,6 +700,12 @@ static void draw_scene(Camera3D cam, float time) {
     }
     if (blackout > 0) { light *= 0.04f; dens *= 1.8f; }
     gfx_begin_scene(cam, L.fog, dens, light, time);
+    {   // in the dark you see what you are close to; with the lamp, a beam goes where you look
+        float amb = L.ambient * (blackout > 0 ? 0.1f : 1.0f);
+        if (amb >= 0.95f) gfx_set_light(amb, 0, 0.3f, 6, 0);
+        else if (lampOn > 0.5f) gfx_set_light(amb, 2.6f, 0.42f, 11.0f, 0.3f);
+        else gfx_set_light(amb, 0.5f, 0.32f, 3.5f, 0.45f);
+    }
     gfx_sky(&L.sky, time, P.pos);
     float cull = 3.2f / dens + 6;
     Vector3 eye = cam.position;

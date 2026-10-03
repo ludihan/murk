@@ -7,6 +7,8 @@ void gfx_shutdown(void);
 
 void gfx_begin_scene(Camera3D cam, Color fog, float density, float flicker, float time);
 void gfx_end_scene(void);
+// how much light there is: the dream's own, a beam from where you are looking (the lamp), and the little you carry
+void gfx_set_light(float ambient, float torch, float beamR, float reach, float carried);
 
 // draw an axis aligned (or quaternion rotated) textured box in the grime shader
 void gfx_box(Vector3 c, Vector3 h, TexId tex, Color tint, float scale);
