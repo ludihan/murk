@@ -57,7 +57,7 @@ Needs meson, ninja, cmake, a C compiler and the usual X11/Wayland + GL dev heade
 fetched by Meson on first configure (`subprojects/*.wrap`).
 
 ## Controls
-WASD move · Shift run · Ctrl kneel · E use / read / hide / stroke the cat · Space jump · **hold LMB at rusty
+WASD move · Shift run · C kneel (Ctrl too, outside the browser) · E use / read / hide / stroke the cat · Space jump · **hold LMB at rusty
 plates to grip** (W climb, A/D shuffle, Space lunge or kick off) · F lamp · Q strike a match (once found) ·
 R wake up · [ ] mouse sensitivity · Esc quit
 
@@ -70,7 +70,10 @@ The same source builds to WebAssembly with Emscripten:
 
 That stages three static files in `dist/` (`index.html`, `murk.js`, `murk.wasm`, about 1.4 MB) that any web
 server can host. Serve them over HTTPS: browsers only allow mouse capture and audio on secure pages.
-Progress is kept in `localStorage` (the native build writes `murk.sav`).
+Progress is kept in `localStorage` (the native build writes `murk.sav`). The page keeps the browser's own shortcuts out of the way
+while you play: it swallows them (Ctrl+S, Ctrl+R, Ctrl+F, Space scrolling, Alt, the mouse's back button...), asks before
+the tab closes, and in fullscreen (double-click) it locks the keyboard so that even Ctrl+W reaches the game where the
+browser allows it (Chromium). Esc, F5, F11 and F12 still belong to the browser.
 
 `docker compose up -d --build` builds the web version and serves it with Caddy (set the domain in
 `web/Caddyfile`). There is also a `Jenkinsfile` for rebuilding on push.

@@ -6,7 +6,7 @@
 <title>MURK</title>
 <link rel="icon" href="data:,">
 <style>
-  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; user-select: none; -webkit-user-select: none; overscroll-behavior: none; }
   #canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; outline: none; cursor: none; }
   #boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column;
           color: #6a6458; font: 14px/1.6 monospace; letter-spacing: .2em; background: #000; z-index: 2; transition: opacity 1.2s; }
@@ -18,7 +18,7 @@
 <body>
 <div id="boot"><b>MURK</b><span id="status">waking up...</span></div>
 <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
-<div id="warn">headphones. dark room. click to begin. esc lets go of the mouse.</div>
+<div id="warn">headphones. dark room. click to begin. double-click for fullscreen. esc lets go of the mouse.</div>
 <script>
   var statusEl = document.getElementById('status'), boot = document.getElementById('boot');
   var Module = {
@@ -33,6 +33,27 @@
     onAbort: function () { statusEl.textContent = 'it stopped. reload.'; boot.classList.remove('gone'); }
   };
   window.addEventListener('click', function () { document.getElementById('canvas').focus(); });
+  // keep the browser's own shortcuts out of the game. the game still hears every key (the default is cancelled,
+  // the event is not stopped); only Esc (it lets go of the mouse), F5, F11 and F12 are left to the browser
+  var PASS = { Escape: 1, F5: 1, F11: 1, F12: 1 };
+  function guard(e) { if (!PASS[e.code]) e.preventDefault(); }
+  ['keydown', 'keyup', 'keypress'].forEach(function (t) { window.addEventListener(t, guard, true); });
+  // the mouse: no middle-click autoscroll, no back/forward on the side buttons, no dragging, no wheel scrolling
+  ['mousedown', 'mouseup', 'auxclick'].forEach(function (t) { window.addEventListener(t, function (e) { if (e.button !== 0) e.preventDefault(); }, true); });
+  window.addEventListener('dragstart', function (e) { e.preventDefault(); }, true);
+  window.addEventListener('wheel', function (e) { e.preventDefault(); }, { capture: true, passive: false });
+  // Ctrl+W, Ctrl+T, Ctrl+N cannot be cancelled by a page. once the game has started, the tab asks before it goes,
+  // and in fullscreen the keyboard is locked, which (where the browser has it) gives the game those keys too
+  var playing = false;
+  window.addEventListener('click', function () { playing = true; }, { once: true });
+  window.addEventListener('beforeunload', function (e) { if (playing) { e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('dblclick', function () {
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function () {});
+  });
+  document.addEventListener('fullscreenchange', function () {
+    if (!navigator.keyboard || !navigator.keyboard.lock) return;
+    if (document.fullscreenElement) navigator.keyboard.lock().catch(function () {}); else navigator.keyboard.unlock();
+  });
 </script>
 {{{ SCRIPT }}}
 </body>

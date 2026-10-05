@@ -82,7 +82,11 @@ Input input_read(void) {
     in.sprint = IsKeyDown(KEY_LEFT_SHIFT);
     in.grip = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
     in.glide = IsKeyDown(KEY_SPACE);
-    in.crouch = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+#ifdef __EMSCRIPTEN__
+    in.crouch = IsKeyDown(KEY_C);   // not Ctrl in a browser: Ctrl+W closes the tab, and no page is allowed to stop it
+#else
+    in.crouch = IsKeyDown(KEY_C) || IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+#endif
     return in;
 }
 

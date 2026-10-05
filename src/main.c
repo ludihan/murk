@@ -18,6 +18,12 @@ EM_JS(int, web_load_int, (const char *key), {
     return v ? parseInt(v, 10) : 0;
 });
 EM_JS(void, web_save_int, (const char *key, int v), { localStorage.setItem(UTF8ToString(key), String(v)); });
+// every key is the game's, not the browser's: returning true calls preventDefault() on it (the game still hears it).
+// Esc is left alone so the browser lets go of the mouse, and F5, F11 and F12 so you can reload, go fullscreen, debug
+static EM_BOOL web_key(int type, const EmscriptenKeyboardEvent *e, void *user) {
+    (void)type; (void)user;
+    return strcmp(e->code, "Escape") && strcmp(e->code, "F5") && strcmp(e->code, "F11") && strcmp(e->code, "F12");
+}
 #endif
 
 typedef enum { S_TITLE, S_PLAY, S_ENDING } State;
@@ -294,7 +300,7 @@ static void load_world(WorldId id, bool wake) {
         cat.mode = 1; cat.gone = false; cat_reset_trail();
     }
     lampOn = (P.fx & (1u << FX_LAMP)) ? lampOn : 0;
-    if (id == W_HUB && !wake && dreams <= 1) say("WASD walk · SHIFT run · CTRL kneel · E use · hold LMB at rusty walls to grip · R wake up. there is a cat asleep by the fire.", 12);
+    if (id == W_HUB && !wake && dreams <= 1) say("WASD walk · SHIFT run · C kneel · E use · hold LMB at rusty walls to grip · R wake up. there is a cat asleep by the fire.", 12);
     if (id == W_SHAFT) say("hold LMB on the rusty plates. W climbs, A/D shuffle, SPACE lunges. don't let go.", 9);
     if (id == W_BATHS) say("the baths have been closed a long time. the water is very still.", 7);
     if (id == W_STATIC) say("nothing is on.", 5);
@@ -2914,7 +2920,7 @@ static void frame(void) {
             const char *memo = g_launches >= 6 ? "it kept your place." : g_launches >= 2 ? "you came back." : "";
             if (msgT > 0) text_c(msg, 172, 10, (Color){ 210, 200, 180, (unsigned char)(fminf(1.0f, msgT) * 255) });
             if (memo[0]) text_c(memo, 156, 10, (Color){ 130, 40, 34, (unsigned char)(150 + 60 * sinf(time * 2.0f)) });
-            text_c("WASD · SHIFT run · CTRL kneel · E use · LMB grip · F lamp · Q match · R wake up · [ ] mouse", RT_H - 18, 10, (Color){ 90, 85, 75, 255 });
+            text_c("WASD · SHIFT run · C kneel · E use · LMB grip · F lamp · Q match · R wake up · [ ] mouse", RT_H - 18, 10, (Color){ 90, 85, 75, 255 });
         } else {
             Vector3 eye = player_eye(&P), fwd = player_forward(&P);
             Camera3D cam = { 0 };
@@ -2975,6 +2981,9 @@ int main(void) {
     SetWindowMinSize(480, 270);
 #ifdef __EMSCRIPTEN__
     SetExitKey(KEY_NULL);
+    emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, NULL, 1, web_key);
+    emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, NULL, 1, web_key);
+    emscripten_set_keypress_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, NULL, 1, web_key);
 #else
     SetExitKey(KEY_ESCAPE);
     SetTargetFPS(144);
