@@ -1,5 +1,5 @@
 # Caddy gets and renews the HTTPS certificate for this name by itself.
-murk.ludihan.xyz {
+murk.ludihan.com {
 	# GitHub's push webhook goes to Jenkins (shared "murk-web" network); the Jenkins UI itself is not exposed
 	handle /github-webhook/* {
 		reverse_proxy jenkins:8080
