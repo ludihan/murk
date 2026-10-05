@@ -2915,12 +2915,17 @@ static void frame(void) {
             int j = (int)(sinf(time * 40) * 1.2f * (sinf(time * 0.7f) > 0.95f));
             text_c("M U R K", 82 + j, 40, (Color){ 120, 20, 40, 255 });
             text_c("M U R K", 80 + j, 40, (Color){ 235, 220, 195, 255 });
-            text_c(g_launches >= 3 ? "do not wake him" : "a descent into other people's dreams", 128, 10, (Color){ 120, 110, 95, 255 });
-            if ((int)(time * 1.5f) % 2) text_c("press ENTER or click", 190, 10, (Color){ 170, 160, 140, 255 });
+            text_c(g_launches >= 3 ? "do not wake him" : "you wake in a quiet house. its doors open on dreams.", 128, 10, (Color){ 120, 110, 95, 255 });
+            text_c("ENTER or click to fall asleep", 190, 10, (Color){ 170, 160, 140, (unsigned char)(110 + 100 * (0.5f + 0.5f * sinf(time * 2.2f))) });
             const char *memo = g_launches >= 6 ? "it kept your place." : g_launches >= 2 ? "you came back." : "";
             if (msgT > 0) text_c(msg, 172, 10, (Color){ 210, 200, 180, (unsigned char)(fminf(1.0f, msgT) * 255) });
             if (memo[0]) text_c(memo, 156, 10, (Color){ 130, 40, 34, (unsigned char)(150 + 60 * sinf(time * 2.0f)) });
-            text_c("WASD · SHIFT run · C kneel · E use · LMB grip · F lamp · Q match · R wake up · [ ] mouse", RT_H - 18, 10, (Color){ 90, 85, 75, 255 });
+#ifdef __EMSCRIPTEN__
+            text_c("WASD walk · SHIFT run · SPACE jump · C kneel", RT_H - 30, 10, (Color){ 90, 85, 75, 255 });
+#else
+            text_c("WASD walk · SHIFT run · SPACE jump · C / CTRL kneel", RT_H - 30, 10, (Color){ 90, 85, 75, 255 });
+#endif
+            text_c("E use · LMB grip · F lamp · Q match · R wake up · [ ] mouse", RT_H - 17, 10, (Color){ 90, 85, 75, 255 });
         } else {
             Vector3 eye = player_eye(&P), fwd = player_forward(&P);
             Camera3D cam = { 0 };
