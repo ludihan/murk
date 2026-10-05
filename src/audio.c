@@ -334,6 +334,47 @@ static float s_giant(float t, float d) {   // something enormous putting its wei
     return tanhf((sinf(t * TAU * (28 - 10 * t)) * expf(-t * 4) * 1.6f + svf_lp(&sv_a, frnd(), 120.0f, 0.6f) * expf(-t * 7) * 4.0f) * 1.3f) * 0.95f;
 }
 
+static float s_ice(float t, float d) {     // a crack, and then the whole sheet rings: a chirp falling through the dispersion of the ice
+    static float ph;
+    if (t == 0) ph = 0;
+    float f = 2600.0f * expf(-t * 5.5f) + 160.0f;
+    ph += f / RATE;
+    float ring = sinf(ph * TAU) * expf(-t * 2.2f) * 0.6f + sinf(ph * TAU * 1.51f) * expf(-t * 4.0f) * 0.2f;
+    float crack = svf_bp(&sv_a, frnd(), 1800.0f, 0.3f) * expf(-t * 40.0f) * 1.4f;
+    return (ring + crack) * 0.5f * (1 - t / d);
+}
+static float s_purr(float t, float d) {    // twenty-five little catches a second, in and out
+    float in = fmodf(t, 1.6f) < 0.8f ? 1.0f : 0.75f;
+    float pulse = powf(0.5f + 0.5f * sinf(t * TAU * 25.0f), 3.0f);
+    return svf_lp(&sv_a, frnd(), 240.0f, 0.5f) * pulse * in * 1.6f * sinf(fminf(1.0f, t / d) * 3.14159f);
+}
+static float s_hiss(float t, float d) {
+    float e = fminf(1.0f, t / 0.05f) * (1.0f - t / d);
+    return (svf_bp(&sv_a, frnd(), 4200.0f, 0.5f) + 0.4f * svf_bp(&sv_b, frnd(), 2200.0f, 0.4f)) * e * 0.5f;
+}
+static float s_piano(float t, float d) {   // three strings to a note, never quite agreeing
+    (void)d;
+    float f = 261.6f, v = 0;
+    for (int k = 1; k <= 5; k++) {
+        float a = 1.0f / (k * k * 0.7f + 0.3f);
+        v += a * (sinf(t * TAU * f * k) + sinf(t * TAU * f * k * 1.0031f) + sinf(t * TAU * f * k * 0.9974f)) * expf(-t * (0.9f + k * 0.7f));
+    }
+    float hammer = frnd() * expf(-t * 200.0f) * 0.4f;
+    return (v * 0.09f + hammer) * (t < 0.003f ? t / 0.003f : 1.0f);
+}
+static float s_giggle(float t, float d) {  // hee hee hee, falling, muffled by a hand
+    (void)d;
+    static float ph;
+    if (t == 0) ph = 0;
+    int n = (int)(t / 0.16f);
+    float nt = t - n * 0.16f, on = nt < 0.1f ? sinf(nt / 0.1f * 3.14159f) : 0.0f;
+    if (n > 5) on = 0;
+    float f = 620.0f - n * 35.0f + 40.0f * sinf(nt * 60.0f);
+    ph += f / RATE;
+    float src = (fmodf(ph, 1.0f) * 2 - 1) * 0.6f + frnd() * 0.5f;
+    return (svf_bp(&sv_a, src, 2700.0f, 0.2f) + 0.6f * svf_bp(&sv_b, src, 900.0f, 0.3f)) * on * 0.3f;
+}
+
 static Sound synth(SynthFn fn, float dur) {
     int n = (int)(RATE * dur);
     short *data = malloc(n * sizeof(short));
@@ -368,6 +409,8 @@ void audio_init(void) {
         [SFX_PRAYER] = { s_prayer, 2.6f }, [SFX_CREAK] = { s_creak, 0.8f },   [SFX_RING] = { s_ring, 1.1f },
         [SFX_ROAR] = { s_roar, 1.3f },    [SFX_CRY] = { s_cry, 2.7f },       [SFX_BANG] = { s_bang, 1.3f },
         [SFX_RUN] = { s_run, 1.4f },      [SFX_SCREECH] = { s_screech, 1.6f }, [SFX_GIANT] = { s_giant, 1.4f },
+        [SFX_ICE] = { s_ice, 1.8f },      [SFX_PURR] = { s_purr, 3.2f },     [SFX_HISS] = { s_hiss, 0.9f },
+        [SFX_PIANO] = { s_piano, 2.6f },  [SFX_GIGGLE] = { s_giggle, 1.1f },
     };
     for (int i = 0; i < SFX_COUNT; i++) sfx[i] = synth(DEF[i].fn, DEF[i].dur);
 }

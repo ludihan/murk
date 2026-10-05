@@ -198,6 +198,21 @@ static Color texel(TexId id, int x, int y) {
         else if (fx * fx + fy * fy < 18 && fy > 0) c = mix(c, (Color){ 100, 120, 80, 255 }, 0.35f);
         return shade(c, 0.94f + 0.12f * grain);
     }
+    case TEX_ICE: {    // black ice: clear enough to see the dark under it, white where it has cracked and frozen again
+        Color c = mix((Color){ 22, 34, 46, 255 }, (Color){ 70, 96, 116, 255 }, n);
+        float k = fabsf(fbm(u, v, 3, 501) - 0.5f), k2 = fabsf(fbm(v + 0.3f, u, 5, 502) - 0.5f);
+        if (k < 0.004f || k2 < 0.0025f) c = mix(c, (Color){ 150, 176, 196, 255 }, 0.45f);   // old cracks, frozen over
+        if (rnd(x / 4, y / 4, 503) > 0.997f) c = mix(c, (Color){ 140, 170, 196, 255 }, 0.5f);   // bubbles caught in it
+        float frost = fbm(u, v, 8, 504);
+        if (frost > 0.66f) c = mix(c, (Color){ 150, 170, 186, 255 }, (frost - 0.66f) * 1.5f);
+        return shade(c, 0.94f + 0.12f * grain);
+    }
+    case TEX_SNOW: {
+        Color c = mix((Color){ 150, 156, 168, 255 }, (Color){ 214, 218, 226, 255 }, n);
+        if (grain > 0.97f) c = shade(c, 1.15f);
+        if (fbm(u, v, 2, 511) < 0.32f) c = shade(c, 0.85f);   // drifts
+        return shade(c, 0.95f + 0.1f * grain);
+    }
     default: {
         uint8_t g = (uint8_t)(rnd(x, y, 1000) * 255);
         return (Color){ g, g, g, 255 };

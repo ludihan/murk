@@ -19,6 +19,11 @@ typedef enum {
     SFX_RUN,        // bare wet feet, running
     SFX_SCREECH,    // metal dragged across metal
     SFX_GIANT,      // a footstep that shakes the floor
+    SFX_ICE,        // the noise a frozen lake makes at night: a long falling twang, like a wire singing
+    SFX_PURR,       // the cat
+    SFX_HISS,       // the cat, at something you can't see
+    SFX_PIANO,      // one note on an old upright, a little out of tune (pitch picks the note)
+    SFX_GIGGLE,     // a child laughing behind its hand, somewhere close
     SFX_COUNT
 } Sfx;
 void audio_init(void);

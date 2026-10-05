@@ -8,10 +8,10 @@
 // ---- shared types -------------------------------------------------------
 
 typedef enum {
-    TEX_CONCRETE, TEX_RUST, TEX_TILE, TEX_FLESH, TEX_SLUDGE, TEX_WOOD, TEX_STATIC, TEX_GRASS, TEX_MOSAIC, TEX_EYES, TEX_WATER, TEX_SKIN, TEX_CLOTH, TEX_PAPER, TEX_FACADE, TEX_POOL, TEX_COUNT
+    TEX_CONCRETE, TEX_RUST, TEX_TILE, TEX_FLESH, TEX_SLUDGE, TEX_WOOD, TEX_STATIC, TEX_GRASS, TEX_MOSAIC, TEX_EYES, TEX_WATER, TEX_SKIN, TEX_CLOTH, TEX_PAPER, TEX_FACADE, TEX_POOL, TEX_ICE, TEX_SNOW, TEX_COUNT
 } TexId;
 
-enum { F_GRIP = 1, F_EMIT = 2, F_NOCOLLIDE = 4, F_DECAL = 8, F_SCREEN = 16 };   // F_SCREEN: a television picture, drawn glowing
+enum { F_GRIP = 1, F_EMIT = 2, F_NOCOLLIDE = 4, F_DECAL = 8, F_SCREEN = 16, F_HIDDEN = 32 };   // F_SCREEN: a television picture, drawn glowing. F_HIDDEN: solid, but never drawn (glass)
 
 typedef struct Box {
     Vector3 c, h;       // center, half extents
@@ -21,18 +21,19 @@ typedef struct Box {
     uint8_t flags;
 } Box;
 
-typedef enum { FX_LAMP, FX_GLOVES, FX_BOOTS, FX_FEATHER, FX_VEIL, FX_COUNT } EffectId;
+typedef enum { FX_LAMP, FX_GLOVES, FX_BOOTS, FX_FEATHER, FX_VEIL, FX_COMPASS, FX_MATCHES, FX_SLIPPERS, FX_COUNT } EffectId;
 #define FX_ALL ((1 << FX_COUNT) - 1)
+#define FX_OUT ((1 << (FX_VEIL + 1)) - 1)   // what the way out wants: one thing from each of the first five
 
 typedef struct Pickup  { Vector3 pos; EffectId fx; bool taken, locked; } Pickup;
 // the house, the five dreams its doors open on, and the deeper ones you only reach from inside those
-typedef enum { W_HUB, W_SHAFT, W_BATHS, W_VOID, W_NURSERY, W_CHAPEL, W_WARD, W_STATIC, W_DINNER, W_WOMB, W_CITY, W_MORGUE, W_THEATRE, W_END, W_COUNT } WorldId;
+typedef enum { W_HUB, W_SHAFT, W_BATHS, W_VOID, W_NURSERY, W_CHAPEL, W_WARD, W_STATIC, W_DINNER, W_WOMB, W_CITY, W_MORGUE, W_THEATRE, W_FAIR, W_LAKE, W_SCHOOL, W_END, W_COUNT } WorldId;
 typedef struct Portal  { Vector3 pos; float radius; WorldId to; int needs; Color col; const char *label; } Portal;
 typedef struct Watcher { Vector3 pos, goal; float phase, stride, timer, sense; int state; bool seen; } Watcher;
 typedef struct Mote    { Vector3 pos, vel; float life; } Mote;
 typedef struct Bloom   { Vector3 pos; Color col; float size, yaw; } Bloom;   // a flower that watches you
 typedef struct Prop    { b3BodyId body; Vector3 h; TexId tex; Color tint; } Prop;
-typedef enum { USE_NOTE, USE_VALVE, USE_LINK, USE_SIT, USE_FACE } UseKind;   // USE_FACE: his face, at the bottom of everything   // USE_LINK: touch it and you are somewhere else
+typedef enum { USE_NOTE, USE_VALVE, USE_LINK, USE_SIT, USE_FACE, USE_HIDE, USE_FORTUNE, USE_RIDE, USE_HAMMER, USE_DIARY, USE_BED, USE_PIANO, USE_RADIO, USE_SCOPE, USE_FRIDGE } UseKind;   // USE_FACE: his face, at the bottom of everything   // USE_LINK: touch it and you are somewhere else
 typedef struct Use     { Vector3 pos; int kind, arg; bool done; } Use;   // something you can press E on
 typedef struct Effigy  { int kind; Vector3 pos; float yaw, tilt, look; bool seen; float scale; } Effigy;   // a figure that stays where it was put (mostly)
 
