@@ -5,7 +5,7 @@
 typedef enum {
     FIG_PENITENT,   // a tall hooded figure, arms hanging too long out of its sleeves
     FIG_KNEELER,    // the same, kneeling, hands pressed together
-    FIG_CRAWLER,    // something pale on all fours, blind, mouth hanging open
+    FIG_CRAWLER,    // a starved man on his hands and knees, hair down to the floor, head craned up at you, grinning
     FIG_CLIMBER,    // the crawler, flat against a wall
     FIG_GARDENER,   // very tall and thin, and its head is a flower with an eye in it
     FIG_PRIEST,     // robed, arms raised, wearing the skull of a goat
@@ -18,6 +18,9 @@ typedef enum {
     FIG_FACE,       // a face in a wall, eyes following you, mouth working
     FIG_SHEET,      // someone standing up under a mortuary sheet, a tag on one toe
     FIG_PUPPET,     // a marionette the size of a person, hanging from its strings, head lolling
+    FIG_CAT,        // the house cat. black, thin, green eyes. look = how frightened it is (back up, fur on end)
+    FIG_SEEKER,     // a child in a school jumper, stretched to nearly three metres, hands over its eyes. look > 0.5: hands down
+    FIG_SELF,       // you, as the mirrors see you: a boy in striped pyjamas, eyes shut. look > 0.5: they are open
     FIG_COUNT
 } FigKind;
 

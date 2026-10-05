@@ -232,52 +232,218 @@ static void penitent(const Fig *f, const Frame *F, bool kneel) {
     }
 }
 
+// a man who has not eaten for a very long time, on his hands and knees. he holds his head craned right back so that
+// he can look up at you, his hair hangs to the floor, and he is smiling with every tooth he has. his eyes are white
+// all the way across, and they are the last thing to go into the dark
 static void crawler(const Fig *f, const Frame *F) {
-    Color pale = tint_or(f, (Color){ 168, 160, 156, 255 });
+    Color pale = tint_or(f, (Color){ 150, 148, 138, 255 }), bone = scale_c(pale, 1.15f), hair = { 9, 8, 9, 255 };
     float ph = f->stride;
-    Vector3 hips = W(F, 0, 0.7f, -0.4f), mid = W(F, 0, 0.92f, -0.02f), sh = W(F, 0, 0.82f, 0.38f);
-    gfx_limb(hips, mid, 0.12f, 0.13f, TEX_SKIN, pale);
-    gfx_limb(mid, sh, 0.13f, 0.16f, TEX_SKIN, pale);
-    for (int k = 0; k < 4; k++) {   // knobs of spine through the skin
-        Vector3 p = Vector3Lerp(hips, sh, (k + 0.5f) / 4.0f);
-        p = Vector3Add(p, Vector3Scale(F->u, 0.13f + (k == 1 || k == 2 ? 0.08f : 0.0f)));
-        gfx_ellipsoid(p, Vector3Scale(F->r, 0.035f), Vector3Scale(F->u, 0.03f), Vector3Scale(F->f, 0.04f), TEX_SKIN, pale);
+    float jerk = fmodf(f->t * 1.7f + f->stride * 0.13f, 4.3f) < 0.12f ? 1.0f : 0.0f;   // now and then all of him twitches at once
+    float tr = sinf(f->t * 47.0f) * 0.006f;                                           // and he never stops trembling
+    Vector3 hips = W(F, tr, 0.64f, -0.44f), mid = W(F, 0, 0.8f, -0.06f), sh = W(F, -tr, 0.74f + 0.05f * jerk, 0.34f);
+    gfx_limb(hips, mid, 0.13f, 0.1f, TEX_SKIN, pale);    // nothing at the waist at all
+    gfx_limb(mid, sh, 0.1f, 0.15f, TEX_SKIN, pale);
+    gfx_ellipsoid(W(F, 0, 0.74f, 0.18f), Vector3Scale(F->r, 0.19f), Vector3Scale(F->u, 0.14f), Vector3Scale(F->f, 0.23f), TEX_SKIN, pale);
+    for (int k = 0; k < 8; k++) {   // every knob of the spine
+        Vector3 p = Vector3Lerp(hips, sh, (k + 0.5f) / 8.0f);
+        p = Vector3Add(p, Vector3Scale(F->u, 0.11f + 0.05f * sinf((k + 0.5f) / 8.0f * 3.14159f)));
+        gfx_ellipsoid(p, Vector3Scale(F->r, 0.03f), Vector3Scale(F->u, 0.035f), Vector3Scale(F->f, 0.035f), TEX_SKIN, bone);
     }
     for (int s = -1; s <= 1; s += 2) {
-        float lp = ph + (s < 0 ? 0.0f : 3.14159f), ap = lp + 3.14159f;
-        float ll = fmaxf(0.0f, sinf(lp)) * 0.18f, lsw = cosf(lp) * 0.18f;
-        float al = fmaxf(0.0f, sinf(ap)) * 0.22f, asw = cosf(ap) * 0.22f;
-        Vector3 hip = W(F, s * 0.14f, 0.68f, -0.42f), knee = W(F, s * 0.3f, 0.32f + ll, -0.12f + lsw), foot = W(F, s * 0.24f, 0.03f + ll * 0.5f, -0.64f + lsw);
-        gfx_limb(hip, knee, 0.07f, 0.05f, TEX_SKIN, pale);
-        gfx_limb(knee, foot, 0.05f, 0.03f, TEX_SKIN, pale);
-        // arms with one joint too many, folded like a spider's
-        Vector3 s0 = W(F, s * 0.2f, 0.84f, 0.36f), el = W(F, s * 0.62f, 1.3f + al, 0.38f + asw * 0.5f), el2 = W(F, s * 0.6f, 0.62f + al * 0.6f, 0.86f + asw), hand = W(F, s * 0.36f, 0.03f + al * 0.4f, 1.15f + asw);
+        for (int k = 0; k < 5; k++) {   // ribs you could count from across the room
+            float z = 0.0f + k * 0.08f;
+            Vector3 a = W(F, s * 0.04f, 0.86f, z), b = W(F, s * 0.19f, 0.74f, z + 0.03f), c = W(F, s * 0.15f, 0.6f, z + 0.05f);
+            gfx_limb(a, b, 0.016f, 0.014f, TEX_SKIN, bone);
+            gfx_limb(b, c, 0.014f, 0.01f, TEX_SKIN, bone);
+        }
+        gfx_ellipsoid(W(F, s * 0.11f, 0.86f + 0.03f * jerk, 0.3f), Vector3Scale(F->r, 0.08f), Vector3Scale(F->u, 0.035f), Vector3Scale(F->f, 0.1f), TEX_SKIN, bone);   // shoulder blades, like folded wings
+        // legs: knees on the floor, feet trailing behind, thin as broom handles
+        float lp = ph + (s < 0 ? 0.0f : 3.14159f), lift = fmaxf(0.0f, sinf(lp)) * 0.1f, sw = cosf(lp) * 0.14f;
+        Vector3 hip = W(F, s * 0.13f, 0.6f, -0.46f), knee = W(F, s * 0.17f, 0.07f + lift, -0.28f + sw), ankle = W(F, s * 0.15f, 0.08f + lift * 0.5f, -0.82f + sw), toe = W(F, s * 0.15f, 0.02f, -0.94f + sw);
+        gfx_limb(hip, knee, 0.075f, 0.05f, TEX_SKIN, pale);
+        gfx_ellipsoid(knee, Vector3Scale(F->r, 0.05f), Vector3Scale(F->u, 0.05f), Vector3Scale(F->f, 0.055f), TEX_SKIN, bone);
+        gfx_limb(knee, ankle, 0.045f, 0.03f, TEX_SKIN, pale);
+        gfx_limb(ankle, toe, 0.035f, 0.02f, TEX_SKIN, pale);
+        // arms: a man's arms, only much too long, and the hands spread flat
+        float ap = lp + 3.14159f, alift = fmaxf(0.0f, sinf(ap)) * 0.15f, asw = cosf(ap) * 0.17f;
+        Vector3 s0 = W(F, s * 0.21f, 0.76f, 0.36f), el = W(F, s * 0.33f, 0.42f + alift, 0.44f + asw * 0.5f), wr = W(F, s * 0.25f, 0.03f + alift * 0.7f, 0.66f + asw);
         gfx_limb(s0, el, 0.055f, 0.04f, TEX_SKIN, pale);
-        gfx_limb(el, el2, 0.04f, 0.032f, TEX_SKIN, pale);
-        gfx_limb(el2, hand, 0.032f, 0.022f, TEX_SKIN, pale);
-        fingers(hand, Vector3Normalize(F->f), F->r, 0.2f, 4, pale);
+        gfx_ellipsoid(el, Vector3Scale(F->r, 0.04f), Vector3Scale(F->u, 0.04f), Vector3Scale(F->f, 0.04f), TEX_SKIN, bone);
+        gfx_limb(el, wr, 0.038f, 0.026f, TEX_SKIN, pale);
+        for (int k = 0; k < 5; k++) {
+            float a = (k - 2) * 0.32f;
+            Vector3 d = Vector3Normalize(Vector3Add(Vector3Scale(Vector3Normalize(F->f), cosf(a)), Vector3Scale(Vector3Normalize(F->r), sinf(a) * s)));
+            Vector3 k1 = Vector3Add(wr, Vector3Scale(d, 0.1f)), k2 = Vector3Add(k1, Vector3Add(Vector3Scale(d, 0.09f), Vector3Scale(F->u, -0.02f)));
+            gfx_limb(wr, k1, 0.012f, 0.01f, TEX_SKIN, pale);
+            gfx_limb(k1, k2, 0.01f, 0.004f, TEX_SKIN, pale);
+        }
     }
-    // the head hangs under the shoulders, and now and then it jerks
-    float twitch = fmodf(f->t + f->stride * 0.1f, 3.7f) < 0.18f ? sinf(f->t * 40.0f) * 0.5f : 0.0f;
-    Vector3 nk = W(F, 0, 0.62f, 0.6f);
+    // the neck goes up and back, and his face is turned all the way up to yours
+    Vector3 nk = W(F, 0, 0.94f, 0.5f), hc = W(F, 0.02f * jerk, 1.05f, 0.6f);
     gfx_limb(sh, nk, 0.06f, 0.05f, TEX_SKIN, pale);
-    Vector3 hc = W(F, 0, 0.5f, 0.66f);
-    Fig g = *f; g.tilt += twitch + 0.4f;
-    Frame hfF = *F; hfF.u = Vector3Normalize(F->u);
+    gfx_limb(nk, hc, 0.05f, 0.045f, TEX_SKIN, pale);
+    Fig g = *f; g.look = fmaxf(f->look, 0.85f); g.tilt += jerk * 0.8f + sinf(f->t * 0.6f) * 0.15f;
+    Frame hF = *F; hF.u = Vector3Normalize(F->u);
     Vector3 hr, hu, hf;
-    head_axes(&g, &hfF, hc, &hr, &hu, &hf);
-    gfx_ellipsoid(hc, Vector3Scale(hr, 0.11f), Vector3Scale(hu, 0.15f), Vector3Scale(hf, 0.12f), TEX_SKIN, pale);
-    // the jaw hangs open much further than a jaw should, and the teeth are all the same size
-    float gape = 0.16f + 0.04f * sinf(f->t * 2.3f);
-    Vector3 mc = add3(hc, Vector3Scale(hf, 0.09f), Vector3Scale(hu, -0.08f));
-    gfx_ellipsoid(mc, Vector3Scale(hr, 0.075f), Vector3Scale(hu, gape), Vector3Scale(hf, 0.05f), TEX_CONCRETE, (Color){ 6, 2, 3, 255 });
-    for (int k = 0; k < 5; k++) {
-        float x = (k - 2) * 0.026f;
-        Vector3 tp = add3(mc, Vector3Scale(hr, x), Vector3Add(Vector3Scale(hu, gape * 0.8f), Vector3Scale(hf, 0.04f)));
-        gfx_limb(tp, Vector3Add(tp, Vector3Scale(hu, -0.04f)), 0.008f, 0.002f, TEX_SKIN, (Color){ 230, 220, 190, 255 });
-        Vector3 bp = add3(mc, Vector3Scale(hr, x), Vector3Add(Vector3Scale(hu, -gape * 0.8f), Vector3Scale(hf, 0.04f)));
-        gfx_limb(bp, Vector3Add(bp, Vector3Scale(hu, 0.04f)), 0.008f, 0.002f, TEX_SKIN, (Color){ 230, 220, 190, 255 });
+    head_axes(&g, &hF, hc, &hr, &hu, &hf);
+    gfx_ellipsoid(hc, Vector3Scale(hr, 0.095f), Vector3Scale(hu, 0.14f), Vector3Scale(hf, 0.11f), TEX_SKIN, pale);
+    for (int s = -1; s <= 1; s += 2) {   // cheeks fallen in, and the sockets deep
+        gfx_ellipsoid(add3(hc, Vector3Scale(hf, 0.07f), Vector3Add(Vector3Scale(hr, s * 0.06f), Vector3Scale(hu, -0.04f))), Vector3Scale(hr, 0.03f), Vector3Scale(hu, 0.05f), Vector3Scale(hf, 0.04f), TEX_SKIN, scale_c(pale, 0.55f));
+        gfx_ellipsoid(add3(hc, Vector3Scale(hf, 0.084f), Vector3Add(Vector3Scale(hr, s * 0.04f), Vector3Scale(hu, s < 0 ? 0.028f : 0.038f))), Vector3Scale(hr, s < 0 ? 0.03f : 0.024f), Vector3Scale(hu, s < 0 ? 0.027f : 0.019f), Vector3Scale(hf, 0.025f), TEX_SKIN, scale_c(pale, 0.38f));
     }
+    // the jaw: hanging open much further than a jaw goes, as if it had come unhooked, with the teeth all wrong
+    float gape = 0.05f + 0.025f * fmaxf(0.0f, sinf(f->t * 1.7f)) + 0.05f * f->look;
+    Vector3 mc = add3(hc, Vector3Scale(hf, 0.085f), Vector3Scale(hu, -0.075f - gape * 0.6f));
+    gfx_ellipsoid(mc, Vector3Scale(hr, 0.045f), Vector3Scale(hu, gape), Vector3Scale(hf, 0.03f), TEX_CONCRETE, (Color){ 10, 2, 4, 255 });
+    gfx_ellipsoid(add3(mc, Vector3Scale(hu, -gape - 0.01f), Vector3Scale(hf, -0.01f)), Vector3Scale(hr, 0.05f), Vector3Scale(hu, 0.025f), Vector3Scale(hf, 0.05f), TEX_SKIN, pale);   // the chin, a long way down
+    static const float TL[7] = { 0.03f, 0.018f, 0.04f, 0.012f, 0.035f, 0.022f, 0.028f };
+    for (int k = 0; k < 7; k++) {
+        float x = (k - 3) / 3.0f;
+        Vector3 tp = add3(mc, Vector3Scale(hr, x * 0.038f), Vector3Add(Vector3Scale(hu, gape * 0.9f), Vector3Scale(hf, 0.022f)));
+        gfx_limb(tp, add3(tp, Vector3Scale(hu, -TL[k]), Vector3Scale(hr, x * 0.006f)), 0.006f, 0.002f, TEX_SKIN, (Color){ 196, 180, 130, 255 });
+        if (k % 2) { Vector3 bp = add3(mc, Vector3Scale(hr, x * 0.034f), Vector3Add(Vector3Scale(hu, -gape * 0.9f), Vector3Scale(hf, 0.02f))); gfx_limb(bp, Vector3Add(bp, Vector3Scale(hu, TL[6 - k] * 0.7f)), 0.006f, 0.002f, TEX_SKIN, (Color){ 180, 164, 120, 255 }); }
+    }
+    gfx_set_emit(true);   // two points of white in the sockets, lit from inside, not quite the same size
+    for (int s = -1; s <= 1; s += 2)
+        gfx_ellipsoid(add3(hc, Vector3Scale(hf, 0.11f), Vector3Add(Vector3Scale(hr, s * 0.04f), Vector3Scale(hu, s < 0 ? 0.026f : 0.038f))), Vector3Scale(hr, s < 0 ? 0.009f : 0.007f), Vector3Scale(hu, s < 0 ? 0.007f : 0.005f), Vector3Scale(hf, 0.006f), TEX_SKIN, (Color){ 240, 240, 230, 255 });
+    gfx_set_emit(false);
+    // hair: thin, black, wet, in strings. it hangs straight down from his scalp, some of it across his face
+    for (int k = 0; k < 16; k++) {
+        float a = 0.9f + k * (4.48f / 15.0f);   // round the sides and back, not over the face
+        Vector3 p0 = add3(hc, Vector3Scale(hu, 0.08f), Vector3Add(Vector3Scale(hr, sinf(a) * 0.09f), Vector3Scale(hf, cosf(a) * 0.09f)));
+        float len = 0.3f + 0.45f * ((k * 7) % 5) / 4.0f, sw = sinf(f->t * 1.1f + k) * 0.012f;
+        Vector3 m = { p0.x + sw, p0.y - len * 0.5f, p0.z }, e = { p0.x + sw * 2, p0.y - len, p0.z };
+        gfx_limb(p0, m, 0.009f, 0.007f, TEX_CLOTH, hair);
+        gfx_limb(m, e, 0.007f, 0.002f, TEX_CLOTH, hair);
+    }
+}
+
+// the cat. tilt says what it is doing (0 walking, 1 sitting, 2 asleep); look is how frightened it is
+static void cat(const Fig *f, const Frame *F) {
+    Color fur = tint_or(f, (Color){ 22, 20, 24, 255 });
+    float fear = f->look, mode = f->tilt;
+    if (mode >= 2) {   // curled up in a ball, nose under its tail
+        gfx_ellipsoid(W(F, 0, 0.09f, 0), Vector3Scale(F->r, 0.17f), Vector3Scale(F->u, 0.09f + 0.006f * sinf(f->t * 1.6f)), Vector3Scale(F->f, 0.15f), TEX_CLOTH, fur);
+        gfx_ellipsoid(W(F, 0.1f, 0.1f, 0.1f), Vector3Scale(F->r, 0.07f), Vector3Scale(F->u, 0.06f), Vector3Scale(F->f, 0.07f), TEX_CLOTH, fur);
+        for (int s = -1; s <= 1; s += 2) gfx_limb(W(F, 0.1f + s * 0.035f, 0.14f, 0.1f), W(F, 0.12f + s * 0.05f, 0.2f, 0.11f), 0.02f, 0.002f, TEX_CLOTH, fur);
+        gfx_limb(W(F, -0.15f, 0.05f, -0.05f), W(F, 0.05f, 0.04f, 0.17f), 0.035f, 0.025f, TEX_CLOTH, fur);
+        return;
+    }
+    float sit = mode >= 1 ? 1.0f : 0.0f, arch = fear * 0.09f, puff = 1.0f + fear * 0.5f;
+    Vector3 hip = W(F, 0, 0.2f + arch * 0.5f - sit * 0.1f, -0.15f), chest = W(F, 0, 0.22f + arch * 0.4f + sit * 0.08f, 0.12f);
+    Vector3 back = Vector3Add(Vector3Lerp(hip, chest, 0.5f), Vector3Scale(F->u, 0.03f + arch));
+    gfx_limb(hip, back, 0.085f * puff, 0.08f * puff, TEX_CLOTH, fur);
+    gfx_limb(back, chest, 0.08f * puff, 0.075f * puff, TEX_CLOTH, fur);
+    for (int s = -1; s <= 1; s += 2) {
+        float lp = f->stride + (s < 0 ? 0.0f : 3.14159f), sw = sit ? 0 : sinf(lp) * 0.06f, lift = sit ? 0 : fmaxf(0, cosf(lp)) * 0.03f;
+        gfx_limb(W(F, s * 0.05f, 0.18f, 0.12f), W(F, s * 0.05f, 0.01f + lift, 0.13f + sw), 0.025f, 0.018f, TEX_CLOTH, fur);   // front legs
+        if (sit) gfx_ellipsoid(W(F, s * 0.06f, 0.06f, -0.12f), Vector3Scale(F->r, 0.05f), Vector3Scale(F->u, 0.06f), Vector3Scale(F->f, 0.09f), TEX_CLOTH, fur);   // haunches
+        else gfx_limb(W(F, s * 0.05f, 0.18f + arch * 0.5f, -0.16f), W(F, s * 0.05f, 0.01f + lift, -0.16f - sw), 0.03f, 0.018f, TEX_CLOTH, fur);
+    }
+    // the tail: low and swinging, or straight up and twice as thick
+    float swing = sinf(f->t * (1.2f + fear * 6.0f)) * (0.12f - fear * 0.08f);
+    Vector3 t0 = W(F, 0, 0.2f - sit * 0.12f, -0.2f), t1 = W(F, swing, 0.28f + fear * 0.15f - sit * 0.15f, -0.34f + fear * 0.1f + sit * 0.05f), t2 = W(F, swing * 2, 0.36f + fear * 0.28f - sit * 0.3f, -0.36f + fear * 0.12f + sit * 0.22f);
+    gfx_limb(t0, t1, 0.022f * puff, 0.02f * puff, TEX_CLOTH, fur);
+    gfx_limb(t1, t2, 0.02f * puff, 0.012f * puff, TEX_CLOTH, fur);
+    Vector3 hc = W(F, 0, 0.3f + sit * 0.08f + arch * 0.2f - fear * 0.04f, 0.2f), hr, hu, hf;
+    head_axes(f, F, hc, &hr, &hu, &hf);
+    gfx_ellipsoid(hc, Vector3Scale(hr, 0.06f), Vector3Scale(hu, 0.055f), Vector3Scale(hf, 0.06f), TEX_CLOTH, fur);
+    gfx_ellipsoid(add3(hc, Vector3Scale(hf, 0.05f), Vector3Scale(hu, -0.015f)), Vector3Scale(hr, 0.03f), Vector3Scale(hu, 0.022f), Vector3Scale(hf, 0.02f), TEX_CLOTH, fur);
+    for (int s = -1; s <= 1; s += 2) {   // ears: up, or flat back against the skull
+        Vector3 eb = add3(hc, Vector3Scale(hr, s * 0.038f), Vector3Scale(hu, 0.04f));
+        Vector3 et = fear > 0.5f ? add3(eb, Vector3Scale(hr, s * 0.05f), Vector3Scale(hf, -0.04f)) : add3(eb, Vector3Scale(hu, 0.055f), Vector3Scale(hr, s * 0.012f));
+        gfx_limb(eb, et, 0.022f, 0.002f, TEX_CLOTH, fur);
+    }
+    gfx_set_emit(true);
+    for (int s = -1; s <= 1; s += 2)
+        gfx_ellipsoid(add3(hc, Vector3Scale(hf, 0.052f), Vector3Add(Vector3Scale(hr, s * 0.025f), Vector3Scale(hu, 0.012f))), Vector3Scale(hr, 0.012f), Vector3Scale(hu, 0.01f + 0.004f * fear), Vector3Scale(hf, 0.006f), TEX_SKIN, (Color){ 150, 230, 90, 255 });
+    gfx_set_emit(false);
+}
+
+// it is only a child. it is only nearly three metres tall. it counts with its hands over its eyes, and it peeks.
+// when it has found you, it takes them away, and there is nothing behind them but two holes and something running out
+static void seeker(const Fig *f, const Frame *F) {
+    Color jumper = tint_or(f, (Color){ 92, 28, 30, 255 }), shorts = { 60, 60, 66, 255 }, sock = { 190, 186, 176, 255 }, skin = { 206, 192, 180, 255 }, shoe = { 20, 16, 14, 255 };
+    bool found = f->look > 0.5f;
+    for (int s = -1; s <= 1; s += 2) {
+        float lp = f->stride + (s < 0 ? 0 : 3.14159f), sw = sinf(lp) * 0.22f, lift = fmaxf(0, cosf(lp)) * 0.1f;
+        Vector3 hip = W(F, s * 0.1f, 1.35f, 0), knee = W(F, s * 0.11f, 0.72f + lift, 0.06f + sw * 0.6f), ank = W(F, s * 0.1f, 0.08f + lift, sw * 0.3f);
+        gfx_limb(hip, knee, 0.05f, 0.04f, TEX_SKIN, skin);   // bare knees, scabbed
+        gfx_limb(knee, Vector3Lerp(knee, ank, 0.25f), 0.04f, 0.038f, TEX_SKIN, skin);
+        gfx_limb(Vector3Lerp(knee, ank, 0.25f), ank, 0.042f, 0.034f, TEX_CLOTH, sock);
+        gfx_limb(ank, Vector3Add(ank, Vector3Add(Vector3Scale(F->f, 0.16f), Vector3Scale(F->u, -0.06f))), 0.045f, 0.04f, TEX_CONCRETE, shoe);
+    }
+    gfx_ellipsoid(W(F, 0, 1.36f, 0), Vector3Scale(F->r, 0.19f), Vector3Scale(F->u, 0.15f), Vector3Scale(F->f, 0.13f), TEX_CLOTH, shorts);
+    Vector3 top = W(F, 0, 2.2f, 0.16f);   // hunched over, the way children stand when they count
+    gfx_limb(W(F, 0, 1.4f, 0), top, 0.15f, 0.14f, TEX_CLOTH, jumper);
+    gfx_box(W(F, 0.07f, 2.0f, 0.2f), (Vector3){ 0.04f, 0.025f, 0.004f }, TEX_PAPER, (Color){ 230, 226, 210, 255 }, 1.0f);   // a name tag
+    gfx_limb(top, W(F, 0, 2.36f, 0.24f), 0.045f, 0.04f, TEX_SKIN, skin);
+    Vector3 hc = W(F, 0, 2.5f, 0.28f), hr, hu, hf;
+    Fig g = *f; g.look = found ? 1.0f : 0.0f;
+    head_axes(&g, F, hc, &hr, &hu, &hf);
+    gfx_ellipsoid(hc, Vector3Scale(hr, 0.13f), Vector3Scale(hu, 0.15f), Vector3Scale(hf, 0.14f), TEX_SKIN, skin);   // a child's big round head
+    gfx_ellipsoid(add3(hc, Vector3Scale(hu, 0.05f), Vector3Scale(hf, -0.02f)), Vector3Scale(hr, 0.14f), Vector3Scale(hu, 0.12f), Vector3Scale(hf, 0.14f), TEX_CLOTH, (Color){ 60, 40, 26, 255 });   // a pudding-basin haircut
+    gfx_limb(add3(hc, Vector3Scale(hf, 0.12f), Vector3Add(Vector3Scale(hu, -0.07f), Vector3Scale(hr, -0.03f))), add3(hc, Vector3Scale(hf, 0.12f), Vector3Add(Vector3Scale(hu, -0.065f), Vector3Scale(hr, 0.03f))), 0.006f, 0.006f, TEX_CONCRETE, (Color){ 60, 20, 20, 255 });   // a little smile
+    for (int s = -1; s <= 1; s += 2) {
+        Vector3 sh = W(F, s * 0.2f, 2.16f, 0.16f);
+        if (!found) {   // both hands flat over its eyes, and the fingers just far enough apart
+            Vector3 el = W(F, s * 0.32f, 1.95f, 0.42f), hand = add3(hc, Vector3Scale(hf, 0.15f), Vector3Add(Vector3Scale(hr, s * 0.05f), Vector3Scale(hu, 0.03f)));
+            gfx_limb(sh, el, 0.055f, 0.05f, TEX_CLOTH, jumper);
+            gfx_limb(el, hand, 0.045f, 0.035f, TEX_SKIN, skin);
+            for (int k = 0; k < 4; k++) gfx_limb(hand, add3(hand, Vector3Scale(hr, -s * 0.03f + k * 0.012f * s), Vector3Scale(hu, 0.03f + k * 0.022f)), 0.012f, 0.008f, TEX_SKIN, skin);
+        } else {        // arms down to its shins, and its face
+            Vector3 el = W(F, s * 0.28f, 1.45f, 0.18f), wr = W(F, s * 0.27f, 0.62f, 0.22f + sinf(f->t * 3 + s) * 0.04f);
+            gfx_limb(sh, el, 0.055f, 0.05f, TEX_CLOTH, jumper);
+            gfx_limb(el, wr, 0.04f, 0.032f, TEX_SKIN, skin);
+            fingers(wr, Vector3Negate(F->u), F->r, 0.24f, 4, skin);
+        }
+    }
+    if (found) for (int s = -1; s <= 1; s += 2) {
+        Vector3 ec = add3(hc, Vector3Scale(hf, 0.12f), Vector3Add(Vector3Scale(hr, s * 0.05f), Vector3Scale(hu, 0.01f)));
+        gfx_ellipsoid(ec, Vector3Scale(hr, 0.035f), Vector3Scale(hu, 0.04f), Vector3Scale(hf, 0.03f), TEX_CONCRETE, (Color){ 2, 1, 1, 255 });
+        gfx_limb(Vector3Add(ec, Vector3Scale(hf, 0.02f)), add3(ec, Vector3Scale(hf, 0.025f), Vector3Scale(hu, -0.16f)), 0.012f, 0.004f, TEX_CONCRETE, (Color){ 8, 2, 2, 255 });   // and what runs out of them
+    }
+}
+
+// you, as the glass has you: a boy in striped pyjamas with his eyes shut. sleepwalking
+static void self_(const Fig *f, const Frame *F) {
+    Color pj = tint_or(f, (Color){ 150, 166, 186, 255 }), stripe = scale_c(pj, 0.55f), skin = { 214, 200, 190, 255 };
+    bool open = f->look > 0.5f;
+    for (int s = -1; s <= 1; s += 2) {
+        float lp = f->stride + (s < 0 ? 0 : 3.14159f), sw = sinf(lp) * 0.2f, lift = fmaxf(0, cosf(lp)) * 0.08f;
+        Vector3 hip = W(F, s * 0.1f, 0.88f, 0), knee = W(F, s * 0.11f, 0.47f + lift, 0.05f + sw * 0.6f), ank = W(F, s * 0.1f, 0.07f + lift, sw * 0.3f);
+        gfx_limb(hip, knee, 0.075f, 0.065f, TEX_CLOTH, pj);
+        gfx_limb(knee, ank, 0.065f, 0.055f, TEX_CLOTH, pj);
+        gfx_limb(ank, Vector3Add(ank, Vector3Add(Vector3Scale(F->f, 0.15f), Vector3Scale(F->u, -0.05f))), 0.035f, 0.025f, TEX_SKIN, skin);   // bare feet
+    }
+    gfx_limb(W(F, 0, 0.84f, 0), W(F, 0, 1.42f, 0.02f), 0.17f, 0.16f, TEX_CLOTH, pj);
+    for (int k = -2; k <= 2; k++) gfx_limb(W(F, k * 0.06f, 0.86f, 0.15f + 0.02f * (2 - abs(k))), W(F, k * 0.06f, 1.4f, 0.16f + 0.02f * (2 - abs(k))), 0.012f, 0.012f, TEX_CLOTH, stripe);
+    gfx_limb(W(F, -0.19f, 1.4f, 0.02f), W(F, 0.19f, 1.4f, 0.02f), 0.08f, 0.08f, TEX_CLOTH, pj);
+    for (int s = -1; s <= 1; s += 2) {   // arms hanging, the way sleepwalkers hold them, a little forward
+        Vector3 sh = W(F, s * 0.21f, 1.38f, 0.02f), el = W(F, s * 0.25f, 1.08f, 0.14f), wr = W(F, s * 0.23f, 0.82f, 0.3f);
+        gfx_limb(sh, el, 0.06f, 0.055f, TEX_CLOTH, pj);
+        gfx_limb(el, wr, 0.04f, 0.03f, TEX_SKIN, skin);
+        fingers(wr, Vector3Normalize(Vector3Add(Vector3Negate(F->u), Vector3Scale(F->f, 0.6f))), F->r, 0.15f, 4, skin);
+    }
+    gfx_limb(W(F, 0, 1.44f, 0.02f), W(F, 0, 1.56f, 0.04f), 0.045f, 0.04f, TEX_SKIN, skin);
+    Vector3 hc = W(F, 0, 1.68f, 0.05f), hr, hu, hf;
+    head_axes(f, F, hc, &hr, &hu, &hf);
+    gfx_ellipsoid(hc, Vector3Scale(hr, 0.1f), Vector3Scale(hu, 0.125f), Vector3Scale(hf, 0.11f), TEX_SKIN, skin);
+    gfx_ellipsoid(add3(hc, Vector3Scale(hu, 0.05f), Vector3Scale(hf, -0.02f)), Vector3Scale(hr, 0.105f), Vector3Scale(hu, 0.09f), Vector3Scale(hf, 0.11f), TEX_CLOTH, (Color){ 40, 30, 24, 255 });
+    for (int s = -1; s <= 1; s += 2) {
+        Vector3 ec = add3(hc, Vector3Scale(hf, 0.1f), Vector3Add(Vector3Scale(hr, s * 0.04f), Vector3Scale(hu, 0.015f)));
+        if (!open) gfx_limb(Vector3Add(ec, Vector3Scale(hr, -0.018f)), Vector3Add(ec, Vector3Scale(hr, 0.018f)), 0.005f, 0.005f, TEX_CONCRETE, (Color){ 40, 24, 24, 255 });
+        else {   // open: and there is nothing in them, only black, and a point of light a long way back
+            gfx_ellipsoid(ec, Vector3Scale(hr, 0.02f), Vector3Scale(hu, 0.017f), Vector3Scale(hf, 0.012f), TEX_CONCRETE, (Color){ 3, 2, 2, 255 });
+            gfx_set_emit(true);
+            gfx_ellipsoid(Vector3Add(ec, Vector3Scale(hf, 0.011f)), Vector3Scale(hr, 0.004f), Vector3Scale(hu, 0.004f), Vector3Scale(hf, 0.003f), TEX_SKIN, (Color){ 240, 236, 226, 255 });
+            gfx_set_emit(false);
+        }
+    }
+    if (f->look > 0.8f) {   // the jaw lets go, much further than it should
+        gfx_ellipsoid(add3(hc, Vector3Scale(hf, 0.095f), Vector3Scale(hu, -0.085f)), Vector3Scale(hr, 0.022f), Vector3Scale(hu, 0.055f), Vector3Scale(hf, 0.02f), TEX_CONCRETE, (Color){ 12, 4, 4, 255 });
+        gfx_ellipsoid(add3(hc, Vector3Scale(hf, 0.07f), Vector3Scale(hu, -0.15f)), Vector3Scale(hr, 0.045f), Vector3Scale(hu, 0.03f), Vector3Scale(hf, 0.05f), TEX_SKIN, skin);
+    } else gfx_ellipsoid(add3(hc, Vector3Scale(hf, 0.1f), Vector3Scale(hu, -0.06f)), Vector3Scale(hr, 0.03f), Vector3Scale(hu, 0.004f), Vector3Scale(hf, 0.012f), TEX_CONCRETE, (Color){ 30, 10, 10, 255 });
 }
 
 static void gardener(const Fig *f, const Frame *F) {
@@ -385,6 +551,9 @@ void figure_draw(const Fig *f) {
     case FIG_FACE:     face(f, &F); break;
     case FIG_SHEET:    sheet(f, &F); break;
     case FIG_PUPPET:   puppet(f, &F); break;
+    case FIG_CAT:      cat(f, &F); break;
+    case FIG_SEEKER:   seeker(f, &F); break;
+    case FIG_SELF:     self_(f, &F); break;
     case FIG_COUNT:    break;
     }
 }
