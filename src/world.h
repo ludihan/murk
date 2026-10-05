@@ -55,10 +55,11 @@ typedef struct Level {
 } Level;
 
 extern int g_launches, g_wakes;   // persisted between runs: the game remembers you
-extern int g_secret;
-extern int g_wardLoop;            // how many times you have walked the ward corridor this visit              // you knelt in the circle and were told who is asleep
+extern int g_secret;               // you knelt in the circle and were told who is asleep
+extern int g_wardLoop;             // how many times you have walked the ward corridor this visit
+extern int g_rot;                  // how far the house has gone bad: one for everything you have brought back into it
 // the pages left lying around. 0 .. NOTE_COUNT-1
-enum { NOTE_VIGIL, NOTE_DAY9, NOTE_DOORS, NOTE_NURSERY, NOTE_DRAINS, NOTE_CLIMB, NOTE_EYE, NOTE_GIANT, NOTE_CANDLES, NOTE_FAMILY, NOTE_AWAKE, NOTE_BELL, NOTE_SLEEPER, NOTE_WARD, NOTE_STATIC, NOTE_WOMB, NOTE_CITY, NOTE_MORGUE, NOTE_THEATRE, NOTE_COUNT };
+enum { NOTE_VIGIL, NOTE_DAY9, NOTE_DOORS, NOTE_NURSERY, NOTE_DRAINS, NOTE_CLIMB, NOTE_EYE, NOTE_GIANT, NOTE_CANDLES, NOTE_FAMILY, NOTE_AWAKE, NOTE_BELL, NOTE_SLEEPER, NOTE_WARD, NOTE_STATIC, NOTE_WOMB, NOTE_CITY, NOTE_MORGUE, NOTE_THEATRE, NOTE_FAIR, NOTE_MIRROR, NOTE_LAKE, NOTE_SCHOOL, NOTE_LINES, NOTE_DIARY, NOTE_COUNT };
 void level_build(Level *L, WorldId id, int seed);
 void level_free(Level *L);
 void level_step(Level *L, float dt, Vector3 player);

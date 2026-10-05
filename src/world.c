@@ -10,7 +10,7 @@
 #include <stc/vec.h>
 
 
-int g_launches, g_wakes, g_secret, g_wardLoop;
+int g_launches, g_wakes, g_secret, g_wardLoop, g_rot;
 
 // ---------------------------------------------------------------- helpers
 static void add_box(Level *L, Vector3 c, Vector3 h, TexId tex, Color tint, float scale, int flags) {
@@ -164,6 +164,12 @@ static void add_portrait(Level *L, Vector3 p, Vector3 n, float w, float h) {
     add_box(L, (Vector3){ cc.x, p.y + ih * 0.4f, cc.z }, xn ? (Vector3){ 0.01f, ih * 0.6f, iw } : (Vector3){ iw, ih * 0.6f, 0.01f }, TEX_PAPER, (Color){ 150, 176, 200, 255 }, 3.0f, F_NOCOLLIDE);
     add_box(L, (Vector3){ cc.x, p.y - ih * 0.6f, cc.z }, xn ? (Vector3){ 0.01f, ih * 0.4f, iw } : (Vector3){ iw, ih * 0.4f, 0.01f }, TEX_GRASS, (Color){ 230, 220, 140, 255 }, 1.0f, F_NOCOLLIDE);
     add_box(L, (Vector3){ cc.x + n.x * 0.006f, p.y - ih * 0.15f, cc.z + n.z * 0.006f }, xn ? (Vector3){ 0.004f, ih * 0.08f, iw * 0.9f } : (Vector3){ iw * 0.9f, ih * 0.08f, 0.004f }, TEX_GRASS, (Color){ 160, 200, 140, 255 }, 0.5f, F_NOCOLLIDE);
+    if (g_rot >= 2) {   // and someone standing in the field, who was not there before. every time you come home they are nearer
+        float k = fminf(1.0f, (g_rot - 1) / 5.0f), fh = ih * (0.12f + 0.55f * k), fw = fh * 0.28f, fy = p.y - ih * 0.35f + fh * 0.5f;
+        Vector3 fc = { cc.x + n.x * 0.01f, fy, cc.z + n.z * 0.01f };
+        add_box(L, fc, xn ? (Vector3){ 0.003f, fh * 0.5f, fw } : (Vector3){ fw, fh * 0.5f, 0.003f }, TEX_CLOTH, (Color){ 14, 12, 14, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ fc.x + n.x * 0.002f, fy + fh * 0.6f, fc.z + n.z * 0.002f }, xn ? (Vector3){ 0.003f, fw * 0.7f, fw * 0.7f } : (Vector3){ fw * 0.7f, fw * 0.7f, 0.003f }, TEX_SKIN, (Color){ 200, 194, 186, 255 }, 1.0f, F_NOCOLLIDE);
+    }
 }
 static void add_plant(Level *L, Vector3 p) {
     add_box(L, (Vector3){ p.x, p.y + 0.22f, p.z }, (Vector3){ 0.18f, 0.22f, 0.18f }, TEX_CONCRETE, (Color){ 170, 100, 70, 255 }, 1.0f, 0);
@@ -212,8 +218,20 @@ static void build_hub(Level *L, int seed) {
         add_box(L, (Vector3){ -1.5f, 1.16f, dz }, (Vector3){ 0.14f, 0.08f, 0.14f }, TEX_CONCRETE, (Color){ 255, 210, 150, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
         static const Color BOOK[4] = { { 140, 60, 50, 255 }, { 60, 90, 120, 255 }, { 90, 110, 60, 255 }, { 150, 120, 60, 255 } };
         for (int i = 0; i < 4; i++) add_box(L, (Vector3){ -0.3f + i * 0.09f, 1.03f, dz }, (Vector3){ 0.04f, 0.13f, 0.12f }, TEX_PAPER, BOOK[i], 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ -0.75f, 0.925f, dz }, (Vector3){ 0.14f, 0.025f, 0.1f }, TEX_CLOTH, (Color){ 130, 40, 40, 255 }, 1.0f, F_NOCOLLIDE);   // his diary, with a little lock that doesn't work
+        Use u = { { -0.75f, 0.95f, dz }, USE_DIARY, 0, false }; Uses_push(&L->uses, u);
     }
-    add_box(L, (Vector3){ 3.2f, 1.1f, -bz * 1.3f }, (Vector3){ 0.6f, 1.1f, 0.35f }, TEX_WOOD, (Color){ 120, 92, 70, 255 }, 1.0f, 0);   // a wardrobe
+    { Use u = { { bx + 0.5f, 0.95f, bz }, USE_BED, 0, false }; Uses_push(&L->uses, u); }
+    {   // the wardrobe. light comes out between its doors, and it smells of chalk and floor polish
+        float wz = -bz * 1.3f, wn = wz < 0 ? 1.0f : -1.0f;
+        add_box(L, (Vector3){ 3.2f, 1.1f, wz }, (Vector3){ 0.6f, 1.1f, 0.35f }, TEX_WOOD, (Color){ 120, 92, 70, 255 }, 1.0f, 0);
+        add_box(L, (Vector3){ 3.2f, 2.25f, wz }, (Vector3){ 0.66f, 0.06f, 0.4f }, TEX_WOOD, (Color){ 100, 76, 58, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ 3.2f, 1.1f, wz + wn * 0.355f }, (Vector3){ 0.012f, 1.0f, 0.008f }, TEX_CONCRETE, (Color){ 240, 230, 170, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+        for (int s2 = -1; s2 <= 1; s2 += 2) add_box(L, (Vector3){ 3.2f + s2 * 0.08f, 1.15f, wz + wn * 0.37f }, (Vector3){ 0.02f, 0.05f, 0.015f }, TEX_RUST, (Color){ 180, 150, 90, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ 3.2f, 0.006f, wz + wn * 0.6f }, (Vector3){ 0.5f, 0.003f, 0.25f }, TEX_CONCRETE, (Color){ 60, 56, 36, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+        add_portal(L, (Vector3){ 3.2f, 0, wz + wn * 0.85f }, W_SCHOOL, 0, (Color){ 240, 230, 170, 255 }, "THE WARDROBE");
+        L->portals.data[L->portals.size - 1].radius = 0.5f;
+    }
     // a window, and moonlight coming through it onto the floor
     float wz = bz < 0 ? 3.5f - WT : -3.5f + WT, wn = bz < 0 ? -1.0f : 1.0f;
     add_box(L, (Vector3){ 1.6f, 1.8f, wz + wn * 0.02f }, (Vector3){ 0.85f, 0.75f, 0.04f }, TEX_WOOD, (Color){ 220, 210, 190, 255 }, 1.0f, F_NOCOLLIDE);
@@ -232,7 +250,8 @@ static void build_hub(Level *L, int seed) {
     slab(L, 4, 20, -1.1f, 1.1f, 0, 1, TEX_WOOD, (Color){ 150, 126, 104, 255 }, 2.0f);
     slab(L, 4, 20, -1.1f, 1.1f, HH + 1, 1, TEX_PAPER, CEIL, 3.0f);
     add_box(L, (Vector3){ 12, 0.006f, 0 }, (Vector3){ 8, 0.004f, 0.55f }, TEX_MOSAIC, (Color){ 84, 56, 50, 255 }, 1.0f, F_NOCOLLIDE);
-    wall_z_door(L, -1.1f, 4, 20, 0, HH, 9.4f, 10.6f, 2.25f, TEX_PAPER, PAPER);
+    wall_z(L, -1.1f, 4, 9.4f, 0, HH, TEX_PAPER, PAPER); wall_z(L, -1.1f, 9.4f, 10.6f, 2.25f, HH, TEX_PAPER, PAPER);
+    wall_z(L, -1.1f, 10.6f, 14.4f, 0, HH, TEX_PAPER, PAPER); wall_z(L, -1.1f, 14.4f, 15.6f, 2.25f, HH, TEX_PAPER, PAPER); wall_z(L, -1.1f, 15.6f, 20, 0, HH, TEX_PAPER, PAPER);
     wall_z_door(L, 1.1f, 4, 20, 0, HH, 14.4f, 15.6f, 2.25f, TEX_PAPER, PAPER);
     wall_x(L, 4, -1.2f, 1.2f, BH, BH + 0.01f, TEX_PAPER, PAPER);
     for (int i = 0; i < 3; i++) {
@@ -248,6 +267,12 @@ static void build_hub(Level *L, int seed) {
     add_box(L, (Vector3){ 17.0f, 1.05f, -0.82f }, (Vector3){ 0.28f, 1.05f, 0.14f }, TEX_WOOD, (Color){ 120, 84, 56, 255 }, 1.0f, 0);   // a long-case clock
     add_box(L, (Vector3){ 17.0f, 1.72f, -0.67f }, (Vector3){ 0.18f, 0.18f, 0.01f }, TEX_SKIN, (Color){ 230, 220, 190, 255 }, 1.0f, F_NOCOLLIDE);
     add_plant(L, (Vector3){ 19.3f, 0, 0.7f });
+    if (g_rot >= 1) add_decal(L, "WHERE DID YOU GO", (Vector3){ 5.6f, 0.45f, 1.1f - WT }, 2, -1, 0.07f, CHALK);   // at the height of a child
+    if (g_rot >= 4) {
+        add_decal(L, "LIE DOWN", (Vector3){ -4 + WT, 2.2f, bz }, 0, 1, 0.16f, SOOT);
+        for (int i = 0; i < 6; i++) add_box(L, (Vector3){ 1.2f + i * 0.14f + frand(-0.03f, 0.03f), 1.5f + frand(-0.4f, 0.4f), wz + wn * 0.06f }, (Vector3){ 0.05f, 0.07f, 0.003f }, TEX_SKIN, (Color){ 120, 110, 104, 255 }, 1.0f, F_NOCOLLIDE);   // hands on the glass, from outside
+    }
+    if (g_rot >= 6) for (int i = 0; i < 9; i++) add_decal(L, "STAY", (Vector3){ 4.5f + i * 1.7f, 0.3f + (i % 3) * 0.7f, (i & 1) ? 1.1f - WT : -1.1f + WT }, 2, (i & 1) ? -1 : 1, 0.07f, SOOT);
 
     // ---- the bathroom: x 8..12, z -5..-1.1
     const Color BATH = { 120, 140, 150, 255 };
@@ -280,6 +305,63 @@ static void build_hub(Level *L, int seed) {
     }
     add_door(L, (Vector3){ 15.0f, 0, 3.4f - WT }, (Vector3){ 0, 0, -1 }, (Color){ 230, 130, 60, 255 }, W_SHAFT, 0, "THE SHAFT");
 
+    // ---- the attic stairs: up from the hallway, steep and narrow
+    wall_x(L, 14.4f - WT, -7.1f, -1.1f, 0, 6.0f, TEX_PAPER, PAPER); wall_x(L, 15.6f + WT, -7.1f, -1.1f, 0, 6.0f, TEX_PAPER, PAPER);
+    slab(L, 14.2f, 15.8f, -7.1f, -1.1f, 6.3f, 0.3f, TEX_PAPER, CEIL, 3.0f);
+    for (int k = 0; k < 20; k++) {
+        float top = 0.15f * (k + 1);
+        add_box(L, (Vector3){ 15.0f, top / 2, -1.25f - 0.3f * k }, (Vector3){ 0.6f, top / 2, 0.15f }, TEX_WOOD, (Color){ 140, 112, 90, 255 }, 1.0f, 0);
+    }
+    add_box(L, (Vector3){ 14.45f, 1.9f, -4.1f }, (Vector3){ 0.03f, 0.03f, 3.0f }, TEX_WOOD, (Color){ 120, 90, 66, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ 15.0f, 5.75f, -4.0f }, (Vector3){ 0.09f, 0.08f, 0.09f }, TEX_CONCRETE, (Color){ 250, 210, 150, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    // ---- the attic: under the roof, x 10..20, z -16..-7.1, three metres up. dust sheets, his things, a round window
+    {
+        const float AF = 3.0f;
+        const Color RAF = { 110, 84, 64, 255 }, BOARD = { 130, 104, 80, 255 };
+        slab(L, 10, 20, -16, -7.1f, AF, 1, TEX_WOOD, BOARD, 2.0f);
+        static const float RX[6] = { 10, 11.6f, 13.2f, 16.8f, 18.4f, 20 }, RB[5] = { 4.6f, 5.4f, 6.2f, 5.4f, 4.6f };
+        for (int i = 0; i < 5; i++) slab(L, RX[i] - 0.15f, RX[i + 1] + 0.15f, -16.2f, -6.9f, RB[i] + 1.6f, 1.6f, TEX_WOOD, RAF, 2.0f);   // the roof, stepped
+        wall_x(L, 10 - WT, -16.2f, -6.9f, AF, 5.0f, TEX_WOOD, RAF); wall_x(L, 20 + WT, -16.2f, -6.9f, AF, 5.0f, TEX_WOOD, RAF);
+        wall_z(L, -7.1f, 10, 14.4f, AF, 7.8f, TEX_WOOD, RAF); wall_z(L, -7.1f, 15.6f, 20, AF, 7.8f, TEX_WOOD, RAF); wall_z(L, -7.1f, 14.4f, 15.6f, AF + 2.3f, 7.8f, TEX_WOOD, RAF);
+        wall_z(L, -16, 10, 20, AF, 7.8f, TEX_WOOD, RAF);
+        for (float z = -15.2f; z < -7.5f; z += 1.6f) {   // posts and a tie beam to each truss
+            for (int s = -1; s <= 1; s += 2) add_box(L, (Vector3){ 15 + s * 3.4f, AF + 1.2f, z }, (Vector3){ 0.07f, 1.2f, 0.07f }, TEX_WOOD, RAF, 1.0f, F_NOCOLLIDE);
+            add_box(L, (Vector3){ 15, AF + 3.05f, z }, (Vector3){ 3.5f, 0.07f, 0.07f }, TEX_WOOD, RAF, 1.0f, F_NOCOLLIDE);
+        }
+        // the round window in the gable, and the moon coming through it
+        add_box(L, (Vector3){ 15, AF + 2.2f, -16 + WT + 0.01f }, (Vector3){ 0.55f, 0.55f, 0.01f }, TEX_CONCRETE, (Color){ 40, 56, 96, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+        add_box(L, (Vector3){ 15, AF + 2.2f, -16 + WT + 0.03f }, (Vector3){ 0.03f, 0.58f, 0.02f }, TEX_WOOD, RAF, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ 15, AF + 2.2f, -16 + WT + 0.03f }, (Vector3){ 0.58f, 0.03f, 0.02f }, TEX_WOOD, RAF, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ 15, AF + 0.008f, -13.6f }, (Vector3){ 0.6f, 0.004f, 1.3f }, TEX_CONCRETE, (Color){ 26, 34, 56, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+        // a telescope on a tripod, pointed at the window
+        for (int s = -1; s <= 1; s += 2) add_box(L, (Vector3){ 16.2f + s * 0.25f, AF + 0.6f, -14.3f }, (Vector3){ 0.02f, 0.6f, 0.02f }, TEX_WOOD, (Color){ 90, 70, 50, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ 16.2f, AF + 0.6f, -13.95f }, (Vector3){ 0.02f, 0.6f, 0.02f }, TEX_WOOD, (Color){ 90, 70, 50, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ 16.2f, AF + 1.3f, -14.5f }, (Vector3){ 0.07f, 0.07f, 0.5f }, TEX_RUST, (Color){ 170, 140, 80, 255 }, 1.0f, F_NOCOLLIDE);
+        { Use u = { { 16.2f, AF + 1.35f, -13.95f }, USE_SCOPE, 0, false }; Uses_push(&L->uses, u); }
+        // trunks and boxes. one says what is in it
+        add_box(L, (Vector3){ 11.0f, AF + 0.3f, -9.0f }, (Vector3){ 0.5f, 0.3f, 0.35f }, TEX_WOOD, (Color){ 100, 60, 40, 255 }, 1.0f, 0);
+        add_box(L, (Vector3){ 11.0f, AF + 0.3f, -12.6f }, (Vector3){ 0.45f, 0.3f, 0.6f }, TEX_WOOD, (Color){ 80, 70, 60, 255 }, 1.0f, 0);
+        for (int i = 0; i < 4; i++) add_box(L, (Vector3){ 19.3f, AF + 0.3f + (i / 2) * 0.6f, -9.0f - (i % 2) * 0.8f }, (Vector3){ 0.4f, 0.3f, 0.38f }, TEX_PAPER, (Color){ 170, 150, 110, 255 }, 1.0f, 0);
+        add_decal(L, "HIS THINGS", (Vector3){ 18.9f, AF + 0.35f, -9.0f }, 0, -1, 0.06f, SOOT);
+        add_decal(L, "DO NOT OPEN", (Vector3){ 18.9f, AF + 0.95f, -9.8f }, 0, -1, 0.05f, BLOOD);
+        // furniture under dust sheets, and something standing among it that is the same shape as a person
+        add_box(L, (Vector3){ 12.6f, AF + 0.45f, -10.6f }, (Vector3){ 0.4f, 0.45f, 0.4f }, TEX_CLOTH, (Color){ 200, 196, 186, 255 }, 1.0f, 0);
+        add_box(L, (Vector3){ 18.2f, AF + 0.6f, -13.0f }, (Vector3){ 0.9f, 0.6f, 0.4f }, TEX_CLOTH, (Color){ 200, 196, 186, 255 }, 1.0f, 0);
+        add_effigy(L, FIG_SHEET, (Vector3){ 12.8f, AF, -14.4f }, g_rot >= 3 ? 3.14159f : 0.4f, 0.3f);
+        L->effigies.data[L->effigies.size - 1].look = g_rot >= 3 ? 1.0f : 0.0f;
+        add_box(L, (Vector3){ 15, AF + 2.9f, -11.5f }, (Vector3){ 0.08f, 0.07f, 0.08f }, TEX_CONCRETE, (Color){ 250, 200, 140, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+        L->bed.x = 17.6f; L->bed.y = AF; L->bed.z = -9.4f;   // (where main puts the rocking horse)
+        // and at the far end, a little door painted in stripes, with bulbs round it
+        add_door(L, (Vector3){ 12.2f, AF, -16 + WT }, (Vector3){ 0, 0, 1 }, (Color){ 255, 120, 170, 255 }, W_FAIR, 0, "THE FAIRGROUND");
+        static const Color BULB[3] = { { 255, 80, 70, 255 }, { 255, 210, 90, 255 }, { 110, 170, 255, 255 } };
+        for (int i = 0; i < 9; i++) add_box(L, (Vector3){ 11.3f + i * 0.225f, AF + 2.62f, -16 + WT + 0.06f }, (Vector3){ 0.04f, 0.04f, 0.03f }, TEX_CONCRETE, BULB[i % 3], 1.0f, F_EMIT | F_NOCOLLIDE);
+        for (int i = 0; i < 8; i++) for (int s = -1; s <= 1; s += 2) add_box(L, (Vector3){ 12.2f + s * 0.9f, AF + 0.2f + i * 0.3f, -16 + WT + 0.06f }, (Vector3){ 0.04f, 0.04f, 0.03f }, TEX_CONCRETE, BULB[(i + (s > 0)) % 3], 1.0f, F_EMIT | F_NOCOLLIDE);
+        add_box(L, (Vector3){ 13.9f, AF + 1.5f, -16 + WT + 0.02f }, (Vector3){ 0.35f, 0.5f, 0.01f }, TEX_PAPER, (Color){ 220, 190, 120, 255 }, 1.0f, F_NOCOLLIDE);
+        add_decal(L, "THE FAIR", (Vector3){ 13.9f, AF + 1.75f, -16 + WT + 0.02f }, 2, 1, 0.06f, (Color){ 160, 30, 30, 255 });
+        add_decal(L, "IS IN TOWN", (Vector3){ 13.9f, AF + 1.45f, -16 + WT + 0.02f }, 2, 1, 0.05f, (Color){ 60, 40, 30, 255 });
+        add_decal(L, "ADMIT ONE", (Vector3){ 13.9f, AF + 1.15f, -16 + WT + 0.02f }, 2, 1, 0.04f, (Color){ 60, 40, 30, 255 });
+    }
+
     // ---- the stairs down to the sitting room
     slab(L, 20, 26, -1.1f, 1.1f, HH + 1, 1, TEX_PAPER, CEIL, 3.0f);
     wall_z(L, -1.1f, 20, 26, PF, HH, TEX_PAPER, PAPER);
@@ -300,11 +382,12 @@ static void build_hub(Level *L, int seed) {
     wall_x_door(L, 38, -6.1f, 6.1f, PF, PF + PH, -0.6f, 0.6f, PF + 2.25f, TEX_PAPER, PW);
     wall_z(L, -6, 26, 29.4f, PF, PF + PH, TEX_PAPER, PW); wall_z(L, -6, 30.6f, 34.4f, PF, PF + PH, TEX_PAPER, PW); wall_z(L, -6, 35.6f, 38, PF, PF + PH, TEX_PAPER, PW);
     wall_z(L, -6, 29.4f, 30.6f, PF + 2.25f, PF + PH, TEX_PAPER, PW); wall_z(L, -6, 34.4f, 35.6f, PF + 2.25f, PF + PH, TEX_PAPER, PW);
-    wall_z_door(L, 6, 26, 38, PF, PF + PH, 29.4f, 30.6f, PF + 2.25f, TEX_PAPER, PW);
+    wall_z(L, 6, 26, 29.4f, PF, PF + PH, TEX_PAPER, PW); wall_z(L, 6, 29.4f, 30.6f, PF + 2.25f, PF + PH, TEX_PAPER, PW);
+    wall_z(L, 6, 30.6f, 35.8f, PF, PF + PH, TEX_PAPER, PW); wall_z(L, 6, 35.8f, 37.0f, PF + 2.3f, PF + PH, TEX_PAPER, PW); wall_z(L, 6, 37.0f, 38, PF, PF + PH, TEX_PAPER, PW);
     add_door(L, (Vector3){ 30, PF, -6 + WT }, (Vector3){ 0, 0, 1 }, (Color){ 170, 110, 240, 255 }, W_VOID, 0, "THE STEPS");
     add_door(L, (Vector3){ 35, PF, -6 + WT }, (Vector3){ 0, 0, 1 }, (Color){ 200, 40, 30, 255 }, W_CHAPEL, 0, "THE LOWER CHURCH");
     add_door(L, (Vector3){ 30, PF, 6 - WT }, (Vector3){ 0, 0, -1 }, (Color){ 200, 190, 170, 255 }, W_NURSERY, 0, "THE NURSERY");
-    add_door(L, (Vector3){ 38 - WT, PF, 0 }, (Vector3){ -1, 0, 0 }, (Color){ 255, 250, 240, 255 }, W_END, FX_ALL, "THE WAY OUT");
+    add_door(L, (Vector3){ 38 - WT, PF, 0 }, (Vector3){ -1, 0, 0 }, (Color){ 255, 250, 240, 255 }, W_END, FX_OUT, "THE WAY OUT");
     {   // the fireplace on the west wall, and two armchairs drawn up to it
         float fz = -3.6f;
         add_box(L, (Vector3){ 26.35f, PF + 0.7f, fz }, (Vector3){ 0.25f, 0.7f, 1.1f }, TEX_CONCRETE, (Color){ 150, 110, 90, 255 }, 1.0f, 0);
@@ -325,20 +408,65 @@ static void build_hub(Level *L, int seed) {
     // bookshelves along the south wall, and the piano
     static const Color BOOK[5] = { { 140, 60, 50, 255 }, { 60, 90, 120, 255 }, { 90, 110, 60, 255 }, { 150, 120, 60, 255 }, { 110, 70, 100, 255 } };
     for (int b = 0; b < 2; b++) {
-        float x = 33.0f + b * 2.0f;
+        float x = 32.0f + b * 2.0f;
         add_box(L, (Vector3){ x, PF + 1.1f, 5.65f }, (Vector3){ 0.85f, 1.1f, 0.2f }, TEX_WOOD, (Color){ 110, 78, 54, 255 }, 1.0f, 0);
         for (int r = 0; r < 4; r++) for (int i = 0; i < 9; i++)
             add_box(L, (Vector3){ x - 0.72f + i * 0.17f, PF + 0.35f + r * 0.5f, 5.43f }, (Vector3){ 0.06f, 0.16f + 0.03f * ((i * 7 + r) % 3), 0.02f }, TEX_PAPER, BOOK[(i + r * 2 + b) % 5], 1.0f, F_NOCOLLIDE);
     }
     add_box(L, (Vector3){ 36.4f, PF + 0.65f, -5.3f }, (Vector3){ 1.1f, 0.65f, 0.4f }, TEX_WOOD, (Color){ 60, 40, 32, 255 }, 1.0f, 0);
     add_box(L, (Vector3){ 36.4f, PF + 0.74f, -4.88f }, (Vector3){ 0.95f, 0.02f, 0.06f }, TEX_SKIN, (Color){ 240, 234, 220, 255 }, 1.0f, F_NOCOLLIDE);
+    for (int i = 0; i < 13; i++) if (i % 7 != 2 && i % 7 != 6) add_box(L, (Vector3){ 35.55f + i * 0.14f, PF + 0.765f, -4.9f }, (Vector3){ 0.03f, 0.008f, 0.035f }, TEX_CONCRETE, (Color){ 20, 16, 16, 255 }, 1.0f, F_NOCOLLIDE);
+    { Use u = { { 36.4f, PF + 0.85f, -4.7f }, USE_PIANO, 0, false }; Uses_push(&L->uses, u); }
     add_box(L, (Vector3){ 32.5f, PF + 0.006f, 0 }, (Vector3){ 3.0f, 0.004f, 3.6f }, TEX_MOSAIC, (Color){ 90, 64, 58, 255 }, 1.4f, F_NOCOLLIDE);
     add_box(L, (Vector3){ 32.5f, PF + 0.25f, 0 }, (Vector3){ 0.6f, 0.03f, 0.9f }, TEX_WOOD, (Color){ 120, 84, 56, 255 }, 1.0f, 0);   // a low table
     add_box(L, (Vector3){ 32.5f, PF + 0.12f, 0 }, (Vector3){ 0.5f, 0.12f, 0.8f }, TEX_WOOD, (Color){ 100, 70, 50, 255 }, 1.0f, F_NOCOLLIDE);
-    add_lamp(L, (Vector3){ 27.6f, PF, -5.3f }); add_lamp(L, (Vector3){ 37.3f, PF, 4.8f }); add_lamp(L, (Vector3){ 37.3f, PF, -3.6f });
+    add_lamp(L, (Vector3){ 27.6f, PF, -5.3f }); add_lamp(L, (Vector3){ 27.3f, PF, 2.6f }); add_lamp(L, (Vector3){ 37.3f, PF, -3.6f });
     add_plant(L, (Vector3){ 37.4f, PF, 2.0f }); add_plant(L, (Vector3){ 27.0f, PF, 5.3f });
     add_portrait(L, (Vector3){ 32.5f, PF + 2.4f, -6 + WT }, (Vector3){ 0, 0, 1 }, 0.6f, 0.8f);
     add_box(L, (Vector3){ 32, PF + PH - 0.5f, 0 }, (Vector3){ 0.25f, 0.12f, 0.25f }, TEX_CONCRETE, (Color){ 255, 214, 150, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    if (g_rot >= 3) add_effigy(L, FIG_SEATED, (Vector3){ 28.7f, PF - 0.02f, -4.8f }, -1.5708f, 0.35f);   // in the armchair by the fire, with its back to you
+
+    // ---- the kitchen: x 33..41, z 6..13, through the doorway. warm, a stove, a radio, and a back door with snow under it
+    {
+        const Color KW = { 200, 196, 170, 255 }, KF = { 150, 120, 96, 255 };
+        const float KH = PF + 3.2f;
+        slab(L, 33, 41, 6, 13, PF, 1, TEX_WOOD, KF, 2.0f);
+        slab(L, 33, 41, 6, 13, KH + 1, 1, TEX_PAPER, CEIL, 3.0f);
+        wall_x(L, 33 - WT, 6, 13.1f, PF, KH, TEX_POOL, KW); wall_x(L, 41 + WT, 6, 13.1f, PF, KH, TEX_POOL, KW);
+        wall_z(L, 6, 38, 41.2f, PF, KH, TEX_POOL, KW);
+        wall_z_door(L, 13 + WT, 33, 41, PF, KH, 36.4f, 37.6f, PF + 2.25f, TEX_POOL, KW);
+        add_door(L, (Vector3){ 37, PF, 13 }, (Vector3){ 0, 0, -1 }, (Color){ 170, 210, 255, 255 }, W_LAKE, 0, "THE BACK DOOR");
+        add_box(L, (Vector3){ 37, PF + 0.02f, 12.3f }, (Vector3){ 0.6f, 0.02f, 0.45f }, TEX_SNOW, (Color){ 220, 226, 236, 255 }, 0.6f, F_NOCOLLIDE);   // snow, blown in under it
+        // the stove, and a kettle on it that is always just about to boil
+        add_box(L, (Vector3){ 40.5f, PF + 0.45f, 8.0f }, (Vector3){ 0.45f, 0.45f, 0.55f }, TEX_RUST, (Color){ 60, 56, 52, 255 }, 1.0f, 0);
+        add_box(L, (Vector3){ 40.04f, PF + 0.4f, 8.0f }, (Vector3){ 0.01f, 0.18f, 0.3f }, TEX_CONCRETE, (Color){ 255, 120, 40, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+        add_box(L, (Vector3){ 40.5f, PF + 0.98f, 7.8f }, (Vector3){ 0.12f, 0.08f, 0.12f }, TEX_RUST, (Color){ 170, 160, 150, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ 40.6f, PF + 2.3f, 8.0f }, (Vector3){ 0.4f, 0.04f, 0.6f }, TEX_WOOD, (Color){ 110, 84, 60, 255 }, 1.0f, F_NOCOLLIDE);   // a shelf of pans
+        for (int i = 0; i < 4; i++) add_box(L, (Vector3){ 40.85f, PF + 2.0f, 7.5f + i * 0.33f }, (Vector3){ 0.02f, 0.12f, 0.12f }, TEX_RUST, (Color){ 150, 110, 80, 255 }, 1.0f, F_NOCOLLIDE);
+        // the counter under the window, the sink, the radio
+        add_box(L, (Vector3){ 39.6f, PF + 0.45f, 12.6f }, (Vector3){ 1.3f, 0.45f, 0.35f }, TEX_WOOD, (Color){ 150, 130, 100, 255 }, 1.0f, 0);
+        add_box(L, (Vector3){ 40.0f, PF + 0.91f, 12.6f }, (Vector3){ 0.35f, 0.02f, 0.25f }, TEX_RUST, (Color){ 150, 156, 160, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ 39.9f, PF + 1.75f, 13 - 0.01f }, (Vector3){ 0.6f, 0.45f, 0.01f }, TEX_CONCRETE, (Color){ 30, 40, 64, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+        add_box(L, (Vector3){ 39.9f, PF + 1.32f, 12.97f }, (Vector3){ 0.6f, 0.04f, 0.02f }, TEX_SNOW, (Color){ 220, 226, 236, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ 38.75f, PF + 1.0f, 12.6f }, (Vector3){ 0.16f, 0.1f, 0.08f }, TEX_WOOD, (Color){ 120, 70, 40, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ 38.75f, PF + 1.02f, 12.51f }, (Vector3){ 0.1f, 0.04f, 0.01f }, TEX_CONCRETE, (Color){ 255, 190, 90, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+        { Use u = { { 38.75f, PF + 1.05f, 12.4f }, USE_RADIO, 0, false }; Uses_push(&L->uses, u); }
+        // the fridge, humming
+        add_box(L, (Vector3){ 33.5f, PF + 0.9f, 11.9f }, (Vector3){ 0.35f, 0.9f, 0.4f }, TEX_CONCRETE, (Color){ 240, 236, 214, 255 }, 3.0f, 0);
+        add_box(L, (Vector3){ 33.86f, PF + 1.1f, 11.65f }, (Vector3){ 0.02f, 0.25f, 0.03f }, TEX_RUST, (Color){ 160, 160, 160, 255 }, 1.0f, F_NOCOLLIDE);
+        { Use u = { { 34.0f, PF + 1.2f, 11.9f }, USE_FRIDGE, 0, false }; Uses_push(&L->uses, u); }
+        // the table, two chairs, and a calendar
+        add_box(L, (Vector3){ 35.0f, PF + 0.75f, 9.2f }, (Vector3){ 0.9f, 0.04f, 0.6f }, TEX_WOOD, (Color){ 150, 120, 90, 255 }, 1.0f, 0);
+        for (int i = 0; i < 4; i++) add_box(L, (Vector3){ 35.0f + (i & 1 ? 0.8f : -0.8f), PF + 0.36f, 9.2f + (i & 2 ? 0.5f : -0.5f) }, (Vector3){ 0.04f, 0.36f, 0.04f }, TEX_WOOD, (Color){ 120, 96, 70, 255 }, 1.0f, F_NOCOLLIDE);
+        add_chair(L, (Vector3){ 34.6f, PF, 8.1f }, 3.14159f); add_chair(L, (Vector3){ 35.4f, PF, 10.3f }, 0);
+        for (int i = 0; i < 3; i++) add_box(L, (Vector3){ 34.6f + i * 0.4f, PF + 0.8f, 9.1f + (i % 2) * 0.2f }, (Vector3){ 0.1f, 0.01f, 0.1f }, TEX_SKIN, (Color){ 230, 226, 216, 255 }, 1.0f, F_NOCOLLIDE);   // three places laid
+        add_box(L, (Vector3){ 33 + WT + 0.01f, PF + 1.7f, 8.5f }, (Vector3){ 0.01f, 0.35f, 0.25f }, TEX_PAPER, (Color){ 230, 226, 210, 255 }, 1.0f, F_NOCOLLIDE);
+        add_decal(L, "SUNDAY", (Vector3){ 33 + WT + 0.02f, PF + 1.85f, 8.5f }, 0, 1, 0.04f, SOOT);
+        add_decal(L, "VISIT HIM", (Vector3){ 33 + WT + 0.02f, PF + 1.65f, 8.5f }, 0, 1, 0.04f, BLOOD);
+        add_box(L, (Vector3){ 34.2f, PF + 0.03f, 6.8f }, (Vector3){ 0.1f, 0.03f, 0.1f }, TEX_SKIN, (Color){ 200, 60, 50, 255 }, 1.0f, F_NOCOLLIDE);   // the cat's bowl
+        add_box(L, (Vector3){ 37, KH - 0.4f, 9.5f }, (Vector3){ 0.01f, 0.4f, 0.01f }, TEX_CONCRETE, (Color){ 20, 20, 20, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ 37, KH - 0.85f, 9.5f }, (Vector3){ 0.12f, 0.08f, 0.12f }, TEX_CONCRETE, (Color){ 255, 220, 160, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    }
 
     L->spawn = (Vector3){ 0.5f, 0.05f, 0 }; L->spawnYaw = 270;
     for (int i = 0; i < 4; i++) {   // a few wooden toy blocks on the bedroom floor
@@ -1326,6 +1454,394 @@ static void build_chapel(Level *L, int seed) {
     add_door(L, (Vector3){ 4.2f, 0.4f, Z0 + WT }, (Vector3){ 0, 0, 1 }, (Color){ 200, 40, 40, 255 }, W_WOMB, 0, "BELOW");   // behind the altar, a low door
 }
 
+// ---------------------------------------------------------------- FAIR: the fairground, closed for the night
+// a fair in a field, every bulb lit and nobody there. a carousel turning with nobody on it, a wheel, stalls, a
+// ghost train, and the hall of mirrors, where you have no face and your eyes are shut. one of you is not you (main)
+static const Color BULBS[4] = { { 255, 70, 60, 255 }, { 255, 210, 80, 255 }, { 90, 160, 255, 255 }, { 120, 255, 140, 255 } };
+static void bulb_line(Level *L, Vector3 a, Vector3 b, int n, float sag) {
+    for (int i = 0; i <= n; i++) {
+        float t = (float)i / n;
+        Vector3 p = Vector3Lerp(a, b, t);
+        p.y -= sag * 4.0f * t * (1 - t);
+        add_box(L, p, (Vector3){ 0.05f, 0.05f, 0.05f }, TEX_CONCRETE, BULBS[i % 4], 1.0f, F_EMIT | F_NOCOLLIDE);
+    }
+}
+// a stall: counter, back, a striped roof and a board over it. p is the front middle of the counter; it faces n
+static void stall(Level *L, Vector3 p, float n, const char *name, Color stripe) {
+    Vector3 b = { p.x - n * 1.2f, 0, p.z };   // its back wall is further from the avenue
+    add_box(L, (Vector3){ p.x - n * 0.2f, 0.5f, p.z }, (Vector3){ 0.2f, 0.5f, 1.5f }, TEX_WOOD, (Color){ 140, 90, 70, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ b.x - n * 0.1f, 1.4f, b.z }, (Vector3){ 0.1f, 1.4f, 1.6f }, TEX_WOOD, (Color){ 110, 70, 60, 255 }, 1.0f, 0);
+    for (int s = -1; s <= 1; s += 2) add_box(L, (Vector3){ (p.x + b.x) / 2 - n * 0.1f, 1.4f, p.z + s * 1.6f }, (Vector3){ 0.7f, 1.4f, 0.06f }, TEX_WOOD, (Color){ 110, 70, 60, 255 }, 1.0f, 0);
+    for (int i = 0; i < 6; i++)
+        add_box(L, (Vector3){ (p.x + b.x) / 2 - n * 0.1f, 2.85f, p.z - 1.45f + i * 0.58f }, (Vector3){ 0.9f, 0.06f, 0.29f }, TEX_CLOTH, i % 2 ? (Color){ 230, 220, 200, 255 } : stripe, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ p.x + n * 0.05f, 3.25f, p.z }, (Vector3){ 0.04f, 0.32f, 1.3f }, TEX_WOOD, (Color){ 60, 30, 34, 255 }, 1.0f, F_NOCOLLIDE);
+    add_decal(L, name, (Vector3){ p.x + n * 0.06f, 3.25f, p.z }, 0, n > 0 ? 1 : -1, 0.1f, (Color){ 240, 220, 150, 255 });
+    for (int i = 0; i < 7; i++) add_box(L, (Vector3){ p.x + n * 0.07f, 3.62f, p.z - 1.2f + i * 0.4f }, (Vector3){ 0.04f, 0.04f, 0.04f }, TEX_CONCRETE, BULBS[i % 4], 1.0f, F_EMIT | F_NOCOLLIDE);
+    for (int r = 0; r < 2; r++) for (int i = 0; i < 6; i++) {   // the prizes on their shelves, all of them looking out
+        Color c = scale_tint(i % 3 == 0 ? (Color){ 200, 170, 130, 255 } : i % 3 == 1 ? (Color){ 200, 120, 140, 255 } : (Color){ 140, 160, 200, 255 }, frand(0.7f, 1.0f));
+        Vector3 q = { b.x + n * 0.35f, 1.3f + r * 0.6f, b.z - 1.25f + i * 0.5f };
+        add_box(L, q, (Vector3){ 0.1f, 0.13f, 0.1f }, TEX_CLOTH, c, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ q.x, q.y + 0.2f, q.z }, (Vector3){ 0.08f, 0.08f, 0.08f }, TEX_CLOTH, c, 1.0f, F_NOCOLLIDE);
+        for (int s = -1; s <= 1; s += 2) add_box(L, (Vector3){ q.x + n * 0.08f, q.y + 0.22f, q.z + s * 0.03f }, (Vector3){ 0.005f, 0.012f, 0.012f }, TEX_CONCRETE, (Color){ 5, 5, 5, 255 }, 1.0f, F_NOCOLLIDE);
+    }
+    add_box(L, (Vector3){ b.x - n * 0.1f, 0.98f, b.z }, (Vector3){ 0.15f, 0.02f, 1.5f }, TEX_WOOD, (Color){ 90, 60, 50, 255 }, 1.0f, F_NOCOLLIDE);
+}
+static void build_fair(Level *L, int seed) {
+    L->name = "THE FAIRGROUND";
+    L->ambient = 0.32f;
+    SetRandomSeed(seed * 3911 + 23);
+    L->fog = (Color){ 16, 8, 20, 255 };
+    L->fogDensity = 0.045f;
+    L->light = 0.95f;
+    L->killY = -50;
+    L->sky = (Sky){ true, { 3, 2, 8, 255 }, { 34, 14, 34, 255 }, { 16, 8, 20, 255 }, 0.45f, true, { 230, 220, 200, 255 }, { 0.3f, 0.35f, -0.88f }, { 0, 0, 0, 0 }, 0.0f, false, 0 };
+    L->gradeLo = (Color){ 128, 112, 136, 255 }; L->gradeHi = (Color){ 168, 128, 116, 255 };
+    L->moteCol = (Color){ 220, 150, 190, 255 };
+    const Color PURP = { 90, 40, 96, 255 }, GILT = { 220, 180, 90, 255 };
+    add_box(L, (Vector3){ 0, -0.5f, -10 }, (Vector3){ 42, 0.5f, 52 }, TEX_GRASS, (Color){ 120, 100, 84, 255 }, 3.0f, 0);
+    add_box(L, (Vector3){ 0, 0.006f, 17 }, (Vector3){ 3.2f, 0.004f, 23 }, TEX_WOOD, (Color){ 120, 100, 70, 255 }, 1.0f, F_NOCOLLIDE);   // sawdust on the avenue
+    // the fence round it all
+    for (int s = -1; s <= 1; s += 2) {
+        add_box(L, (Vector3){ s * 40.0f, 1.1f, -10 }, (Vector3){ 0.1f, 1.1f, 50 }, TEX_WOOD, (Color){ 90, 70, 60, 255 }, 1.0f, 0);
+        add_box(L, (Vector3){ s * 21.6f, 1.1f, 40 }, (Vector3){ 18.4f, 1.1f, 0.1f }, TEX_WOOD, (Color){ 90, 70, 60, 255 }, 1.0f, 0);
+    }
+    add_box(L, (Vector3){ 0, 1.1f, -60 }, (Vector3){ 40, 1.1f, 0.1f }, TEX_WOOD, (Color){ 90, 70, 60, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ 0, 1.1f, 41.0f }, (Vector3){ 3.3f, 1.1f, 0.1f }, TEX_WOOD, (Color){ 90, 70, 60, 255 }, 1.0f, 0);   // the gate is shut behind you
+    // the arch over the way in
+    for (int s = -1; s <= 1; s += 2) add_box(L, (Vector3){ s * 3.3f, 2.6f, 38 }, (Vector3){ 0.2f, 2.6f, 0.2f }, TEX_WOOD, PURP, 1.0f, 0);
+    add_box(L, (Vector3){ 0, 5.4f, 38 }, (Vector3){ 3.6f, 0.5f, 0.15f }, TEX_WOOD, PURP, 1.0f, F_NOCOLLIDE);
+    add_decal(L, "FUN FAIR", (Vector3){ 0, 5.4f, 37.83f }, 2, -1, 0.3f, GILT);
+    add_decal(L, "FUN FAIR", (Vector3){ 0, 5.4f, 38.17f }, 2, 1, 0.3f, GILT);
+    bulb_line(L, (Vector3){ -3.5f, 6.0f, 37.8f }, (Vector3){ 3.5f, 6.0f, 37.8f }, 14, 0);
+    L->spawn = (Vector3){ 0, 0.05f, 36.5f }; L->spawnYaw = 0;
+    add_note(L, (Vector3){ 1.1f, 0.02f, 35.2f }, NOTE_FAIR);
+    // poles down the avenue, and bulbs strung between them
+    for (int i = 0; i < 5; i++) {
+        float z = 30 - i * 8.0f;
+        for (int s = -1; s <= 1; s += 2) add_box(L, (Vector3){ s * 3.6f, 2.2f, z }, (Vector3){ 0.07f, 2.2f, 0.07f }, TEX_WOOD, (Color){ 80, 60, 50, 255 }, 1.0f, F_NOCOLLIDE);
+        bulb_line(L, (Vector3){ -3.6f, 4.3f, z }, (Vector3){ 3.6f, 4.3f, z }, 10, 0.6f);
+        if (i < 4) for (int s = -1; s <= 1; s += 2) bulb_line(L, (Vector3){ s * 3.6f, 4.3f, z }, (Vector3){ s * 3.6f, 4.3f, z - 8 }, 10, 0.5f);
+    }
+    // stalls both sides of the avenue
+    stall(L, (Vector3){ -5.4f, 0, 26 }, 1, "HOOK A DUCK", (Color){ 200, 50, 50, 255 });
+    stall(L, (Vector3){ 5.4f, 0, 26 }, -1, "HOOPLA", (Color){ 60, 90, 190, 255 });
+    stall(L, (Vector3){ -5.4f, 0, 18 }, 1, "WIN A PRIZE", (Color){ 60, 150, 80, 255 });
+    stall(L, (Vector3){ 5.4f, 0, 18 }, -1, "SHOOTING", (Color){ 200, 50, 50, 255 });
+    stall(L, (Vector3){ 5.4f, 0, 10 }, -1, "CANDY FLOSS", (Color){ 220, 120, 170, 255 });
+    // the strength tester: hit it and see how high the puck goes
+    add_box(L, (Vector3){ -5.6f, 3.2f, 9.6f }, (Vector3){ 0.12f, 3.2f, 0.12f }, TEX_WOOD, (Color){ 200, 60, 50, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ -5.6f, 0.1f, 9.0f }, (Vector3){ 0.35f, 0.1f, 0.35f }, TEX_RUST, (Color){ 120, 110, 100, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ -5.6f, 6.55f, 9.6f }, (Vector3){ 0.25f, 0.15f, 0.25f }, TEX_RUST, GILT, 1.0f, F_NOCOLLIDE);
+    for (int i = 0; i < 6; i++) add_decal(L, i == 5 ? "HERO" : i == 4 ? "STRONG" : i == 3 ? "NOT BAD" : i == 2 ? "WEAK" : i == 1 ? "TINY" : "BABY", (Vector3){ -5.47f, 1.2f + i * 0.95f, 9.6f }, 0, 1, 0.07f, (Color){ 240, 230, 200, 255 });
+    { Use u = { { -4.9f, 1.0f, 9.0f }, USE_HAMMER, 0, false }; Uses_push(&L->uses, u); }
+    // the carousel: main turns it. only the post in the middle is solid
+    add_box(L, (Vector3){ -15, 2.2f, 4 }, (Vector3){ 0.55f, 2.2f, 0.55f }, TEX_WOOD, GILT, 1.0f, 0);
+    { Use u = { { -10.4f, 1.0f, 4 }, USE_RIDE, 0, false }; Uses_push(&L->uses, u); }
+    L->heart = (Vector3){ -15, 0, 4 };
+    // the big wheel: main turns that too
+    for (int s = -1; s <= 1; s += 2) for (int k = -1; k <= 1; k += 2)
+        add_box(L, (Vector3){ 16 + k * 2.6f, 5.6f, -14 + s * 1.1f }, (Vector3){ 0.15f, 5.6f, 0.15f }, TEX_RUST, (Color){ 160, 150, 150, 255 }, 1.0f, k < 0 ? 0 : F_NOCOLLIDE);
+    add_box(L, (Vector3){ 16, 0.3f, -14 }, (Vector3){ 3.2f, 0.3f, 1.6f }, TEX_WOOD, PURP, 1.0f, 0);
+    // the ghost train, its doors painted with skeletons
+    add_box(L, (Vector3){ 27, 2.6f, 14 }, (Vector3){ 3, 2.6f, 5 }, TEX_WOOD, (Color){ 40, 30, 40, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ 23.9f, 5.6f, 14 }, (Vector3){ 0.1f, 0.6f, 4 }, TEX_WOOD, (Color){ 30, 60, 30, 255 }, 1.0f, F_NOCOLLIDE);
+    add_decal(L, "GHOST TRAIN", (Vector3){ 23.8f, 5.6f, 14 }, 0, -1, 0.3f, (Color){ 200, 240, 180, 255 });
+    add_door(L, (Vector3){ 23.85f, 0, 14 }, (Vector3){ -1, 0, 0 }, (Color){ 140, 255, 140, 255 }, W_THEATRE, 0, "THE GHOST TRAIN");
+    bulb_line(L, (Vector3){ 23.85f, 5.0f, 10.4f }, (Vector3){ 23.85f, 5.0f, 17.6f }, 12, 0);
+    // ---- the hall of mirrors. a corridor two metres wide, glass down both sides, and in the glass, a second hall:
+    // the same hall, the other way round, with you in it. it is built here for real, behind glass you cannot pass
+    const float Z0 = -12, Z1 = -44, CH = 2.6f;
+    const Color GLASS = { 26, 30, 40, 255 }, CHECK = { 70, 50, 80, 255 };
+    add_box(L, (Vector3){ 0, 0.006f, (Z0 + Z1) / 2 }, (Vector3){ 3, 0.004f, (Z0 - Z1) / 2 }, TEX_MOSAIC, CHECK, 0.6f, F_NOCOLLIDE);
+    slab(L, -3.7f, 3.7f, Z1, Z0, CH + 0.4f, 0.4f, TEX_WOOD, (Color){ 40, 20, 40, 255 }, 2.0f);
+    for (int s = -1; s <= 1; s += 2) {
+        wall_x(L, s * (3 + WT), Z1, Z0, 0, CH, TEX_WATER, GLASS);                                  // the far glass of the hall in the glass
+        wall_x(L, s * 3.5f, Z1, Z0, 0, 5.5f, TEX_WOOD, PURP);                                       // and outside, painted boards
+        add_box(L, (Vector3){ s * 1.0f, CH / 2, (Z0 + Z1) / 2 }, (Vector3){ 0.02f, CH / 2, (Z0 - Z1) / 2 }, TEX_CONCRETE, WHITE, 1.0f, F_HIDDEN);   // the glass you can't see
+        for (float z = Z0 - 0.1f; z >= Z1; z -= 2.0f) add_box(L, (Vector3){ s * 1.0f, CH / 2, z }, (Vector3){ 0.05f, CH / 2, 0.05f }, TEX_RUST, GILT, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ s * 1.0f, CH - 0.05f, (Z0 + Z1) / 2 }, (Vector3){ 0.06f, 0.05f, (Z0 - Z1) / 2 }, TEX_RUST, GILT, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ s * 1.0f, 0.05f, (Z0 + Z1) / 2 }, (Vector3){ 0.06f, 0.05f, (Z0 - Z1) / 2 }, TEX_RUST, GILT, 1.0f, F_NOCOLLIDE);
+    }
+    for (float z = Z0 - 2; z > Z1; z -= 5.0f) for (int c = -1; c <= 1; c++)   // a bulb down the middle of each hall: this one, and the two in the glass
+        add_box(L, (Vector3){ c * 2.0f, CH - 0.06f, z }, (Vector3){ 0.08f, 0.04f, 0.08f }, TEX_CONCRETE, (Color){ 230, 200, 230, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    wall_z_door(L, Z0, -6, 6, 0, 6.0f, -1, 1, 2.4f, TEX_WOOD, PURP);
+    add_decal(L, "HALL OF MIRRORS", (Vector3){ 0, 4.0f, Z0 + WT + 0.02f }, 2, 1, 0.3f, GILT);
+    add_decal(L, "SEE YOURSELF AS OTHERS SEE YOU", (Vector3){ 0, 3.2f, Z0 + WT + 0.02f }, 2, 1, 0.11f, (Color){ 230, 220, 220, 255 });
+    bulb_line(L, (Vector3){ -5.5f, 5.0f, Z0 + 0.25f }, (Vector3){ 5.5f, 5.0f, Z0 + 0.25f }, 20, 0);
+    add_note(L, (Vector3){ 0.4f, 0.02f, Z0 - 1.4f }, NOTE_MIRROR);
+    // the fortune teller's room at the end of it, and a curtain out the side
+    wall_z_door(L, Z1, -4, 4, 0, CH + 0.4f, -1, 1, 2.3f, TEX_CLOTH, (Color){ 80, 20, 50, 255 });
+    slab(L, -4.3f, 4.3f, -50.3f, Z1, 3.4f, 0.4f, TEX_CLOTH, (Color){ 50, 14, 40, 255 }, 2.0f);
+    wall_z(L, -50, -4.3f, 4.3f, 0, 3.2f, TEX_CLOTH, (Color){ 80, 20, 50, 255 });
+    wall_x(L, 4, -50, Z1, 0, 3.2f, TEX_CLOTH, (Color){ 80, 20, 50, 255 });
+    wall_x_door(L, -4, -50, Z1, 0, 3.2f, -47.9f, -46.7f, 2.3f, TEX_CLOTH, (Color){ 80, 20, 50, 255 });
+    add_box(L, (Vector3){ 0, 0.4f, -47.4f }, (Vector3){ 0.75f, 0.4f, 0.55f }, TEX_CLOTH, (Color){ 60, 20, 60, 255 }, 1.0f, 0);
+    add_effigy(L, FIG_SEATED, (Vector3){ 0, 0, -48.6f }, 3.14159f, 0.3f);
+    for (int i = 0; i < 5; i++) add_candle(L, (Vector3){ -3.5f + i * 0.5f, 0, -49.6f }, frand(0.2f, 0.5f), false);
+    add_sigil(L, (Vector3){ 0, 0.004f, -46.0f }, 1.0f, (Color){ 140, 100, 40, 255 }, 31);
+    Pickup pk = { { 0.45f, 1.15f, -47.1f }, FX_COMPASS, false, false };
+    Pickups_push(&L->pickups, pk);
+    { Use u = { { -0.35f, 0.95f, -46.8f }, USE_FORTUNE, 0, false }; Uses_push(&L->uses, u); }
+    // balloons tied along the fence (main bobs them)
+    L->bed = (Vector3){ 0, 0, -46.5f };   // the door of the mirror hall's last room, for main
+}
+
+// ---------------------------------------------------------------- LAKE: the frozen lake
+// out through the back door: a jetty, and a lake frozen black under a sky with the northern lights in it. a hut far
+// out on the ice with a stove lit. the ice cracks if you stand still, and something big lives under it (main)
+static void pine(Level *L, Vector3 p, float h) {
+    add_box(L, (Vector3){ p.x, p.y + h * 0.15f, p.z }, (Vector3){ 0.25f, h * 0.15f, 0.25f }, TEX_WOOD, (Color){ 50, 40, 34, 255 }, 1.0f, F_NOCOLLIDE);
+    for (int k = 0; k < 4; k++) {
+        float w = h * (0.32f - k * 0.07f), y = p.y + h * (0.28f + k * 0.18f);
+        add_box(L, (Vector3){ p.x, y, p.z }, (Vector3){ w, h * 0.1f, w }, TEX_GRASS, (Color){ 40, 70, 60, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ p.x, y + h * 0.1f, p.z }, (Vector3){ w * 0.8f, 0.04f, w * 0.8f }, TEX_SNOW, (Color){ 200, 210, 220, 255 }, 1.0f, F_NOCOLLIDE);
+    }
+}
+static void build_lake(Level *L, int seed) {
+    L->name = "THE FROZEN LAKE";
+    L->ambient = 0.5f;
+    SetRandomSeed(seed * 6311 + 3);
+    L->fog = (Color){ 28, 38, 54, 255 };
+    L->fogDensity = 0.024f;
+    L->light = 0.9f;
+    L->killY = -50;
+    L->sky = (Sky){ true, { 2, 4, 12, 255 }, { 28, 40, 58, 255 }, { 28, 38, 54, 255 }, 0.8f, true, { 220, 232, 240, 255 }, { -0.25f, 0.42f, -0.87f }, { 60, 210, 150, 255 }, 0.7f, false, 0 };
+    L->gradeLo = (Color){ 116, 128, 150, 255 }; L->gradeHi = (Color){ 136, 140, 146, 255 };
+    L->moteCol = (Color){ 230, 236, 245, 255 };
+    const float R = 60;
+    add_box(L, (Vector3){ 0, -0.5f, 0 }, (Vector3){ R, 0.5f, R }, TEX_ICE, (Color){ 170, 190, 214, 255 }, 7.0f, 0);
+    for (int s = -1; s <= 1; s += 2) {   // snow banks all round, and the pines behind them
+        add_box(L, (Vector3){ s * (R + 4), 1.2f, 0 }, (Vector3){ 4, 1.2f, R + 8 }, TEX_SNOW, (Color){ 200, 206, 218, 255 }, 4.0f, 0);
+        add_box(L, (Vector3){ 0, 1.2f, s * (R + 4) }, (Vector3){ R + 8, 1.2f, 4 }, TEX_SNOW, (Color){ 200, 206, 218, 255 }, 4.0f, 0);
+    }
+    for (int i = 0; i < 70; i++) {
+        float a = i * 0.0898f + frand(-0.03f, 0.03f), r = R + frand(6, 16);
+        Vector3 p = { sinf(a) * r, 2.4f, cosf(a) * r };
+        if (fabsf(p.x) > R + 2 || fabsf(p.z) > R + 2) pine(L, p, frand(7, 13));
+    }
+    // the jetty, the lamp at the end of it, and a sign nobody has read
+    add_box(L, (Vector3){ 0, 0.06f, 52 }, (Vector3){ 1.0f, 0.06f, 8 }, TEX_WOOD, (Color){ 120, 100, 84, 255 }, 1.0f, 0);
+    for (int i = 0; i < 5; i++) for (int s = -1; s <= 1; s += 2) add_box(L, (Vector3){ s * 1.0f, 0.4f, 45 + i * 3.5f }, (Vector3){ 0.08f, 0.4f, 0.08f }, TEX_WOOD, (Color){ 80, 66, 56, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ 1.1f, 1.3f, 58 }, (Vector3){ 0.05f, 1.3f, 0.05f }, TEX_RUST, (Color){ 60, 60, 60, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ 1.1f, 2.65f, 58 }, (Vector3){ 0.14f, 0.1f, 0.14f }, TEX_CONCRETE, (Color){ 255, 200, 130, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_box(L, (Vector3){ -2.6f, 0.9f, 44.5f }, (Vector3){ 0.05f, 0.9f, 0.05f }, TEX_WOOD, (Color){ 80, 66, 56, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ -2.6f, 1.6f, 44.5f }, (Vector3){ 0.6f, 0.3f, 0.03f }, TEX_WOOD, (Color){ 200, 190, 160, 255 }, 1.0f, F_NOCOLLIDE);
+    add_decal(L, "THIN ICE", (Vector3){ -2.6f, 1.68f, 44.52f }, 2, 1, 0.09f, BLOOD);
+    add_decal(L, "KEEP MOVING", (Vector3){ -2.6f, 1.46f, 44.52f }, 2, 1, 0.06f, SOOT);
+    L->spawn = (Vector3){ 0, 0.15f, 57 }; L->spawnYaw = 0;
+    add_note(L, (Vector3){ 0.5f, 0.13f, 54.5f }, NOTE_LAKE);
+    // a hole cut in the ice by the jetty, and a rope going down into it, taut
+    add_box(L, (Vector3){ 3.0f, 0.004f, 41 }, (Vector3){ 0.45f, 0.004f, 0.45f }, TEX_CONCRETE, (Color){ 2, 4, 8, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_box(L, (Vector3){ 3.8f, 0.3f, 41.6f }, (Vector3){ 0.05f, 0.3f, 0.05f }, TEX_WOOD, (Color){ 90, 70, 50, 255 }, 1.0f, F_NOCOLLIDE);
+    // thin ice: dark patches where it has hardly frozen at all (main reads them out of the blooms)
+    for (int i = 0, tries = 0; i < 9 && tries < 300; tries++) {
+        Vector3 p = { frand(-50, 50), 0, frand(-50, 40) };
+        if (fabsf(p.x - 8) < 7 && fabsf(p.z + 40) < 7) continue;
+        if (fabsf(p.x) < 5 && p.z > 34) continue;
+        if (i == 0) p = (Vector3){ frand(2, 6), 0, frand(-14, -6) };   // one of them across the way to the hut
+        float r = i == 0 ? 4.5f : frand(2.0f, 4.0f);
+        Bloom b = { p, (Color){ 6, 12, 22, 255 }, r, 0 };
+        Blooms_push(&L->blooms, b);
+        add_box(L, (Vector3){ p.x, 0.003f, p.z }, (Vector3){ r, 0.002f, r * 0.8f }, TEX_WATER, (Color){ 40, 60, 80, 255 }, 3.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ p.x, 0.004f, p.z }, (Vector3){ r * 0.7f, 0.002f, r }, TEX_WATER, (Color){ 30, 48, 66, 255 }, 3.0f, F_NOCOLLIDE);
+        i++;
+    }
+    // the hut, far out, with the stove going
+    const Vector3 H = { 8, 0, -40 };
+    const Color HW = { 120, 70, 50, 255 };
+    add_box(L, (Vector3){ H.x, 0.1f, H.z }, (Vector3){ 1.7f, 0.1f, 1.7f }, TEX_WOOD, (Color){ 130, 110, 90, 255 }, 1.0f, 0);
+    wall_x(L, H.x - 1.7f, H.z - 1.7f, H.z + 1.7f, 0, 2.4f, TEX_WOOD, HW); wall_x(L, H.x + 1.7f, H.z - 1.7f, H.z + 1.7f, 0, 2.4f, TEX_WOOD, HW);
+    wall_z(L, H.z - 1.7f, H.x - 1.85f, H.x + 1.85f, 0, 2.4f, TEX_WOOD, HW);
+    wall_z_door(L, H.z + 1.7f, H.x - 1.85f, H.x + 1.85f, 0, 2.4f, H.x - 0.55f, H.x + 0.55f, 2.0f, TEX_WOOD, HW);
+    add_box(L, (Vector3){ H.x, 2.55f, H.z }, (Vector3){ 2.1f, 0.15f, 2.1f }, TEX_SNOW, (Color){ 210, 216, 226, 255 }, 2.0f, 0);
+    add_box(L, (Vector3){ H.x + 1.1f, 0.55f, H.z - 1.1f }, (Vector3){ 0.35f, 0.35f, 0.35f }, TEX_RUST, (Color){ 50, 46, 44, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ H.x + 1.1f, 0.55f, H.z - 0.74f }, (Vector3){ 0.16f, 0.1f, 0.01f }, TEX_CONCRETE, (Color){ 255, 120, 40, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_box(L, (Vector3){ H.x + 1.1f, 1.8f, H.z - 1.1f }, (Vector3){ 0.06f, 0.9f, 0.06f }, TEX_RUST, (Color){ 50, 46, 44, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ H.x, 2.1f, H.z }, (Vector3){ 0.1f, 0.12f, 0.1f }, TEX_CONCRETE, (Color){ 255, 200, 120, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+    add_box(L, (Vector3){ H.x - 1.45f, 1.25f, H.z - 0.9f }, (Vector3){ 0.2f, 0.03f, 0.6f }, TEX_WOOD, (Color){ 110, 84, 60, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ H.x - 1.1f, 0.22f, H.z + 0.9f }, (Vector3){ 0.35f, 0.006f, 0.35f }, TEX_CONCRETE, (Color){ 1, 2, 4, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);   // the fishing hole
+    add_portal(L, (Vector3){ H.x - 1.1f, 0.2f, H.z + 0.9f }, W_BATHS, 0, (Color){ 120, 160, 200, 255 }, "THE FISHING HOLE");
+    L->portals.data[L->portals.size - 1].radius = 0.4f;
+    add_box(L, (Vector3){ H.x + 0.3f, 0.45f, H.z + 0.2f }, (Vector3){ 0.2f, 0.25f, 0.2f }, TEX_WOOD, (Color){ 100, 80, 60, 255 }, 1.0f, 0);   // a stool
+    Pickup pk = { { H.x - 1.4f, 1.55f, H.z - 0.9f }, FX_MATCHES, false, false };
+    Pickups_push(&L->pickups, pk);
+    L->heart = H;   // (where main keeps the hut, so it knows where the ice is not)
+    // the others, standing out on the ice in their nightclothes. you never get close to one
+    for (int i = 0; i < 5; i++) add_effigy(L, FIG_SELF, (Vector3){ frand(-45, 45), 0, frand(-45, 25) }, frand(0, 6.28f), frand(-0.3f, 0.3f));
+}
+
+// ---------------------------------------------------------------- SCHOOL: hide and seek
+// through the wardrobe: his school, at night. a corridor of coat pegs, two classrooms, a gym, the headmaster's office.
+// something is counting at the end of the corridor with its face to the wall (main). hide before it gets to ten
+static void cupboard(Level *L, Vector3 c, Vector3 h, int face, int idx) {   // face: 0 +x, 1 -x, 2 +z, 3 -z
+    static const Vector3 N[4] = { { 1, 0, 0 }, { -1, 0, 0 }, { 0, 0, 1 }, { 0, 0, -1 } };
+    Vector3 n = N[face];
+    bool xn = face < 2;
+    float depth = xn ? h.x : h.z, wide = xn ? h.z : h.x;
+    add_box(L, c, h, TEX_WOOD, (Color){ 110, 96, 80, 255 }, 1.0f, 0);
+    Vector3 f = { c.x + n.x * (depth + 0.005f), c.y, c.z + n.z * (depth + 0.005f) };
+    add_box(L, f, xn ? (Vector3){ 0.004f, h.y * 0.96f, 0.008f } : (Vector3){ 0.008f, h.y * 0.96f, 0.004f }, TEX_CONCRETE, (Color){ 10, 8, 6, 255 }, 1.0f, F_NOCOLLIDE);
+    for (int k = 0; k < 4; k++)   // slats to see out through
+        add_box(L, (Vector3){ f.x, c.y + 0.25f + k * 0.12f, f.z }, xn ? (Vector3){ 0.004f, 0.02f, wide * 0.8f } : (Vector3){ wide * 0.8f, 0.02f, 0.004f }, TEX_CONCRETE, (Color){ 14, 10, 8, 255 }, 1.0f, F_NOCOLLIDE);
+    Use u = { { c.x + n.x * (depth + 0.35f), 1.2f, c.z + n.z * (depth + 0.35f) }, USE_HIDE, idx | (face << 4), false };
+    Uses_push(&L->uses, u);
+}
+// a child's drawing pinned to a wall: crayon on paper. n is the way the wall faces
+static void drawing(Level *L, Vector3 p, int face, int kind, const char *label) {
+    bool xn = face < 2;
+    float d = (face == 0 || face == 2) ? 1.0f : -1.0f;
+    #define PL(du, dv, hu, hv, col) add_box(L, xn ? (Vector3){ p.x + d * 0.012f, p.y + (dv), p.z + (du) } : (Vector3){ p.x + (du), p.y + (dv), p.z + d * 0.012f }, xn ? (Vector3){ 0.003f, (hv), (hu) } : (Vector3){ (hu), (hv), 0.003f }, TEX_CONCRETE, col, 1.0f, F_NOCOLLIDE)
+    add_box(L, (Vector3){ p.x + (xn ? d * 0.005f : 0), p.y, p.z + (xn ? 0 : d * 0.005f) }, xn ? (Vector3){ 0.003f, 0.3f, 0.4f } : (Vector3){ 0.4f, 0.3f, 0.003f }, TEX_PAPER, (Color){ 240, 236, 226, 255 }, 3.0f, F_NOCOLLIDE);
+    const Color BLK = { 20, 18, 18, 255 }, CR = { 190, 30, 30, 255 }, YEL = { 230, 200, 60, 255 }, BLU = { 50, 80, 180, 255 }, GRN = { 60, 150, 60, 255 }, SKN = { 220, 170, 140, 255 }, WHT = { 236, 236, 236, 255 }, BRN = { 140, 90, 60, 255 };
+    switch (kind) {
+    case 0:   // my house, with someone at every window
+        PL(0, -0.08f, 0.16f, 0.12f, CR); PL(0, 0.08f, 0.2f, 0.04f, BLK); PL(0, -0.15f, 0.03f, 0.05f, BLK);
+        for (int i = -1; i <= 1; i += 2) { PL(i * 0.08f, -0.04f, 0.03f, 0.03f, YEL); PL(i * 0.08f, -0.04f, 0.01f, 0.018f, BLK); }
+        PL(0.28f, 0.2f, 0.05f, 0.05f, YEL); break;
+    case 1:   // mummy: so tall the paper isn't tall enough, her hair down to her feet, and me
+        PL(-0.05f, 0.02f, 0.025f, 0.26f, BLU); PL(-0.05f, 0.25f, 0.04f, 0.035f, SKN);
+        for (int i = 0; i < 5; i++) PL(-0.09f + i * 0.02f, 0.05f, 0.004f, 0.2f, BLK);
+        PL(0.15f, -0.2f, 0.015f, 0.05f, GRN); PL(0.15f, -0.13f, 0.02f, 0.02f, SKN); break;
+    case 2:   // the tall man, between the houses
+        for (int i = -1; i <= 1; i += 2) PL(i * 0.24f, -0.12f, 0.06f, 0.14f, BLU);
+        PL(0, 0, 0.02f, 0.26f, BLK); PL(0, 0.24f, 0.03f, 0.04f, WHT); break;
+    case 3:   // me asleep, and everybody round the bed
+        PL(0, -0.12f, 0.2f, 0.06f, BRN); PL(0.02f, -0.05f, 0.16f, 0.03f, BLU); PL(-0.16f, -0.05f, 0.03f, 0.03f, SKN);
+        for (int i = 0; i < 7; i++) PL(-0.3f + i * 0.1f, 0.12f + (i % 2) * 0.03f, 0.02f, 0.05f, BLK);
+        break;
+    case 4:   // the big eye
+        PL(0, 0, 0.22f, 0.1f, WHT); PL(0, 0, 0.06f, 0.06f, CR); PL(0, 0, 0.025f, 0.025f, BLK);
+        for (int i = -2; i <= 2; i++) PL(i * 0.07f, -0.17f, 0.004f, 0.07f, BLK);
+        break;
+    default:  // daddy. it is only black crayon, pressed so hard the paper has torn
+        PL(0, 0, 0.12f, 0.24f, BLK); PL(0.05f, 0.1f, 0.03f, 0.04f, WHT); break;
+    }
+    #undef PL
+    Vector3 lp = { p.x + (xn ? d * 0.014f : 0), p.y - 0.36f, p.z + (xn ? 0 : d * 0.014f) };
+    add_decal(L, label, lp, xn ? 0 : 2, (int)d, 0.035f, (Color){ 40, 50, 140, 255 });
+}
+static void small_desk(Level *L, Vector3 p, bool chairUp) {
+    add_box(L, (Vector3){ p.x, 0.6f, p.z }, (Vector3){ 0.4f, 0.03f, 0.3f }, TEX_WOOD, (Color){ 150, 120, 90, 255 }, 1.0f, 0);
+    for (int i = 0; i < 4; i++) add_box(L, (Vector3){ p.x + (i & 1 ? 0.35f : -0.35f), 0.3f, p.z + (i & 2 ? 0.25f : -0.25f) }, (Vector3){ 0.02f, 0.3f, 0.02f }, TEX_RUST, (Color){ 80, 80, 84, 255 }, 1.0f, F_NOCOLLIDE);
+    if (chairUp) {   // chairs up on the desks, legs in the air, the way they leave them at the end of the day
+        add_box(L, (Vector3){ p.x, 0.85f, p.z }, (Vector3){ 0.18f, 0.02f, 0.18f }, TEX_WOOD, (Color){ 60, 90, 130, 255 }, 1.0f, F_NOCOLLIDE);
+        for (int i = 0; i < 4; i++) add_box(L, (Vector3){ p.x + (i & 1 ? 0.15f : -0.15f), 1.05f, p.z + (i & 2 ? 0.15f : -0.15f) }, (Vector3){ 0.015f, 0.18f, 0.015f }, TEX_RUST, (Color){ 80, 80, 84, 255 }, 1.0f, F_NOCOLLIDE);
+    } else {
+        add_box(L, (Vector3){ p.x, 0.36f, p.z + 0.5f }, (Vector3){ 0.18f, 0.02f, 0.18f }, TEX_WOOD, (Color){ 60, 90, 130, 255 }, 1.0f, F_NOCOLLIDE);
+        add_box(L, (Vector3){ p.x, 0.6f, p.z + 0.68f }, (Vector3){ 0.18f, 0.22f, 0.015f }, TEX_WOOD, (Color){ 60, 90, 130, 255 }, 1.0f, F_NOCOLLIDE);
+    }
+}
+static void build_school(Level *L, int seed) {
+    L->name = "THE SCHOOL";
+    L->ambient = 0.3f;
+    SetRandomSeed(seed * 4127 + 9);
+    L->fog = (Color){ 12, 14, 16, 255 };
+    L->fogDensity = 0.06f;
+    L->light = 0.9f;
+    L->killY = -50;
+    L->gradeLo = (Color){ 124, 128, 130, 255 }; L->gradeHi = (Color){ 150, 140, 120, 255 };
+    L->moteCol = (Color){ 180, 180, 170, 255 };
+    const float H = 3.2f;
+    const Color WALL = { 170, 176, 150, 255 }, LOW = { 90, 110, 100, 255 }, LIGHT = { 220, 230, 210, 255 };
+    add_box(L, (Vector3){ 2, -0.5f, -13 }, (Vector3){ 14.5f, 0.5f, 19.5f }, TEX_WOOD, (Color){ 140, 110, 80, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ 0, 0.005f, -13 }, (Vector3){ 2, 0.003f, 19 }, TEX_POOL, (Color){ 150, 140, 120, 255 }, 0.8f, F_NOCOLLIDE);
+    slab(L, -12.2f, 2, -32.2f, 6.2f, H + 1, 1, TEX_CONCRETE, (Color){ 130, 130, 124, 255 }, 3.0f);
+    slab(L, 2, 9.2f, -32.2f, -12, H + 1, 1, TEX_CONCRETE, (Color){ 130, 130, 124, 255 }, 3.0f);
+    slab(L, 2, 16.2f, -12, 6.2f, 7.0f, 1, TEX_CONCRETE, (Color){ 110, 110, 104, 255 }, 3.0f);
+    // the corridor: x -2..2, z -32..6
+    wall_x_door(L, -2, -32, -1.6f, 0, H, -20.6f, -19.4f, 2.3f, TEX_POOL, WALL);
+    wall_x_door(L, -2, -1.6f, 6, 0, H, -1.6f, -0.4f, 2.3f, TEX_POOL, WALL);
+    wall_x_door(L, 2, -32, -12, 0, H, -22.6f, -21.4f, 2.3f, TEX_POOL, WALL);
+    wall_x_door(L, 2, -12, 6, 0, H, -3.6f, -2.4f, 2.3f, TEX_POOL, WALL);
+    wall_x(L, 2, -12, 6, H, 6.0f, TEX_POOL, WALL);
+    wall_z(L, 6, -2, 2, 0, H, TEX_POOL, WALL);
+    wall_z_door(L, -32, -2.2f, 2.2f, 0, H, -0.6f, 0.6f, 2.25f, TEX_POOL, WALL);
+    add_door(L, (Vector3){ 0, 0, -32 + WT }, (Vector3){ 0, 0, 1 }, (Color){ 255, 150, 190, 255 }, W_FAIR, 0, "SCHOOL TRIP");
+    add_box(L, (Vector3){ 1.4f, 1.6f, -32 + WT + 0.01f }, (Vector3){ 0.3f, 0.4f, 0.01f }, TEX_PAPER, (Color){ 240, 220, 160, 255 }, 1.0f, F_NOCOLLIDE);
+    add_decal(L, "SCHOOL TRIP", (Vector3){ 1.4f, 1.8f, -32 + WT + 0.02f }, 2, 1, 0.045f, BLOOD);
+    add_decal(L, "TO THE FAIR", (Vector3){ 1.4f, 1.6f, -32 + WT + 0.02f }, 2, 1, 0.04f, SOOT);
+    add_decal(L, "BRING A COAT", (Vector3){ 1.4f, 1.4f, -32 + WT + 0.02f }, 2, 1, 0.035f, SOOT);
+    for (int s = -1; s <= 1; s += 2) add_box(L, (Vector3){ s * 1.98f, 0.5f, -13 }, (Vector3){ 0.02f, 0.5f, 19 }, TEX_POOL, LOW, 1.0f, F_NOCOLLIDE);   // a dado of darker tiles
+    for (int i = 0; i < 6; i++) add_box(L, (Vector3){ 0, H - 0.04f, 3 - i * 6.5f }, (Vector3){ 0.12f, 0.02f, 0.5f }, TEX_CONCRETE, LIGHT, 1.0f, F_EMIT | F_NOCOLLIDE);
+    // coat pegs with the coats still on them, small ones
+    static const Color COAT[5] = { { 160, 40, 40, 255 }, { 50, 70, 130, 255 }, { 200, 170, 60, 255 }, { 60, 110, 70, 255 }, { 120, 110, 100, 255 } };
+    for (int i = 0; i < 14; i++) {
+        float z = -3 - i * 1.1f;
+        if (z < -18.6f && z > -21.4f) continue;
+        add_box(L, (Vector3){ -1.92f, 1.45f, z }, (Vector3){ 0.06f, 0.015f, 0.015f }, TEX_RUST, (Color){ 140, 140, 140, 255 }, 1.0f, F_NOCOLLIDE);
+        if (GetRandomValue(0, 3)) add_box(L, (Vector3){ -1.86f, 1.1f, z }, (Vector3){ 0.06f, 0.33f, 0.2f }, TEX_CLOTH, COAT[GetRandomValue(0, 4)], 1.0f, F_NOCOLLIDE);
+    }
+    // where it counts: home
+    add_decal(L, "HOME", (Vector3){ -1.2f, 2.0f, 6 - WT }, 2, -1, 0.12f, CHALK);
+    add_sigil(L, (Vector3){ -1.2f, 0.004f, 5.2f }, 0.6f, CHALK, 13);
+    L->bed = (Vector3){ -1.2f, 0, 5.4f };
+    L->spawn = (Vector3){ 0.9f, 0.05f, 3.4f }; L->spawnYaw = 0;
+    add_note(L, (Vector3){ 0.3f, 0.02f, 2.2f }, NOTE_SCHOOL);
+    // lockers down the east side of the corridor; two of them are big enough for you
+    for (int i = 0; i < 8; i++) {
+        float z = -7.5f - i * 1.0f;
+        if (i == 1 || i == 6) { cupboard(L, (Vector3){ 1.68f, 1.05f, z }, (Vector3){ 0.3f, 1.05f, 0.45f }, 1, i == 1 ? 4 : 5); continue; }
+        add_box(L, (Vector3){ 1.72f, 0.9f, z }, (Vector3){ 0.26f, 0.9f, 0.45f }, TEX_RUST, (Color){ 90, 110, 130, 255 }, 1.0f, 0);
+        add_box(L, (Vector3){ 1.455f, 1.5f, z }, (Vector3){ 0.004f, 0.08f, 0.25f }, TEX_CONCRETE, (Color){ 12, 12, 14, 255 }, 1.0f, F_NOCOLLIDE);
+    }
+    // ---- classroom A: x -12..-2, z -8..4. the little desks, the blackboard, and the drawings
+    wall_z(L, 4, -12.2f, -2, 0, H, TEX_POOL, WALL); wall_z(L, -8, -12.2f, -2, 0, H, TEX_POOL, WALL); wall_x(L, -12, -8, 4, 0, H, TEX_POOL, WALL);
+    for (int r = 0; r < 3; r++) for (int c = 0; c < 4; c++) small_desk(L, (Vector3){ -9.5f + c * 1.6f, 0, -3.8f + r * 2.0f }, false);
+    add_box(L, (Vector3){ -11.8f, 1.6f, -1.8f }, (Vector3){ 0.02f, 0.7f, 2.0f }, TEX_CONCRETE, (Color){ 30, 50, 40, 255 }, 1.0f, F_NOCOLLIDE);
+    add_decal(L, "READY OR NOT", (Vector3){ -11.78f, 1.85f, -1.8f }, 0, 1, 0.2f, CHALK);
+    add_decal(L, "1 2 3 4 5 6 7 8 9 10", (Vector3){ -11.78f, 1.4f, -1.8f }, 0, 1, 0.07f, CHALK);
+    add_box(L, (Vector3){ -10.3f, 0.4f, -1.8f }, (Vector3){ 0.4f, 0.4f, 0.8f }, TEX_WOOD, (Color){ 110, 80, 60, 255 }, 1.0f, 0);   // teacher's desk
+    cupboard(L, (Vector3){ -11.6f, 1.1f, 2.6f }, (Vector3){ 0.4f, 1.1f, 0.55f }, 0, 0);
+    cupboard(L, (Vector3){ -11.6f, 1.1f, -6.4f }, (Vector3){ 0.4f, 1.1f, 0.55f }, 0, 1);
+    drawing(L, (Vector3){ -9.5f, 1.7f, 4 - WT }, 3, 0, "MY HOUSE");
+    drawing(L, (Vector3){ -7.6f, 1.7f, 4 - WT }, 3, 1, "MUMMY");
+    drawing(L, (Vector3){ -5.7f, 1.7f, 4 - WT }, 3, 2, "THE TALL MAN");
+    drawing(L, (Vector3){ -3.8f, 1.7f, 4 - WT }, 3, 3, "ME ASLEEP");
+    drawing(L, (Vector3){ -8.5f, 1.7f, -8 + WT }, 2, 4, "THE BIG EYE");
+    drawing(L, (Vector3){ -5.0f, 1.7f, -8 + WT }, 2, 5, "DADDY");
+    for (int i = 0; i < 2; i++) add_box(L, (Vector3){ -7, H - 0.04f, -4 + i * 5.0f }, (Vector3){ 0.5f, 0.02f, 0.12f }, TEX_CONCRETE, LIGHT, 1.0f, F_EMIT | F_NOCOLLIDE);
+    // ---- classroom B: x -12..-2, z -28..-14. lines on the board, chairs up, and a boy stood in the corner
+    wall_z(L, -14, -12.2f, -2, 0, H, TEX_POOL, WALL); wall_z(L, -28, -12.2f, -2, 0, H, TEX_POOL, WALL); wall_x(L, -12, -28, -14, 0, H, TEX_POOL, WALL);
+    for (int r = 0; r < 3; r++) for (int c = 0; c < 4; c++) small_desk(L, (Vector3){ -9.5f + c * 1.6f, 0, -23.0f + r * 2.2f }, true);
+    add_box(L, (Vector3){ -11.8f, 1.6f, -21 }, (Vector3){ 0.02f, 0.75f, 2.4f }, TEX_CONCRETE, (Color){ 30, 50, 40, 255 }, 1.0f, F_NOCOLLIDE);
+    for (int i = 0; i < 6; i++) add_decal(L, "I MUST NOT WAKE HIM", (Vector3){ -11.78f, 2.2f - i * 0.22f, -21 }, 0, 1, 0.05f, CHALK);
+    cupboard(L, (Vector3){ -11.6f, 1.1f, -15.6f }, (Vector3){ 0.4f, 1.1f, 0.55f }, 0, 2);
+    cupboard(L, (Vector3){ -11.6f, 1.1f, -25.0f }, (Vector3){ 0.4f, 1.1f, 0.55f }, 0, 3);
+    add_effigy(L, FIG_SELF, (Vector3){ -2.7f, 0, -27.3f }, 2.356f, 0.25f);   // in the corner, face to the wall
+    L->effigies.data[L->effigies.size - 1].scale = 0.72f;
+    add_note(L, (Vector3){ -6.3f, 0.64f, -18.6f }, NOTE_LINES);
+    for (int i = 0; i < 2; i++) add_box(L, (Vector3){ -7, H - 0.04f, -24 + i * 6.0f }, (Vector3){ 0.5f, 0.02f, 0.12f }, TEX_CONCRETE, LIGHT, 1.0f, F_EMIT | F_NOCOLLIDE);
+    // ---- the gym: x 2..16, z -12..6, six metres high. ropes, wall bars up to the high shelf, mats
+    wall_z(L, 6, 2, 16.2f, 0, 6, TEX_POOL, WALL); wall_z(L, -12, 2, 16.2f, 0, 6, TEX_POOL, WALL); wall_x(L, 16, -12, 6, 0, 6, TEX_POOL, WALL);
+    add_box(L, (Vector3){ 9, 0.004f, -3 }, (Vector3){ 6.8f, 0.003f, 8.8f }, TEX_WOOD, (Color){ 190, 150, 100, 255 }, 1.5f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ 9, 0.006f, -3 }, (Vector3){ 2.0f, 0.003f, 0.04f }, TEX_CONCRETE, (Color){ 200, 60, 50, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ 9, 2.3f, -11.75f }, (Vector3){ 2.6f, 2.3f, 0.12f }, TEX_RUST, (Color){ 210, 180, 130, 255 }, 1.0f, F_GRIP);   // wall bars
+    add_box(L, (Vector3){ 9, 4.45f, -11.1f }, (Vector3){ 3.6f, 0.15f, 0.9f }, TEX_WOOD, (Color){ 120, 96, 70, 255 }, 1.0f, 0);         // and the high shelf over them
+    add_box(L, (Vector3){ 9, 4.85f, -10.25f }, (Vector3){ 3.6f, 0.25f, 0.05f }, TEX_WOOD, (Color){ 120, 96, 70, 255 }, 1.0f, 0);        // with a lip you can kneel behind
+    for (int i = 0; i < 3; i++) add_box(L, (Vector3){ 7 + i * 1.6f, 4.75f, -11.3f }, (Vector3){ 0.6f, 0.15f, 0.5f }, TEX_CLOTH, (Color){ 60, 80, 140, 255 }, 1.0f, 0);
+    for (int i = 0; i < 4; i++) add_box(L, (Vector3){ 11 + i * 0.9f, 3.6f, 0 }, (Vector3){ 0.025f, 2.4f, 0.025f }, TEX_CLOTH, (Color){ 170, 150, 110, 255 }, 1.0f, F_NOCOLLIDE);   // ropes
+    for (int i = 0; i < 4; i++) add_box(L, (Vector3){ 5, 0.1f + i * 0.2f, 3.5f }, (Vector3){ 1.0f, 0.1f, 0.7f }, TEX_CLOTH, (Color){ 50, 70, 130, 255 }, 1.0f, 0);   // a stack of mats
+    add_box(L, (Vector3){ 12.5f, 0.6f, -6 }, (Vector3){ 0.8f, 0.25f, 0.3f }, TEX_CLOTH, (Color){ 120, 70, 50, 255 }, 1.0f, 0);   // the vaulting horse
+    for (int i = 0; i < 4; i++) add_box(L, (Vector3){ 12.5f + (i & 1 ? 0.6f : -0.6f), 0.18f, -6 + (i & 2 ? 0.2f : -0.2f) }, (Vector3){ 0.04f, 0.18f, 0.04f }, TEX_WOOD, (Color){ 100, 80, 60, 255 }, 1.0f, 0);
+    add_box(L, (Vector3){ 15.8f, 3.4f, -3 }, (Vector3){ 0.06f, 0.6f, 0.9f }, TEX_WOOD, (Color){ 220, 220, 220, 255 }, 1.0f, F_NOCOLLIDE);
+    add_box(L, (Vector3){ 15.4f, 3.0f, -3 }, (Vector3){ 0.3f, 0.02f, 0.3f }, TEX_RUST, (Color){ 220, 100, 40, 255 }, 1.0f, F_NOCOLLIDE);
+    cupboard(L, (Vector3){ 15.5f, 1.2f, -8.6f }, (Vector3){ 0.5f, 1.2f, 0.8f }, 1, 6);
+    for (int i = 0; i < 4; i++) add_box(L, (Vector3){ 6 + (i % 2) * 6.0f, 5.9f, -6 + (i / 2) * 8.0f }, (Vector3){ 0.3f, 0.05f, 0.3f }, TEX_CONCRETE, LIGHT, 1.0f, F_EMIT | F_NOCOLLIDE);
+    // ---- the headmaster's office: x 2..9, z -28..-18. lost property, under lock
+    wall_z(L, -18, 2, 9.2f, 0, H, TEX_WOOD, (Color){ 120, 90, 70, 255 }); wall_z(L, -28, 2, 9.2f, 0, H, TEX_WOOD, (Color){ 120, 90, 70, 255 }); wall_x(L, 9, -28, -18, 0, H, TEX_WOOD, (Color){ 120, 90, 70, 255 });
+    add_decal(L, "HEADMASTER", (Vector3){ 2 - WT - 0.01f, 2.55f, -22 }, 0, -1, 0.07f, (Color){ 200, 180, 120, 255 });
+    add_box(L, (Vector3){ 6, 0.4f, -20.5f }, (Vector3){ 0.9f, 0.4f, 0.5f }, TEX_WOOD, (Color){ 90, 60, 40, 255 }, 1.0f, 0);
+    add_chair(L, (Vector3){ 6, 0, -19.6f }, 3.14159f);
+    add_box(L, (Vector3){ 8.6f, 0.7f, -19.0f }, (Vector3){ 0.3f, 0.7f, 0.35f }, TEX_RUST, (Color){ 90, 96, 90, 255 }, 1.0f, 0);   // filing cabinet
+    add_box(L, (Vector3){ 2 + WT + 0.02f, 1.8f, -25.5f }, (Vector3){ 0.01f, 0.03f, 0.45f }, TEX_WOOD, (Color){ 140, 100, 60, 255 }, 1.0f, F_NOCOLLIDE);   // the cane, on its hooks
+    add_box(L, (Vector3){ 4.2f, 0.35f, -26.9f }, (Vector3){ 0.6f, 0.35f, 0.45f }, TEX_WOOD, (Color){ 110, 80, 60, 255 }, 1.0f, 0);
+    add_decal(L, "LOST PROPERTY", (Vector3){ 4.2f, 0.45f, -26.44f }, 2, 1, 0.05f, CHALK);
+    Pickup pk = { { 4.2f, 1.2f, -26.9f }, FX_SLIPPERS, false, true };
+    Pickups_push(&L->pickups, pk);
+    cupboard(L, (Vector3){ 8.55f, 1.1f, -25.0f }, (Vector3){ 0.4f, 1.1f, 0.6f }, 1, 7);
+    add_box(L, (Vector3){ 5.5f, H - 0.04f, -23 }, (Vector3){ 0.3f, 0.02f, 0.3f }, TEX_CONCRETE, (Color){ 230, 210, 160, 255 }, 1.0f, F_EMIT | F_NOCOLLIDE);
+}
+
 // ---------------------------------------------------------------- END: the way out
 static void build_end(Level *L) {
     L->ambient = 0.5f;
@@ -1379,6 +1895,9 @@ void level_build(Level *L, WorldId id, int seed) {
     case W_CITY:   build_city(L, seed); break;
     case W_MORGUE: build_morgue(L, seed); break;
     case W_THEATRE: build_theatre(L, seed); break;
+    case W_FAIR:   build_fair(L, seed); break;
+    case W_LAKE:   build_lake(L, seed); break;
+    case W_SCHOOL: build_school(L, seed); break;
     default:       build_end(L); break;
     }
     // ash motes
