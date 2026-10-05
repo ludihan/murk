@@ -7,7 +7,7 @@ services:
     networks:
       - web
     ports:
-      - "127.0.0.1:8080:8080"   # not public: reach it via an SSH tunnel or a reverse proxy with auth
+      - "127.0.0.1:8080:8080"   # public only through Caddy, at https://jenkins.ludihan.com; this port is for an SSH tunnel
     volumes:
       - jenkins_home:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock

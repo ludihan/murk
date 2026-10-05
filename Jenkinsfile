@@ -8,7 +8,7 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '20'))
     }
     triggers {
-        // GitHub's push webhook (https://murk.ludihan.com/github-webhook/) triggers builds instantly...
+        // GitHub's push webhook (https://jenkins.ludihan.com/github-webhook/) triggers builds instantly...
         githubPush()
         // ...and this is the safety net if a webhook delivery is missed.
         pollSCM('H/10 * * * *')
