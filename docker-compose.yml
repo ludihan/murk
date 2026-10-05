@@ -13,7 +13,7 @@ services:
       retries: 3
       start_period: 5s
     networks:
-      - web                     # shared with Jenkins so Caddy can serve it at jenkins.ludihan.com
+      - web                     # shared with Jenkins so Caddy can forward GitHub's webhook to it
     ports:
       - "80:80"
       - "443:443"

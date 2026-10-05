@@ -6,8 +6,13 @@ murk.ludihan.com {
 	header Cache-Control "no-cache"
 }
 
-# Jenkins, over the shared "murk-web" network (ci/docker-compose.jenkins.yml). GitHub's push webhook comes in here too,
-# at /github-webhook/. Jenkins asks for its own login; only build from this repo and keep sign-up off
+# Only GitHub's push webhook reaches Jenkins from outside (over the shared "murk-web" network). The Jenkins UI itself is
+# private: open it through an SSH tunnel, ssh -L 8080:127.0.0.1:8080 you@server, then http://localhost:8080
 jenkins.ludihan.com {
-	reverse_proxy jenkins:8080
+	handle /github-webhook/* {
+		reverse_proxy jenkins:8080
+	}
+	handle {
+		respond 404
+	}
 }
